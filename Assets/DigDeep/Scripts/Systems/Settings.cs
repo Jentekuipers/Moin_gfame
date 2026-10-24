@@ -118,6 +118,7 @@ namespace DigDeep
             DisplayMode = 0; ResIndex = -1; VSync = true; FpsCap = 2;
             Shake = 1f; Flashes = true; HitStop = true; Brightness = 0f; UiScale = 1f; PauseOnFocusLoss = true; ShowFps = false;
             GameInput.DefaultBindings();
+            GameInput.DefaultPad();
             Apply(true);
             Save();
         }

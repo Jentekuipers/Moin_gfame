@@ -10,6 +10,7 @@ namespace DigDeep
         public Team team;
         public bool poison;   // an enemy seed that poisons you
         public bool zaps;     // a drone's spark: it shocks instead of hurting normally
+        public bool chills;   // a frost shard: slows you
         public Vector2 vel;
         float dmg, life, age, knock, size, radius, grav, accel;
         int pierce, bounces, mine, tilePierce, blockPierce, playerDmg = 60;
@@ -557,6 +558,7 @@ namespace DigDeep
                     pl.Hurt(team == Team.Player ? 50 : playerDmg, pos);
                     if (team != Team.Player && main == Art.Bullets["b_fire"]) pl.SetOnFire();   // fireballs set you alight
                     if (poison) pl.Poison(3f);                                                  // jungle seeds poison you
+                    if (chills) pl.Chill(2.5f);
                     G.fx.Burst(pos, 8, col, 4f, 0.3f, 5f);
                     Kill();
                     return true;
@@ -684,7 +686,7 @@ namespace DigDeep
             sr.color = c;
             sr.flipY = side < 0;
             go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
-            float sc = d.reach * p.s.meleeReach / 1.4f * scaleMul;
+            float sc = (d.reach * p.s.meleeReach * Player.MeleeReachMul + 0.2f) / 1.4f * scaleMul;
             go.transform.localScale = new Vector3(sc, sc * Mathf.Clamp(d.arc / 110f, 0.7f, 1.5f), 1f);
         }
 

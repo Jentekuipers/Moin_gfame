@@ -45,7 +45,7 @@ namespace DigDeep
         readonly List<Transform> orbs = new List<Transform>();
 
         // ---------------- derived stats ----------------
-        public float Speed => Mathf.Clamp(s.speedMul + (BuffActive(Buff.Speed) ? 0.4f : 0f), 0.4f, 2.4f);
+        public float Speed => Mathf.Clamp(s.speedMul + (BuffActive(Buff.Speed) ? 0.4f : 0f), 0.4f, 2.4f) * (chillT > 0f ? 0.55f : 1f);
         public float JumpMul => Mathf.Clamp(s.jumpMul, 0.6f, 1.8f) * (Cursed(Curse.Weight) ? 0.75f : 1f);   // CURSE OF WEIGHT
         // FIRE RATE: bonuses above the base only count for half, so it climbs slowly (penalties still bite in full)
         public float SwingRate
@@ -63,7 +63,7 @@ namespace DigDeep
         public float WeaponDamage => attack != null ? Dmg(attack.dmg * attack.count) : 0f;
         public float SwingsPerSec => attack != null ? SwingRate / Mathf.Max(0.02f, attack.delay * DelayMul(weapon)) : 0f;
 
-        public bool Invulnerable => invuln > 0f || grace > 0f || mode == Mode.Quick || mode == Mode.Dig || mode == Mode.Pound || mode == Mode.Parry || ReloadGhosting;
+        public bool Invulnerable => Ascent.Shielded || invuln > 0f || grace > 0f || mode == Mode.Quick || mode == Mode.Dig || mode == Mode.Pound || mode == Mode.Parry || ReloadGhosting;
         public int MaxCharges
         {
             get
@@ -206,9 +206,12 @@ namespace DigDeep
             bool anyInput = mx != 0f || up || down || GameInput.Held(Btn.Attack) || GameInput.Held(Btn.Special) ||
                             GameInput.Held(Btn.Item) || GameInput.Held(Btn.Jump);
 
+            // above the clouds everyone flies the same way, whatever they carry
+            bool flying = World.SkyMode || Ascent.Flying;
+            if (flying && mode != Mode.Normal && mode != Mode.Parry && mode != Mode.Dead) mode = Mode.Normal;
             switch (mode)
             {
-                case Mode.Normal: TickNormal(dt, mx, up, down); break;
+                case Mode.Normal: if (flying) TickSky(dt, mx, up, down); else TickNormal(dt, mx, up, down); break;
                 case Mode.Grapple: TickGrapple(dt); break;
                 case Mode.Quick: TickQuick(dt); break;
                 case Mode.Swing: TickSwing(dt, mx, up, down); break;
@@ -376,6 +379,86 @@ namespace DigDeep
                 sel = (sel + 1) % items.Count;
                 G.sfx.Play("swing", 0.4f, 1.5f);
             }
+            if (GameInput.Take(Btn.CyclePrev) && items.Count > 1)
+            {
+                sel = (sel + items.Count - 1) % items.Count;
+                G.sfx.Play("swing", 0.4f, 1.4f);
+            }
+        }
+
+        // ---------------- above the clouds: free, quick, responsive flight. JUMP is a short dash. You can't leave the screen.
+        float skyDashT, skyDashCd;
+        public float ascentSpeed;   // the ascent: shooting straight up through the world
+
+        void TickSky(float dt, float mx, bool up, bool down)
+        {
+            if (ascentSpeed > 0f)
+            {
+                vel.x = U.Approach(vel.x, mx * 7f, 40f * dt);
+                vel.y = ascentSpeed;
+                pos += vel * dt;
+                pos.x = Mathf.Clamp(pos.x, 3f, World.W - 3f);
+                grounded = false;
+                Extinguish();
+                if (Random.value < 0.8f) G.fx.Burst(pos - new Vector2(0f, Half.y), 2, new Color(1f, 0.9f, 0.6f), 3f, 0.3f, -10f, 1f, false);
+                TickWeapon(dt);
+                return;
+            }
+            float my = (up ? 1f : 0f) - (down ? 1f : 0f);
+            Vector2 want = new Vector2(mx, my);
+            if (want.sqrMagnitude > 1f) want.Normalize();
+            skyDashT -= dt; skyDashCd -= dt;
+            if (GameInput.Buffered(Btn.Jump) && skyDashCd <= 0f)
+            {
+                GameInput.Consume(Btn.Jump);
+                Vector2 d = want.sqrMagnitude > 0.01f ? want.normalized : new Vector2(facing, 0f);
+                vel = d * 24f;
+                skyDashT = 0.13f; skyDashCd = 0.5f;
+                invuln = Mathf.Max(invuln, 0.2f);
+                G.fx.Burst(pos, 12, new Color(1f, 0.95f, 0.8f), 5f, 0.3f, 0f);
+                G.sfx.Play("dash", 0.6f, 1.3f);
+            }
+            if (skyDashT <= 0f)
+            {
+                float top = 9.5f * Mathf.Clamp(Speed, 0.8f, 1.4f);
+                vel = Vector2.MoveTowards(vel, want * top, (want.sqrMagnitude > 0.01f ? 110f : 70f) * dt);
+            }
+            if (!World.SkyMode)
+            {
+                // still down in the world (before the ascent): fly, but walls are walls
+                Vector2 pp = pos;
+                if (Wd.MoveX(ref pp, Half, vel.x * dt, out _)) vel.x = 0f;
+                if (Wd.MoveY(ref pp, Half, vel.y * dt, out _)) vel.y = 0f;
+                pos = pp;
+            }
+            else pos += vel * dt;
+            // above the clouds the edges of the screen are the edges of the world
+            var cam = G.cam;
+            if (World.SkyMode)
+            {
+                float x0 = cam.pos.x - cam.halfW + Half.x + 0.1f, x1 = cam.pos.x + cam.halfW - Half.x - 0.1f;
+                float y0 = cam.pos.y - cam.halfH + Half.y + 0.1f, y1 = cam.pos.y + cam.halfH - Half.y - 0.6f;
+                if (pos.x < x0) { pos.x = x0; vel.x = Mathf.Max(0f, vel.x); }
+                if (pos.x > x1) { pos.x = x1; vel.x = Mathf.Min(0f, vel.x); }
+                if (pos.y < y0) { pos.y = y0; vel.y = Mathf.Max(0f, vel.y); }
+                if (pos.y > y1) { pos.y = y1; vel.y = Mathf.Min(0f, vel.y); }
+            }
+            grounded = false;
+            coyote = 0f;
+            if (Random.value < 0.35f) G.fx.Burst(pos - new Vector2(0f, Half.y), 1, new Color(1f, 1f, 1f, 0.6f), 1f, 0.35f, 2f, 1f, false);
+            TickWeapon(dt);
+            if (GameInput.Take(Btn.Swap)) SwapWeapon();
+            if (GameInput.Take(Btn.Special))
+            {
+                // movement specials make no sense up here: they're a dash too
+                var ty = special != null ? special.type : Sp.Dash;
+                bool moves = ty == Sp.Dash || ty == Sp.Grapple || ty == Sp.SuperJump || ty == Sp.Rope || ty == Sp.Blink || ty == Sp.Phase || ty == Sp.Tide;
+                if (moves) { GameInput.Consume(Btn.Jump); skyDashCd = 0f; vel = (want.sqrMagnitude > 0.01f ? want.normalized : new Vector2(facing, 0f)) * 24f; skyDashT = 0.13f; skyDashCd = 0.5f; invuln = Mathf.Max(invuln, 0.2f); G.sfx.Play("dash", 0.6f, 1.3f); }
+                else UseSpecial(mx, up, down);
+            }
+            if (GameInput.Take(Btn.Item)) UseItem();
+            if (GameInput.Take(Btn.Cycle) && items.Count > 1) { sel = (sel + 1) % items.Count; G.sfx.Play("swing", 0.4f, 1.5f); }
+            if (GameInput.Take(Btn.CyclePrev) && items.Count > 1) { sel = (sel + items.Count - 1) % items.Count; G.sfx.Play("swing", 0.4f, 1.4f); }
         }
 
         void Swim(float dt, float mx, bool down, bool submerged)
@@ -411,6 +494,7 @@ namespace DigDeep
             if (GameInput.Take(Btn.Special)) UseSpecial(mx, GameInput.Held(Btn.Up), down);
             if (GameInput.Take(Btn.Item)) UseItem();
             if (GameInput.Take(Btn.Cycle) && items.Count > 1) { sel = (sel + 1) % items.Count; G.sfx.Play("swing", 0.4f, 1.5f); }
+            if (GameInput.Take(Btn.CyclePrev) && items.Count > 1) { sel = (sel + items.Count - 1) % items.Count; G.sfx.Play("swing", 0.4f, 1.4f); }
         }
 
         // An explosion throws you through the air.
@@ -1063,6 +1147,7 @@ namespace DigDeep
         {
             if (mode == Mode.Parry) { Counter(from); return; }   // PARRY: whatever touches you gets countered
             if (mode == Mode.Dead || Invulnerable) return;
+            if (TestMode.On && TestMode.God) { G.Popup(pos + Vector2.up, "GOD: " + dmg, new Color(0.6f, 1f, 0.6f)); return; }
             EndCamo();
             if (UseMantle()) return;   // WARDSTONE
             if (s.armor > 0f && dmg < 999999) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * (1f - s.armor)));   // IRON HIDE

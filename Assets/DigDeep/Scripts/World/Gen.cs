@@ -162,6 +162,7 @@ namespace DigDeep
         // unbreakable dark matter: an organic, wavy ceiling seals off the way up, and dark-matter veins
         // spread down through the dirt. Nothing worth digging up for - the only way is down.
         public const int CampFloor = 14;          // depth of the camp's floor row
+        public const int SurfaceTop = 12;         // world y of the top row of earth over the dark-matter crust
         public const int CampCx = W / 2;
 
         public static bool InCampCave(int x, int depth)
@@ -216,6 +217,8 @@ namespace DigDeep
         public static Block Base(int x, int y)
         {
             if (x <= 1 || x >= W - 2) return Block.Bedrock;
+            if (y > SurfaceTop) return Block.Air;                 // the open sky (only ever reached on the way to the gods)
+            if (y >= SurfaceTop - 1) return Block.Dirt;           // a skin of earth on top of the crust: the surface
             if (y >= 1) return Block.DarkMatter;
             int depth = -y;
             if (depth >= ArenaRoom.Bottom) return Block.Bedrock;   // bottom of the world

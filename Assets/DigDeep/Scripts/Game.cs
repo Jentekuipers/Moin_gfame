@@ -26,7 +26,7 @@ namespace DigDeep
         public Lighting lighting;
         public Hud hud;
         public Music music;
-        public Boss boss;
+        public Boss boss, boss2;   // boss2: the second of a pair (the twin dragons)
         public Story story;
         public GodDiamond diamond;
         public float whiteAlpha;
@@ -78,7 +78,7 @@ namespace DigDeep
             best = PlayerPrefs.GetInt("digdeep_best", 0);
             charIndex = Mathf.Clamp(PlayerPrefs.GetInt("digdeep_char", 0), 0, Chars.All.Count - 1);
             story = new Story();
-            GoIntro();
+            GoTitle();   // the intro slideshow is shelved for now (GoIntro() plays it)
         }
 
         void GoIntro()
@@ -106,33 +106,73 @@ namespace DigDeep
             music.PlayMenu();
         }
 
+        // Has every digger found the God-Diamond? Then the gods above the clouds can be fought.
+        public static bool AllDiamonds()
+        {
+            foreach (var c in Chars.All) if (PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) != 1) return false;
+            return true;
+        }
+
+        // touching the God-Diamond
         void BeginEnding()
         {
             // beating the game with a digger lets every digger find that digger's own skill
+            if (TestMode.On)
+            {
+                // a test run never counts: the test god route pretends every digger already has a diamond
+                if (TestMode.PretendAllDiamonds) { StartAscent(); return; }
+                ShowEnding(AllDiamonds() ? 0 : 1);
+                return;
+            }
             SaveGame.Delete();
             if (player != null)
             {
                 PlayerPrefs.SetInt("digdeep_won_" + player.character.id, 1);
                 PlayerPrefs.Save();
             }
+            PlayerPrefs.SetInt("digdeep_wins", PlayerPrefs.GetInt("digdeep_wins", 0) + 1);
+            if (maxDepth > best) { best = maxDepth; PlayerPrefs.SetInt("digdeep_best", best); }
+            PlayerPrefs.Save();
+            // every digger has it now: the diamond lifts you up, above the clouds, to the gods
+            if (AllDiamonds()) { StartAscent(); return; }
+            ShowEnding(AllDiamonds() ? 0 : 1);
+        }
+
+        void ShowEnding(int variant)
+        {
+            World.SkyMode = false;
             state = State.Ending;
             Time.timeScale = 1f;
             whiteAlpha = 0f;
             endMusic = false;
-            story.StartEnding();
+            story.StartEnding(variant);
             music.Stop(1.5f);
             sfx.Play("chest", 1f, 0.5f);
-            PlayerPrefs.SetInt("digdeep_wins", PlayerPrefs.GetInt("digdeep_wins", 0) + 1);
-            if (maxDepth > best) { best = maxDepth; PlayerPrefs.SetInt("digdeep_best", best); }
-            PlayerPrefs.Save();
         }
 
-        public void NewRun() => BeginRun(null);
+        // ------------------------------------------------------------ the God above the clouds
 
-        // Save the run and go back to the title screen (pause screen: SAVE & QUIT).
-        public void SaveAndQuit()
+        public float skyWhite, cloudFade;
+
+        // the white fades and you're back in Ornin's hall, able to fly, an arrow pointing up
+        public void StartAscent()
         {
-            if (player == null || player.mode == Player.Mode.Dead) return;
+            Time.timeScale = 1f;
+            skyWhite = 1f;
+            state = State.Playing;
+            if (diamond != null) { diamond.Kill(); diamond = null; }   // it's in you now
+            player.mode = Player.Mode.Normal;
+            player.vel = Vector2.zero;
+            // if you quit before reaching the surface, you still come back at the surface
+            SaveAscentCheckpoint(new Vector2(player.pos.x, Gen.SurfaceTop + 1f + Player.Half.y + 0.05f));
+            Spawn(new Ascent(false));
+            Spawn(new SkyBackdrop());
+            hud.Banner("THE DIAMOND LIFTS YOU", "FLY UP. ALL THE WAY UP", new Color(1f, 0.85f, 0.35f));
+            music.PlayIntro(3f);
+        }
+
+        RunSave BuildSave()
+        {
             var r = new RunSave { seed = seed, charIndex = charIndex, maxDepth = maxDepth, time = time };
             player.CaptureTo(r);
             world.CaptureTo(r);
@@ -140,7 +180,101 @@ namespace DigDeep
                 if (!a.dead && a.done) { r.doneAltarX.Add(a.pos.x); r.doneAltarY.Add(a.pos.y); }
             foreach (var e in ents)
                 if (!e.dead && e is BossArena ba && ba.Cleared) r.clearedArenas.Add(ba.Depth);
+            return r;
+        }
+
+        // the run during the ascent and the fight above the clouds comes back to the surface, ready to fly up again
+        public void SaveAscentCheckpoint(Vector2 at)
+        {
+            if (TestMode.On || player == null) return;
+            var r = BuildSave();
+            r.ascent = true; r.ax = at.x; r.ay = at.y;
             SaveGame.Write(r);
+        }
+
+        public void StartSkyFight(bool fromClouds = false)
+        {
+            World.SkyMode = true;
+            Time.timeScale = 1f;
+            if (fromClouds) { cloudFade = 1f; skyWhite = 0f; } else skyWhite = 1f;
+            state = State.Playing;
+            // everything of the depths is left behind
+            foreach (var e in ents) if (!e.dead && (e is Enemy || e is BossShot || e is Hazard || e is Bullet)) e.Kill();
+            boss = null; boss2 = null;
+            player.mode = Player.Mode.Normal;
+            player.pos = SkyGod.Center + new Vector2(0f, fromClouds ? -cam.halfH + 1.2f : -5f);
+            player.vel = fromClouds ? Vector2.up * 8f : Vector2.zero;   // bursting up out of the clouds
+            player.Extinguish();
+            cam.Snap(SkyGod.Center);
+            bool backdrop = false;
+            foreach (var e in ents) if (!e.dead && e is SkyBackdrop) backdrop = true;
+            foreach (var e in toAdd) if (!e.dead && e is SkyBackdrop) backdrop = true;
+            if (!backdrop) Spawn(new SkyBackdrop());
+            var god = new SkyGod();
+            Spawn(god);
+            boss = god;
+            music.PlayBoss();
+            hud.Banner("THE GOD ABOVE THE CLOUDS", "SHOOT THE HEAD", new Color(1f, 0.85f, 0.35f));
+            sfx.Play("rumble", 1f, 0.5f);
+            sfx.Play("chest", 1f, 0.4f);
+        }
+
+        // the god falls: the true ending
+        public void OnGodDefeated()
+        {
+            boss = null;
+            if (!TestMode.On)   // a test win doesn't count
+            {
+                if (player != null) PlayerPrefs.SetInt("digdeep_godwon_" + player.character.id, 1);
+                PlayerPrefs.SetInt("digdeep_godwins", PlayerPrefs.GetInt("digdeep_godwins", 0) + 1);
+                PlayerPrefs.Save();
+                SaveGame.Delete();
+            }
+            music.Stop(3f);
+            hud.Banner("THE GOD FALLS", "THE SKY GOES QUIET", new Color(1f, 0.9f, 0.5f));
+            Spawn(new DelayedCall(4f, () => { skyWhite = 1f; Spawn(new DelayedCall(1.2f, () => ShowEnding(2))); }));
+        }
+
+        public void NewRun()
+        {
+            if (TestMode.On) { RestartTest(); return; }
+            BeginRun(null, false, false);
+        }
+
+        // after dying in a test run: a fresh test run, back at the set-up screen, with everything you'd picked
+        void RestartTest()
+        {
+            BeginRun(null, false, true);
+            TestMode.Replay(player);
+            TestMode.OpenPanel(true);
+            state = State.Playing;
+        }
+
+        // ESC on the test set-up screen (or quitting a test): back to the menu, nothing kept
+        public void QuitTest()
+        {
+            TestMode.ClearPicks();
+            TestMode.PretendAllDiamonds = false;
+            TestMode.On = false; TestMode.Open = false; TestMode.Setup = false;
+            music.SetDuck(false);
+            GoTitle();
+        }
+
+        // the death screen's QUIT
+        void QuitFromDeath()
+        {
+            if (TestMode.On) { QuitTest(); return; }
+            GoTitle();
+        }
+
+        // Save the run and go back to the title screen (pause screen: SAVE & QUIT).
+        public void SaveAndQuit()
+        {
+            if (TestMode.On) { QuitTest(); return; }   // test runs are never saved
+            // on the way to the gods the checkpoint at the surface is already saved: you come back there
+            if (World.SkyMode || Ascent.Flying) { music.SetDuck(false); GoTitle(); return; }
+            if (player == null || player.mode == Player.Mode.Dead) return;
+            SaveGame.Write(BuildSave());
             music.SetDuck(false);
             sfx.Play("buy", 0.7f);
             GoTitle();
@@ -153,17 +287,75 @@ namespace DigDeep
             BeginRun(r);
         }
 
-        void BeginRun(RunSave save, bool menu = false)
+        // TEST MODE: a run with the test panel (F1 / VIEW): every weapon, item and boss, god mode, damage numbers.
+        // It never touches your saved run.
+        void StartTestMode()
         {
-            if (save == null && !menu) SaveGame.Delete();   // a new adventure replaces any saved one
+            TestMode.ClearPicks();
+            TestMode.PretendAllDiamonds = false;
+            TestMode.On = true;
+            BeginRun(null, false, true);
+            TestMode.OpenPanel(true);
+        }
+
+        // TEST MODE: the road to the God. You're dropped into Ornin's hall, Ornin already beaten and the God-Diamond free,
+        // as if every digger had found theirs: touch it, fly up through the world and the clouds, and fight the God.
+        public void TestGodRoute()
+        {
+            if (World.SkyMode || Ascent.Flying) { hud.Banner("ALREADY ON THE WAY", "START A NEW TEST RUN", new Color(1f, 0.5f, 0.4f)); return; }
+            TestMode.PretendAllDiamonds = true;
+            float cx = (Gen.W - ArenaRoom.AW) / 2 + ArenaRoom.AW * 0.5f;
+            player.pos = new Vector2(cx - 8f, 1 - ArenaRoom.Final + 1.2f);
+            player.vel = Vector2.zero;
+            cam.Snap(player.pos);
+            world.Stream(cam.pos.y, cam.halfH);
+            if (toAdd.Count > 0) { ents.AddRange(toAdd); toAdd.Clear(); }
+            foreach (var e in ents)
+                if (!e.dead && e is BossArena ba && !ba.Started) ba.MarkCleared();   // every hall counts as beaten
+            if (diamond != null && !diamond.Unlocked) diamond.Unlock();
+            TestMode.Open = false; TestMode.Setup = false;
+            hud.Banner("THE GOD-DIAMOND", "AS IF EVERY DIGGER HAD ONE. TOUCH IT", new Color(0.6f, 0.9f, 1f));
+        }
+
+        // TEST MODE: drop into the next unused boss arena and fight the chosen boss there
+        public void TestFightBoss(int kind)
+        {
+            if (World.SkyMode) { hud.Banner("NOT FROM UP HERE", "START A NEW TEST RUN", new Color(1f, 0.5f, 0.4f)); return; }
+            int target = -1;
+            foreach (int d in ArenaRoom.Depths(0))
+            {
+                if (d == ArenaRoom.Final) continue;
+                bool used = false;
+                foreach (var e in ents) if (!e.dead && e is BossArena ba && ba.Depth == d && ba.Started) used = true;
+                if (!used) { target = d; break; }
+            }
+            if (target < 0) { hud.Banner("ALL ARENAS USED", "START A NEW TEST RUN FOR MORE FIGHTS", new Color(1f, 0.5f, 0.4f)); return; }
+            BossArena.ForceKind = kind;
+            float cx = (Gen.W - ArenaRoom.AW) / 2 + ArenaRoom.AW * 0.5f;
+            player.pos = new Vector2(cx - 6f, 1 - target + 1.2f);
+            player.vel = Vector2.zero;
+            cam.Snap(player.pos);
+            world.Stream(cam.pos.y, cam.halfH);
+            TestMode.Open = false;
+        }
+
+        void BeginRun(RunSave save, bool menu = false, bool test = false)
+        {
+            if (save == null && !menu && !test) SaveGame.Delete();   // a new adventure replaces any saved one
+            if (!test) TestMode.On = false;
             menuWorld = menu;
             if (world != null) world.DestroyAll();
             if (runRoot != null) Destroy(runRoot.gameObject);
             runRoot = new GameObject("Run").transform;
             ents.Clear(); toAdd.Clear(); altars.Clear(); corpses.Clear();
-            boss = null;
+            boss = null; boss2 = null;
             diamond = null;
             whiteAlpha = 0f;
+            World.SkyMode = false;
+            BossArena.ForceKind = -1;   // a test boss pick never carries over into another run
+            FloorFire.ClearAll(); ArenaWater.ClearAll();
+            skyWhite = 0f; cloudFade = 0f;
+            Ascent.Active = null; Ascent.Cover = 0f;
             revealT = 0f;
             BoulderBody.All.Clear();
             Fire.Reset();
@@ -201,6 +393,15 @@ namespace DigDeep
                 player.RestoreFrom(save);
                 maxDepth = save.maxDepth;
                 time = save.time;
+                if (save.ascent)
+                {
+                    // back at the surface, the God not yet fought: fly up when you're ready
+                    player.pos = new Vector2(save.ax, save.ay);
+                    player.vel = Vector2.zero;
+                    Spawn(new Ascent(true));
+                    Spawn(new SkyBackdrop());
+                    music.PlayIntro(2f);
+                }
             }
             aim = player.pos + Vector2.right * 3f;
             cam.Snap(menu ? MenuFocus : player.pos);
@@ -320,7 +521,7 @@ namespace DigDeep
             if (rdt > 0f) fps = Mathf.Lerp(fps, 1f / rdt, 0.05f);
             music.Tick(rdt);
             // the OS cursor hides while you're aiming; the HUD draws a crosshair instead
-            Cursor.visible = state != State.Playing;
+            Cursor.visible = state != State.Playing || (TestMode.On && TestMode.Open);
 
             if (state == State.Intro)
             {
@@ -356,6 +557,7 @@ namespace DigDeep
                     string pick = items[story.titleSel];
                     if (pick == Story.Continue) ContinueRun();
                     else if (pick == Story.NewRun) EnterSelect();
+                    else if (pick == Story.Test) StartTestMode();
                     else if (pick == Story.Options) options.Show(State.Title);
                     else if (pick == Story.Credits) state = State.Credits;
                     else if (pick == Story.Quit) Application.Quit();
@@ -391,6 +593,28 @@ namespace DigDeep
                 return;
             }
 
+            // TEST MODE panel: F1 or the pad's VIEW button
+            if (TestMode.On && state == State.Playing)
+            {
+                if (!TestMode.Setup && (GameInput.KeyDown("F1") || GameInput.PadPressed(Pad.View)))
+                {
+                    if (TestMode.Open) TestMode.Open = false; else TestMode.OpenPanel(false);
+                    sfx.Play("swing", 0.5f, 1.3f);
+                }
+                if (TestMode.Open)
+                {
+                    if (GameInput.Pressed(Btn.Pause))
+                    {
+                        // on the set-up screen ESC is "never mind": back to the menu with nothing equipped
+                        if (TestMode.Setup) QuitTest(); else TestMode.Open = false;
+                        return;
+                    }
+                    hud.ClearFrame();
+                    TestMode.Tick(this);
+                    BuildLights(0f);
+                    return;
+                }
+            }
             if (GameInput.Pressed(Btn.Pause) && state != State.Dead)
             {
                 state = state == State.Paused ? State.Playing : State.Paused;
@@ -416,8 +640,9 @@ namespace DigDeep
             if (state == State.Dead)
             {
                 deadT += dt;
-                if (deadT > 1f && (GameInput.Pressed(Btn.Jump) || (GameInput.Pressed(Btn.Attack) && !hud.ChangeHovered))) { NewRun(); return; }
-                if (deadT > 1f && (GameInput.Pressed(Btn.Interact) || GameInput.Pressed(Btn.Up) || (hud.ChangeHovered && GameInput.MouseClicked()))) { BeginRun(null, true); music.PlayMenu(); EnterSelect(); return; }
+                if (deadT > 0.4f && (GameInput.Pressed(Btn.Pause) || (hud.DeadQuitHovered && GameInput.MouseClicked()))) { QuitFromDeath(); return; }
+                if (deadT > 1f && (GameInput.Pressed(Btn.Jump) || (GameInput.Pressed(Btn.Attack) && !hud.ChangeHovered && !hud.DeadQuitHovered))) { NewRun(); return; }
+                if (!TestMode.On && deadT > 1f && (GameInput.Pressed(Btn.Interact) || GameInput.Pressed(Btn.Up) || (hud.ChangeHovered && GameInput.MouseClicked()))) { BeginRun(null, true); music.PlayMenu(); EnterSelect(); return; }
             }
 
             UpdateAim();
@@ -447,6 +672,7 @@ namespace DigDeep
                 if (d < 1.35f) { BeginEnding(); return; }
             }
             else if (Time.timeScale != 1f || whiteAlpha > 0f) { Time.timeScale = 1f; whiteAlpha = 0f; }
+            if (skyWhite > 0f) { skyWhite = Mathf.Max(0f, skyWhite - dt * 0.5f); whiteAlpha = Mathf.Max(whiteAlpha, skyWhite); }
 
             fluids.Tick(dt, cam.pos.y, cam.halfH);
             Electric.Tick(dt);
@@ -454,20 +680,35 @@ namespace DigDeep
             hud.Tick(dt, this);
             // the camera leans a little towards where you aim
             Vector2 look = Vector2.ClampMagnitude((aim - player.pos) * 0.22f, 3.2f);
-            cam.Tick(dt, player.pos + (player.mode == Player.Mode.Dead ? Vector2.zero : look), player.vel);
-            world.Stream(cam.pos.y, cam.halfH);
+            if (World.SkyMode) cam.Tick(dt, SkyGod.Center, Vector2.zero);   // above the clouds the view holds still
+            else
+            {
+                // shooting up through the world the view leads ahead of you, or you'd leave it behind
+                if (Ascent.Shielded) look = Vector2.up * (player.vel.y / 6f);
+                cam.Tick(dt, player.pos + (player.mode == Player.Mode.Dead ? Vector2.zero : look), Ascent.Shielded ? Vector2.zero : player.vel);
+                world.Stream(cam.pos.y, cam.halfH);
+            }
+            if (cloudFade > 0f) cloudFade = Mathf.Max(0f, cloudFade - dt * 0.7f);
             BuildLights(dt);
         }
 
         // Is the mouse cursor over this world position?
         public bool MouseOver(Vector2 p, float r) => !GameInput.UsingStick && (aim - p).sqrMagnitude < r * r;
 
+        // gamepad aim: the reticle rides a fixed circle around you, twin-stick style; holding LOOK / AIM doubles it
+        Vector2 padAimDir = Vector2.right;
+        float padAimDist = 4.5f;
+        public float PadAimDist => padAimDist;
+
         void UpdateAim()
         {
             if (GameInput.UsingStick)
             {
-                if (GameInput.Stick.sqrMagnitude > 0.16f) aim = player.pos + GameInput.Stick.normalized * 5f;
-                else aim = player.pos + (aim - player.pos).normalized * 5f;
+                var st = GameInput.Stick;
+                if (st.sqrMagnitude > 0.09f) padAimDir = st.normalized;
+                float want = GameInput.AimRadius * (GameInput.Held(Btn.Zoom) ? 2f : 1f);
+                padAimDist = Mathf.MoveTowards(padAimDist, want, 40f * Time.unscaledDeltaTime);
+                aim = player.pos + padAimDir * padAimDist;
                 return;
             }
             var m = GameInput.MouseScreen;
@@ -493,6 +734,9 @@ namespace DigDeep
             else if (hud != null)
             {
                 hud.Draw(this);
+                if (TestMode.On && state == State.Playing) TestMode.Draw(this);
+                float cover = Mathf.Max(Ascent.Flying ? Ascent.Cover : 0f, cloudFade);
+                if (cover > 0f) DrawClouds(cover);
                 if (whiteAlpha > 0f)
                 {
                     GUI.color = new Color(1f, 1f, 1f, whiteAlpha);
@@ -501,6 +745,26 @@ namespace DigDeep
                 }
             }
             if (Settings.ShowFps) PixelFont.Draw(4f, 4f, Mathf.RoundToInt(fps) + " FPS", Mathf.Max(1f, Mathf.Floor(Screen.height / 540f)), new Color(0.6f, 1f, 0.6f));
+        }
+
+        // the cloud bank on the way up: soft puffs rushing down past you, thick enough to hide everything
+        void DrawClouds(float a)
+        {
+            float W = Screen.width, H = Screen.height;
+            var old = GUI.color;
+            GUI.color = new Color(0.9f, 0.88f, 0.97f, a);
+            GUI.DrawTexture(new Rect(0, 0, W, H), Art.White);
+            var tex = Art.Circle.texture;
+            float u = H / 6f;
+            for (int i = 0; i < 18; i++)
+            {
+                float r = u * (0.8f + (i * 37 % 10) * 0.08f);
+                float x = (i * 0.618f % 1f) * (W + r) - r * 0.5f;
+                float y = ((i * 0.37f + Time.time * 0.9f) % 1.3f) * H - r * 0.6f;
+                GUI.color = i % 3 == 0 ? new Color(1f, 1f, 1f, a) : new Color(0.78f, 0.75f, 0.9f, a);
+                GUI.DrawTexture(new Rect(Mathf.Round(x), Mathf.Round(y), r * 1.6f, r), tex);
+            }
+            GUI.color = old;
         }
 
         void BuildLights(float dt)
@@ -546,12 +810,13 @@ namespace DigDeep
                 revealT -= dt;
                 lighting.AddRect(revealC - revealH, revealC + revealH, RevealFade);
             }
-            lighting.End(dt, Darkness(cam.pos.y) * player.s.darkMul * (1f - Settings.Brightness * 0.6f));   // BRIGHTNESS option
+            lighting.End(dt, (World.SkyMode ? 0f : Darkness(cam.pos.y)) * player.s.darkMul * (1f - Settings.Brightness * 0.6f));   // BRIGHTNESS option
             fluids.Render(cam.pos, cam.halfW, cam.halfH, time);
         }
 
         static float Darkness(float camY)
         {
+            if (camY > Gen.SurfaceTop) return Mathf.Lerp(0.25f, 0f, (camY - Gen.SurfaceTop) / 10f);   // out under the open sky
             float d = -camY;
             if (d < 3f) return Mathf.Lerp(0.25f, 0.62f, Mathf.InverseLerp(-6f, 3f, d));
             return Mathf.Lerp(0.62f, 0.93f, Mathf.Clamp01((d - 3f) / 25f)) + Mathf.Clamp01((d - 100f) / 200f) * 0.04f;
@@ -560,6 +825,13 @@ namespace DigDeep
         // ------------------------------------------------------------ world events
 
         public void OnChunkGenerated(Chunk c)
+        {
+            Enemy.GenSpawning = true;
+            try { PopulateChunk(c); }
+            finally { Enemy.GenSpawning = false; }
+        }
+
+        void PopulateChunk(Chunk c)
         {
             var r = rng;
             for (int ly = 0; ly < World.CH; ly++)
@@ -579,6 +851,13 @@ namespace DigDeep
                     {
                         // slimes live in the water (eels in the storm caverns)
                         if (liquid == Fluids.Water && storm && roll < pr * 3f) Spawn(new Eel(x, y, depth));
+                        else if (liquid == Fluids.Water && roll < pr * 1.6f && c.liq[ly * World.W + x] > 0.6f && Fish.PoolSize(c, x, ly, 80) is int fishPool && fishPool >= 6)
+                        {
+                            // fish in the pools: minnows and biters, and groupers in the big ones (more biters deeper down)
+                            float k2 = (float)r.NextDouble();
+                            var kind = fishPool >= 45 && k2 < 0.25f ? Fish.Kind.Grouper : k2 < 0.6f - Mathf.Min(0.25f, depth / 800f) ? Fish.Kind.Minnow : Fish.Kind.Biter;
+                            Spawn(new Fish(x, y, depth, kind));
+                        }
                         else if (liquid == Fluids.Water && roll < pr * 2.5f && Tiles.Solid(world.Peek(x, y - 1))) Spawn(new Crawler(x, y, depth, false, true));
                         continue;
                     }
@@ -589,7 +868,9 @@ namespace DigDeep
                         bool ceil = Tiles.Solid(world.Peek(x, y + 1));
                         float k = (float)r.NextDouble();
                         bool jungle = Biomes.Index(depth) == Biomes.Jungle;
-                        if (floor && storm && k < 0.3f) Spawn(new TeslaCoil(x, y, depth));
+                        float k2 = (float)r.NextDouble();
+                        if (k2 < 0.3f && SpawnElemental(x, y, depth, floor, ceil, r)) { }
+                        else if (floor && storm && k < 0.3f) Spawn(new TeslaCoil(x, y, depth));
                         else if (floor && storm && k < 0.6f) Spawn(new Clank(x, y, depth));
                         else if (ceil && storm && k < 0.5f) Spawn(new Drone(x, y, depth));
                         else if (floor && jungle && k < 0.4f) Spawn(new Snapper(x, y, depth));
@@ -612,6 +893,7 @@ namespace DigDeep
                         }
                         else if (depth > 200 && k < 0.3f) Spawn(new Bat(x, y, depth, true));
                     }
+                    else if (b == Block.Chest && r.NextDouble() < 0.004) Spawn(new MimicLurker(x, y));   // insanely rare
                     else if (b == Block.Dirt && depth > 22 && roll < pr * 0.15f)
                     {
                         world.PokeRaw(c, x, y, Block.Air);
@@ -630,6 +912,45 @@ namespace DigDeep
                 if (a < dTop || a > dBot) continue;
                 carve.spawned = true;
                 carve.Spawn(this, r);
+            }
+        }
+
+        // The elemental creatures of each biome. True if something was spawned.
+        bool SpawnElemental(int x, int y, int depth, bool floor, bool ceil, System.Random r)
+        {
+            double k = r.NextDouble();
+            switch (Biomes.Index(depth))
+            {
+                case Biomes.Topsoil:
+                    if (floor && depth > 35 && k < 0.5) { Spawn(new ToxicToad(x, y, depth)); return true; }
+                    return false;
+                case Biomes.Jungle:
+                    if (ceil)
+                    {
+                        int n = 3 + r.Next(3);   // a swarm
+                        for (int i = 0; i < n; i++) Spawn(new Bee(new Vector2(x + 0.5f + (float)r.NextDouble() * 2f - 1f, y + 0.3f - (float)r.NextDouble()), depth));
+                        return true;
+                    }
+                    if (floor && k < 0.6) { Spawn(new ToxicToad(x, y, depth)); return true; }
+                    return false;
+                case Biomes.Fungal:
+                    if (!floor) { Spawn(new SporePuff(x, y, depth)); return true; }
+                    if (k < 0.5) { Spawn(new ToxicToad(x, y, depth)); return true; }
+                    return false;
+                case Biomes.Crystal:
+                    if (!floor || k < 0.4) { Spawn(new Wisp(x, y, depth, true)); return true; }
+                    return false;
+                case Biomes.Storm:
+                    if (floor) { Spawn(new SparkBeetle(x, y, depth)); return true; }
+                    return false;
+                case Biomes.Magma:
+                    if (floor && k < 0.6) { Spawn(new MagmaSlug(x, y, depth)); return true; }
+                    Spawn(new Wisp(x, y, depth, false));
+                    return true;
+                default:   // the forgotten kingdom: a bit of everything
+                    if (floor) { if (k < 0.5) Spawn(new SparkBeetle(x, y, depth)); else Spawn(new MagmaSlug(x, y, depth)); }
+                    else Spawn(new Wisp(x, y, depth, k < 0.5));
+                    return true;
             }
         }
 
@@ -826,6 +1147,7 @@ namespace DigDeep
 
         public void OpenChest(Vector2 p)
         {
+            if (MimicLurker.TryWake(p)) return;   // it was never a chest
             sfx.Play("chest", 0.8f);
             fx.Burst(p, 26, new Color(1f, 0.85f, 0.3f), 7f, 0.7f, 10f);
             lighting.Flash(p, 4f, 0.5f);

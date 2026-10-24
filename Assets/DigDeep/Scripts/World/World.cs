@@ -149,8 +149,13 @@ namespace DigDeep
             return p.y - y <= a + 0.05f ? t : Fluids.None;
         }
 
+        // Above the clouds (the fight with the God) there is nothing but sky.
+        public static bool SkyMode;
+        public const int SkyFloor = 40;
+
         public Block Get(int x, int y)
         {
+            if (SkyMode && y > SkyFloor) return Block.Air;
             if (x < 0 || x >= W) return Block.Bedrock;
             var c = GetChunk(U.FloorDiv(y, CH));
             return c.t[(y - c.Y0) * W + x];
@@ -159,6 +164,7 @@ namespace DigDeep
         // Read without generating: falls back to the pure generator for unknown chunks.
         public Block Peek(int x, int y)
         {
+            if (SkyMode && y > SkyFloor) return Block.Air;
             if (x < 0 || x >= W) return Block.Bedrock;
             if (chunks.TryGetValue(U.FloorDiv(y, CH), out var c)) return c.t[(y - c.Y0) * W + x];
             return Gen.Base(x, y);
@@ -305,7 +311,7 @@ namespace DigDeep
 
         public void SetHp(int x, int y, int hp)
         {
-            if (x < 0 || x >= W) return;
+            if (x < 0 || x >= W || (SkyMode && y > SkyFloor)) return;
             var c = GetChunk(U.FloorDiv(y, CH));
             c.hp[(y - c.Y0) * W + x] = (byte)Mathf.Clamp(hp, 1, 255);
             RedrawCell(x, y);
@@ -324,14 +330,14 @@ namespace DigDeep
 
         public int Hp(int x, int y)
         {
-            if (x < 0 || x >= W) return 999;
+            if (x < 0 || x >= W || (SkyMode && y > SkyFloor)) return 999;
             var c = GetChunk(U.FloorDiv(y, CH));
             return c.hp[(y - c.Y0) * W + x];
         }
 
         public void Set(int x, int y, Block b)
         {
-            if (x < 0 || x >= W) return;
+            if (x < 0 || x >= W || (SkyMode && y > SkyFloor)) return;
             var c = GetChunk(U.FloorDiv(y, CH));
             int i = (y - c.Y0) * W + x;
             // a solid block landing in liquid pushes the liquid up out of the way
@@ -707,6 +713,13 @@ namespace DigDeep
             int y = c.Y0 + ly;
             int i = ly * W + x;
             Block b = c.t[i];
+            if (b == Block.Air && y > Gen.SurfaceTop)
+            {
+                // the open sky above the surface: see-through, so the stars show
+                for (int py = 0; py < PX; py++)
+                    for (int px = 0; px < PX; px++) c.px[(ly * PX + py) * W * PX + x * PX + px] = new Color32(0, 0, 0, 0);
+                return;
+            }
             if (BigOre.Is(b) && BigOre.Find(x, -y, out _, out int box, out int bod, out int bsize))
             {
                 int cyUp = (bod + bsize - 1) - (-y);

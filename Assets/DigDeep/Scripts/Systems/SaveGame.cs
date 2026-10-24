@@ -13,6 +13,8 @@ namespace DigDeep
         public int seed, charIndex, maxDepth;
         public float time;
         public float px, py;
+        public bool ascent;      // saved on the way to the gods: come back at the surface (ax, ay), ready to fly up
+        public float ax, ay;
 
         // player
         public string stats;

@@ -32,7 +32,25 @@ Works with the new Input System (Unity 6 default) or the old Input Manager, and 
 
 Walking or jumping into soft blocks (dirt, sand) still digs them automatically.
 
-Gamepad: left stick move, right stick aim, RT fire, LT dash, Y special, B item, A jump, RB swap weapon, LB cycle items, D-pad up interact.
+### Gamepad
+
+The left stick walks and the right stick aims: the reticle rides a fixed circle around you, twin-stick style. Holding **LOOK / AIM** (RB or clicking and holding the right stick on Standard) doubles the distance for precise long shots. Menus always use the d-pad or stick to move, **A** to confirm, **B** to go back and **LB/RB** to switch option tabs. Prompts switch to pad buttons when you play on a pad.
+
+Layouts (Options > GAMEPAD, or rebind every button yourself, three buttons per action):
+
+| | Standard | Tactical | Dolphin Dive | Platformer | Arena | Southpaw |
+|---|---|---|---|---|---|---|
+| Jump | A | LB | L-stick click | A | LT | A |
+| Shoot | RT | RB | RT | X / RT | RT | LT |
+| Special | LT | LT | LB | B | LB | RT |
+| Consumable | LB / D-up | B / D-up | B / RB / D-up | RB / D-up | RB / D-up | RB / D-up |
+| Interact | X | A | A | LT | A | X |
+| Switch gun | Y | Y | Y | Y | Y | Y |
+| Reload | B | X | X | LB | X | B |
+| Look / aim far (hold) | RB / R-stick click | RT | LT | R-stick click | R-stick click | LB / L-stick click |
+| Items back / next | D-left / D-right | same | same | same | same | same |
+
+Southpaw walks with the right stick and aims with the left. Swap sticks and the look / aim distance are separate options too.
 
 ## Options
 
@@ -40,7 +58,8 @@ Open **OPTIONS** from the title screen, or press **E** (or click OPTIONS) in the
 - **Audio:** master, music and sound-effect volume.
 - **Video:** display mode (borderless, fullscreen, windowed), resolution, VSync, frame-rate cap (30-240 or unlimited, when VSync is off), FPS counter.
 - **Gameplay & accessibility:** screen shake (0-150%), screen flashes on/off, hit-stop on/off, brightness, UI scale (75-150%), pause when the window loses focus, and reset all progress (asks twice).
-- **Controls:** rebind every keyboard action, two keys each (click a key cell or press Space, then the new key; Backspace clears, Esc cancels). Esc always pauses and the mouse buttons always shoot and use the special. The gamepad layout is listed there too.
+- **Keyboard:** rebind every keyboard action, two keys each (click a key cell or press Space, then the new key; Backspace clears, Esc cancels). Esc always pauses and the mouse buttons always shoot and use the special.
+- **Gamepad:** a picture of the controller with what every button does, layout presets, swap sticks, look / aim distance, and rebinding (pick a cell, press the new button; VIEW clears, MENU cancels).
 - **Reset all settings** returns everything to the defaults.
 
 The title screen also has **CREDITS** and **QUIT**.
@@ -490,6 +509,20 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 - **Trapped gas** (steam under a ceiling) chokes you like water, even when it has spread thin.
 - **Icy biome water** freezes over time instead of at once: the surface and water touching ice go first.
 - **The Writhing** shots fly, dig and hit like normal shots; a worm hatches wherever each one ends. With **Thousand Blades** the worms carry swords: melee damage, a slash around each bite, a 4th bite, and they bat enemy shots back.
+- **The dragon worms**:
+  - **Unda, the water dragon**, can rule the crystal depths (instead of the Crystal Colossus). Its **Flood** fills the whole arena with water, then it swims through twice, slowly: right to left at ledge height, then left to right at two-thirds height. Afterwards the water drains away. It also casts **Geysers** under you, an **Ice ring** and slow **Bubbles**.
+  - **Ignis, the fire dragon**, can rule the storm caverns (instead of Captain Vask). Its **Inferno** rises to the ceiling and slams down, setting every floor tile alight, so get up on the ledges. It also has a fireball **Volley**, a sweeping **Breath** from a wall, and in phase 2 **Dashes** through the hall.
+  - **Both at once** (more likely in harder runs, after you've broken the curse): they take turns while the other hides in a wall corner, or split the hall and attack a half each. Their combo: Ignis sets the floor on fire, Unda floods the hall before it burns out (putting it out) and swims through, then Ignis tears through the water low then high, boiling it into steam under the ceiling. Two boss bars; the survivor fights on alone.
+- **Boss arenas are inescapable** once sealed: no dash, blink, grapple, super jump or teleport takes you out.
+- **TEST MODE** (title screen) starts a run with a test panel (F1, or VIEW on a pad). It never touches your saved run. The panel has:
+  - Every weapon, modifier, trinket and item (click to get it).
+  - Every boss, including the dragons and the twins (you're dropped into the next unused arena).
+  - God mode and damage numbers on every hit.
+  - Training dummies that show your DPS.
+  - Gold, heal, max HP, special refill, kill all, and spawning common enemies.
+- **Fish** live in the cave's pools. The **minnow** is harmless and darts away from you. The **biter** goes for anything in the water and leaps out at things near the surface. The **grouper** only lives in big pools: it's slow but tough and hits hard. Out of water they fall with it; once they hit the ground they flop frantically back towards water, and suffocate after a while. A draining pool sucks them along a curling path to the hole, and they pour down with the water and dip deep into the pool they land in. Water that freezes around them traps them in the ice: smash the ice and the fish dies, melt it and the fish swims off.
+- **Melee reach** is 25% longer, and hits are measured to the nearest part of a foe's body, so big bosses are much easier to hit.
+- **Prompts follow your controller**: the help, the special/item/weapon slots and all "press X" prompts show pad buttons while you play on a pad, and keys and the mouse otherwise.
 - **Melee hits much harder** (x1.6, and x1.3 more point-blank).
 - **Phantom blades**: shot items grow a bigger blade on melee weapons, swung at the same time as the real one (a foe right in front of you takes both). There are laser blades (gold with God-Ray), worm blades (each hit flings worms, up to 2 a swing), steel blades (Thousand Blades), ghost blades (Spectral), big swollen blades (Swell Shot) and a homing blade that lashes at the nearest foe you missed. Splash items make struck foes burst with a shockwave, and fire, poison, frost and wild-card items work on melee hits too.
 - **Parry (Nyx)**: once you've deflected or countered something, moving or jumping ends the parry at once with a short burst of invincibility. Otherwise it lingers as before.
@@ -504,6 +537,69 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 - **One-of-a-kind trinkets** (cap 1) turn up only once a run, taken or not. Other trinkets with a similar effect still can.
 - **Reflect pings** from mirror foes are only heard nearby.
 - **Text**: world labels show a name, one short line and the action. Hover an item or weapon for full details. Tooltips wrap instead of running off screen. Pause-menu combos show their names only; hover one for what it does.
+
+### Hearts, second bosses, elites, mimics and the gods (batch 49)
+
+- **Ignis's burning floor** (and the Forge Golem's) works like any fire: stand in it for half a second and you catch fire, then burn over time. The flames also cover the ceiling above and the walls they reach, and those set you alight too.
+- **The twin dragons**: when one dies, the other is **enraged** for the rest of the fight. It turns red, moves and dashes 35% faster, and recovers quicker. In the combo, Ignis no longer copies Unda's swim heights: its two dashes take two of three other heights (low, middle, high) in a random order and direction.
+- **Heart of Unda** and **Heart of Ignis**: the dragons drop their hearts instead of the usual boss reward (the twins drop both). Unda's gives +1 heart, gills, flippers and frost shots. Ignis's gives +1 heart, fire and lava immunity and burning shots. They never turn up anywhere else.
+- **A second boss for every biome** (half the time the hall holds this one instead):
+  - Topsoil, the **Boulder Troll**: throws boulders at you, leaps and pounds the floor (shockwaves and falling rock), and lowers its head to charge. A charge into the wall stuns it, and it takes 50% more damage while stunned.
+  - Jungle, the **Hive Queen**: calls her swarm of bees, aims her stinger and dives (a poison ring where she lands), sheds rings of pollen, and rains sticky honey that slows you.
+  - Fungal Hollows, the **Toadstool King**: hops and slams (a fan of poison spores), coughs up drifting spore clouds, lashes his tongue across the hall (watch the band at floor height), and makes mushrooms burst out of the floor under you.
+  - Magma Core, the **Forge Golem**: pounds the floor alight (your half, or all of it in phase 2: get on a ledge), rains molten iron, sweeps a flamethrower from the floor up over your head, and throws rings of fireballs.
+  - Crystal and Storm already have the dragons. All the new bosses are in the test panel.
+- **New creatures**, most of them elemental:
+  - **Bees** (jungle): swarms that buzz about and dive at you. The sting poisons.
+  - **Flame wisps** (magma) keep their distance and throw fireballs that set you alight. Water kills them.
+  - **Frost wisps** (crystal) fire three ice shards that **chill** you (slower for a moment). Chill also puts out fire.
+  - **Magma slugs** crawl through the magma core leaving burning embers.
+  - **Toxic toads** hop after you and spit poison, and burst into a poison cloud when they die.
+  - **Spore puffs** (fungal) drift towards you, swell up and burst into a poison ring.
+  - **Spark beetles** (storm) stop, crackle and let out a ring of sparks that shock you.
+  - The forgotten kingdom gets a mix of them.
+- **Elites**: about 1 in 80 creatures is born an elite. It's 40% bigger and glows in its biome's colour, with ELITE over its head. It has 6x health, hits 1.5x harder and drops 5x gold. Every few seconds it lets out a ring of its element: stone, poison, frost, lightning, fire or gold. Killed, it drops an item from that depth.
+- **Mimics**: a tiny chance (0.4%) that a chest is a mimic. It springs open when you come close (or when you break it from afar), then bounces after you and bites hard. Killed, it spits out a rare reward.
+- **The God above the clouds**: once **every** digger has found the God-Diamond, touching it starts **the ascent**:
+  - The white fades and you're back in Ornin's hall with the power of flight, and an arrow over you pointing up.
+  - Fly up and you shoot upwards, very fast. An invisible sphere around you wipes out every block it touches (even the void and the dark-matter crust) and nothing can hurt you.
+  - You burst through the crust at the surface (the run is saved here), rise on into the open night sky, and hit a thick bank of cloud that hides the whole screen for a moment.
+  - You come out above it, in the God's sky.
+  - **Saving**: quitting anywhere on the way up or during the fight brings you back to the surface, ready to fly up again, with the God reset. Quitting before you reach the surface also brings you back there.
+  - It's a robed figure against the stars, with blue hands and a blazing sunburst for a head.
+  - **Only the head can be hurt**, and touching the god does nothing. It has an enormous amount of health.
+  - **Every attack is signalled by the arms and hands**:
+    - Hands raised high: **starfall**.
+    - Arms spread wide: rings of light (**halo**).
+    - A hand pointing at you: pillars of light where you are (**judgment**).
+    - Hands apart at your height: a **clap**, and a band of light across the sky.
+    - Palms pressed down: **tremor** rings bursting from the hands.
+    - From half health: both hands to one side, then a **sweep** across the sky raining light. The head also spits light between attacks.
+    - Near the end: arms out, palms up, head flaring: a **spiral** storm.
+  - **Everyone flies up there.** Flight is free, quick and the same for every digger, whatever items they carry. JUMP is a short dash with a moment of invincibility, and movement specials become that dash too. You can't leave the screen.
+  - Beat it for **the true ending**.
+- **Endings**:
+  - Until every digger has the diamond, the ending adds a second painting: the same peaceful land, with the God looming over it. Under it is how many diggers still need the diamond (THE END?).
+  - The character lineup shows a little **diamond with a tick** over every digger who has found the God-Diamond. It turns gold once they've also beaten the God. A line under the info band shows the count.
+
+### Readability, test mode and menus (batch 52)
+
+- **HUD labels**:
+  - The weapon panel shows only the weapon's name, a bit smaller and fitted to its slot.
+  - Its modifiers show when you hover the weapon, and in the pause menu, where each weapon is listed with its modifiers (hover one for what it does).
+  - The special's and the item's names each sit over their own slot, shrunk to fit, so nothing overlaps.
+- **Character lineup**:
+  - The God-Diamond count sits in the top-left corner (hover it for what it means).
+  - Each digger's achievements show under their loadout: for now, the God-Diamond. It's greyed out until found, ticked once found, and gold once they've beaten the God.
+- **Death screen**:
+  - It has a QUIT TO MENU button next to CHANGE DIGGER.
+  - ESC (START on a pad) also quits to the menu.
+- **Test mode**:
+  - **Set-up screen**: a test run starts on its set-up screen. ESC there goes back to the main menu with nothing kept. To play, use **START A RUN WITH THIS GEAR** in the BOSSES tab, or pick a boss.
+  - **Modifiers**: click one to put it on the weapon in hand and click it again to take it off, up to 3. Modifiers on your weapon, weapons you carry and trinkets you have are lit up (with a count for stacked trinkets).
+  - **After dying**: TEST AGAIN starts a new test run back at the set-up screen with everything you picked: weapons, modifiers, trinkets, items, extra hearts and gold.
+  - **THE GOD (FROM ORNIN'S HALL)** in the BOSSES tab drops you into Ornin's hall with Ornin beaten and the God-Diamond free, as if every digger had theirs. Touch it to test the whole ascent and the fight. Test runs never count towards your real diamonds or God wins.
+  - **Bug fixed**: the click that opened the set-up screen could land on a boss button underneath (usually Ignis) and drop you straight into that fight. It no longer counts, and a test boss pick never carries over into another run.
 
 ## Where to tune things
 
@@ -525,7 +621,10 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 | Pixel art | `Core/Art.cs` (character maps) |
 | Sounds | `Core/Sfx.cs` |
 | Camera zoom | `Systems/CameraRig.cs` (`Size`) |
-| Boss HP, attacks, arena depths | `Gameplay/Bosses.cs` |
+| Boss HP, attacks, arena depths | `Gameplay/Bosses.cs` (second bosses in `Gameplay/BossesAlt.cs`, dragons in `Gameplay/Dragons.cs`) |
+| Elite odds and strength | `Entities/Enemies.cs` (`Setup`, `MakeElite`) |
+| New creatures, mimics | `Entities/Creatures.cs`, spawns in `Game.cs` (`SpawnElemental`) |
+| The God above the clouds | `Gameplay/SkyGod.cs`; sky flight in `Entities/Player.cs` (`TickSky`) |
 | Music volume and fades | `Systems/Music.cs` (`volume`) |
 
 ## Code map

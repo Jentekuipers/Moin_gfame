@@ -8,8 +8,9 @@ namespace DigDeep
     // press or rebind, Q/E (or click) switch tabs, Esc goes back (and saves).
     public class OptionsMenu
     {
-        enum Tab { Audio, Video, Gameplay, Controls }
-        static readonly string[] TabNames = { "AUDIO", "VIDEO", "GAMEPLAY", "CONTROLS" };
+        enum Tab { Audio, Video, Gameplay, Controls, Gamepad }
+        static readonly string[] TabNames = { "AUDIO", "VIDEO", "GAMEPLAY", "KEYBOARD", "GAMEPAD" };
+        const int TabCount = 5;
 
         class Row
         {
@@ -20,12 +21,13 @@ namespace DigDeep
             public System.Func<float> get01;       // sliders
             public System.Action<float> set01;
             public Btn bind = Btn.COUNT;           // a controls row
+            public Btn padBind = Btn.COUNT;        // a gamepad row
             public bool dim;
         }
 
         Tab tab;
         int sel, bindSlot;
-        Btn rebinding = Btn.COUNT;
+        Btn rebinding = Btn.COUNT, padRebinding = Btn.COUNT;
         bool armed;                                 // the key that started a rebind must not be the key it binds
         float resetArmT, defaultsArmT;
         Game.State back;
@@ -39,7 +41,7 @@ namespace DigDeep
             openFrame = Time.frameCount;   // the click that opened the menu mustn't also press something in it
             sel = 0;
             tab = Tab.Audio;
-            rebinding = Btn.COUNT;
+            rebinding = Btn.COUNT; padRebinding = Btn.COUNT;
             Game.I.state = Game.State.Options;
         }
 
@@ -94,6 +96,22 @@ namespace DigDeep
                     foreach (var b in GameInput.Rebindable) rows.Add(new Row { label = GameInput.ActionName(b), bind = b });
                     rows.Add(new Row { label = "RESET CONTROLS", value = () => "", activate = () => { GameInput.DefaultBindings(); Game.I.sfx.Play("buy", 0.6f); } });
                     break;
+                case Tab.Gamepad:
+                    rows.Add(new Row { label = "LAYOUT", hint = GameInput.Presets[Mathf.Clamp(GameInput.PadPreset, 0, GameInput.Presets.Length - 1)].blurb,
+                        value = () => GameInput.MatchesPreset(GameInput.PadPreset) ? GameInput.Presets[GameInput.PadPreset].name : "CUSTOM",
+                        change = d =>
+                        {
+                            int n = GameInput.Presets.Length;
+                            GameInput.ApplyPreset(((GameInput.PadPreset + d) % n + n) % n);
+                        } });
+                    rows.Add(new Row { label = "SWAP STICKS (SOUTHPAW)", hint = "WALK WITH THE RIGHT STICK, AIM WITH THE LEFT", value = () => OnOff(GameInput.SwapSticks), change = d => GameInput.SwapSticks = !GameInput.SwapSticks });
+                    rows.Add(new Row { label = "LOOK / AIM", hint = "HOW FAR FROM YOU THE RETICLE SITS (DOUBLED WHILE HOLDING LOOK / AIM)",
+                        value = () => GameInput.AimRadius.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
+                        get01 = () => (GameInput.AimRadius - 2.5f) / 5.5f, set01 = v => GameInput.AimRadius = 2.5f + Mathf.Round(v * 11f) / 2f,
+                        change = d => GameInput.AimRadius = Mathf.Clamp(GameInput.AimRadius + d * 0.5f, 2.5f, 8f) });
+                    foreach (var b in GameInput.PadRebindable) rows.Add(new Row { label = PadArt.ShortAction(b), padBind = b });
+                    rows.Add(new Row { label = "RESET GAMEPAD", value = () => "", activate = () => { GameInput.DefaultPad(); Game.I.sfx.Play("buy", 0.6f); } });
+                    break;
             }
             rows.Add(new Row { label = defaultsArmT > 0f ? "SURE? PRESS AGAIN" : "RESET ALL SETTINGS", value = () => "", activate = () =>
             {
@@ -116,6 +134,18 @@ namespace DigDeep
             resetArmT -= dt; defaultsArmT -= dt;
             Build();
             var sfx = Game.I.sfx;
+            if (padRebinding != Btn.COUNT)
+            {
+                if (!armed) { armed = true; return; }
+                var pp = GameInput.PadPressedThisFrame();
+                if (GameInput.KeyPressedThisFrame() == "Escape" || pp == Pad.Start) { padRebinding = Btn.COUNT; sfx.Play("deny", 0.4f); return; }
+                if (pp == Pad.None) return;
+                GameInput.BindPad(padRebinding, bindSlot, pp == Pad.View ? Pad.None : pp);   // VIEW clears the slot
+                padRebinding = Btn.COUNT;
+                sfx.Play("buy", 0.6f, 1.3f);
+                Settings.Save();
+                return;
+            }
             if (rebinding != Btn.COUNT)
             {
                 if (!armed) { armed = true; return; }
@@ -137,8 +167,8 @@ namespace DigDeep
                 return;
             }
             if (GameInput.Pressed(Btn.Pause)) { Close(); return; }
-            if (GameInput.Pressed(Btn.Swap)) SetTab(((int)tab + 3) % 4);
-            if (GameInput.Pressed(Btn.Interact)) SetTab(((int)tab + 1) % 4);
+            if (GameInput.Pressed(Btn.Swap) || GameInput.PadPressed(Pad.LB)) SetTab(((int)tab + TabCount - 1) % TabCount);
+            if (GameInput.Pressed(Btn.Interact) || GameInput.PadPressed(Pad.RB)) SetTab(((int)tab + 1) % TabCount);
             if (GameInput.Pressed(Btn.Up)) { sel = (sel + rows.Count - 1) % rows.Count; sfx.Play("swing", 0.4f, 1.4f); }
             if (GameInput.Pressed(Btn.Down)) { sel = (sel + 1) % rows.Count; sfx.Play("swing", 0.4f, 1.4f); }
             sel = Mathf.Clamp(sel, 0, rows.Count - 1);
@@ -148,6 +178,12 @@ namespace DigDeep
             {
                 if (dir != 0) { bindSlot = dir < 0 ? 0 : 1; sfx.Play("swing", 0.3f, 1.6f); }
                 if (GameInput.Pressed(Btn.Jump)) StartRebind(r.bind, bindSlot);
+                return;
+            }
+            if (r.padBind != Btn.COUNT)
+            {
+                if (dir != 0) { bindSlot = Mathf.Clamp(bindSlot + dir, 0, 2); sfx.Play("swing", 0.3f, 1.6f); }
+                if (GameInput.Pressed(Btn.Jump)) StartPadRebind(r.padBind, bindSlot);
                 return;
             }
             if (dir != 0 && r.change != null) { r.change(dir); Settings.Apply(false); sfx.Play("blip", 0.4f, 1.2f); }
@@ -161,8 +197,14 @@ namespace DigDeep
         void SetTab(int t)
         {
             if ((int)tab == t) return;
-            tab = (Tab)t; sel = 0; rebinding = Btn.COUNT;
+            tab = (Tab)t; sel = 0; rebinding = Btn.COUNT; padRebinding = Btn.COUNT;
             Game.I.sfx.Play("swing", 0.5f, 1.1f);
+        }
+
+        void StartPadRebind(Btn b, int slot)
+        {
+            padRebinding = b; bindSlot = slot; armed = false;
+            Game.I.sfx.Play("blip", 0.5f, 0.9f);
         }
 
         void StartRebind(Btn b, int slot)
@@ -192,7 +234,8 @@ namespace DigDeep
             bool click = !fresh && GameInput.MouseClicked(), held = !fresh && GameInput.MouseHeld();
             var gold = new Color(1f, 0.82f, 0.3f);
 
-            float pw = Mathf.Min(W - 20f * S, 300f * S), ph = Mathf.Min(H - 16f * S, 230f * S);
+            bool padTab = tab == Tab.Gamepad;
+            float pw = Mathf.Min(W - 20f * S, padTab ? 400f * S : 300f * S), ph = Mathf.Min(H - 16f * S, padTab ? 262f * S : 230f * S);
             float px = (W - pw) * 0.5f, py = (H - ph) * 0.5f;
             Box(0, 0, W, H, new Color(0f, 0f, 0f, 0.75f));
             Box(px, py, pw, ph, new Color(0.06f, 0.05f, 0.1f, 0.97f));
@@ -200,18 +243,28 @@ namespace DigDeep
             PixelFont.Draw(W * 0.5f, py + 6f * S, "OPTIONS", S * 2f, gold, 1);
 
             // tabs
-            float tw = (pw - 16f * S) / 4f, ty = py + 24f * S;
-            for (int i = 0; i < 4; i++)
+            float tw = (pw - 16f * S) / TabCount, ty = py + 24f * S;
+            for (int i = 0; i < TabCount; i++)
             {
                 float tx = px + 8f * S + i * tw;
                 var rect = new Rect(tx, ty, tw - 2f * S, 12f * S);
-                bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT;
+                bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
                 if (hov && click) SetTab(i);
                 bool on = (int)tab == i;
                 Box(rect.x, rect.y, rect.width, rect.height, on ? new Color(1f, 0.82f, 0.3f, 0.85f) : new Color(1f, 1f, 1f, hov ? 0.15f : 0.06f));
                 PixelFont.Draw(rect.center.x, ty + 3f * S, TabNames[i], sm, on ? Color.black : Color.white, 1);
             }
             Build();
+
+            // the controller picture with what every button does
+            if (padTab)
+            {
+                Pad hot = Pad.None;
+                if (sel >= 0 && sel < rows.Count && rows[sel].padBind != Btn.COUNT) hot = GameInput.padBinds[(int)rows[sel].padBind, Mathf.Clamp(bindSlot, 0, 2)];
+                PadArt.Draw(new Rect(px + 6f * S, ty + 16f * S, pw - 12f * S, 74f * S), S, sm, hot);
+                PixelFont.Draw(W * 0.5f, ty + 92f * S, GameInput.PadStatus, Mathf.Max(1f, sm - 1f), GameInput.PadConnected ? new Color(0.5f, 1f, 0.5f) : new Color(1f, 0.5f, 0.4f), 1);
+                ty += 82f * S;
+            }
 
             // rows
             float rowH = 12f * S, top = ty + 18f * S, lx = px + 10f * S, vx = px + pw * 0.55f, vw = pw * 0.45f - 10f * S;
@@ -223,7 +276,7 @@ namespace DigDeep
                 var r = rows[i];
                 float y = top + (i - first) * rowH;
                 var rect = new Rect(px + 6f * S, y - 2f * S, pw - 12f * S, rowH - S);
-                bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT;
+                bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
                 if (hov && (click || (Vector2)mouse != lastMouse)) sel = i;
                 bool on = i == sel;
                 if (on) Box(rect.x, rect.y, rect.width, rect.height, new Color(1f, 1f, 1f, 0.08f));
@@ -244,6 +297,24 @@ namespace DigDeep
                         string k = waiting ? "PRESS A KEY" : GameInput.KeyLabel(GameInput.binds[(int)r.bind, s]);
                         PixelFont.Draw(cell.center.x, y, k, sm, waiting ? Color.black : Color.white, 1);
                         if (chov && click) StartRebind(r.bind, s);
+                    }
+                    continue;
+                }
+                if (r.padBind != Btn.COUNT)
+                {
+                    // three gamepad cells per action
+                    for (int s = 0; s < 3; s++)
+                    {
+                        float cx = vx + s * (vw / 3f), cw = vw / 3f - 3f * S;
+                        var cell = new Rect(cx, y - S, cw, rowH - 3f * S);
+                        bool chov = cell.Contains(mouse) && padRebinding == Btn.COUNT;
+                        bool waiting = padRebinding == r.padBind && bindSlot == s;
+                        var pb = GameInput.padBinds[(int)r.padBind, s];
+                        Color bcol = pb == Pad.None ? new Color(1f, 1f, 1f, chov || (on && bindSlot == s) ? 0.2f : 0.07f) : PadArt.ButtonColor(pb) * new Color(1f, 1f, 1f, chov || (on && bindSlot == s) ? 0.55f : 0.3f);
+                        Box(cell.x, cell.y, cell.width, cell.height, waiting ? new Color(1f, 0.82f, 0.3f, 0.8f) : bcol);
+                        string k = waiting ? "PRESS..." : GameInput.PadLabel(pb);
+                        PixelFont.Draw(cell.center.x, y, k, sm, waiting ? Color.black : Color.white, 1);
+                        if (chov && click) StartPadRebind(r.padBind, s);
                     }
                     continue;
                 }
@@ -275,12 +346,14 @@ namespace DigDeep
             lastMouse = mouse;
 
             // footer
-            string foot = rebinding != Btn.COUNT ? "PRESS A KEY TO BIND    BACKSPACE CLEARS    ESC CANCELS"
+            string foot = padRebinding != Btn.COUNT ? "PRESS A GAMEPAD BUTTON    VIEW CLEARS    MENU CANCELS"
+                : GameInput.UsingStick ? "D-PAD PICK    LEFT/RIGHT CHANGE    A SELECT    LB/RB TABS    B BACK"
+                : rebinding != Btn.COUNT ? "PRESS A KEY TO BIND    BACKSPACE CLEARS    ESC CANCELS"
                 : tab == Tab.Controls ? "W/S PICK    A/D KEY 1 OR 2    SPACE OR CLICK TO REBIND    Q/E TABS    ESC BACK"
                 : "W/S PICK    A/D CHANGE    SPACE OR CLICK    Q/E TABS    ESC BACK";
             if (hint != null) PixelFont.Draw(W * 0.5f, py + ph - 20f * S, hint, sm, new Color(0.6f, 0.6f, 0.65f), 1);
-            if (tab == Tab.Controls && rebinding == Btn.COUNT)
-                PixelFont.Draw(W * 0.5f, py + ph - 20f * S, "GAMEPAD: L-STICK MOVE  R-STICK AIM  A JUMP  RT/X SHOOT  LT/Y SPECIAL  B ITEM  RB SWAP  LB CYCLE  D-UP INTERACT  START PAUSE", Mathf.Max(1f, sm - 1f), new Color(0.6f, 0.6f, 0.65f), 1);
+            if (tab == Tab.Controls && rebinding == Btn.COUNT && hint == null)
+                PixelFont.Draw(W * 0.5f, py + ph - 20f * S, "GAMEPAD BUTTONS ARE ON THE GAMEPAD TAB", sm, new Color(0.6f, 0.6f, 0.65f), 1);
             PixelFont.Draw(W * 0.5f, py + ph - 11f * S, foot, Mathf.Max(1f, sm - 1f), new Color(0.75f, 0.75f, 0.8f), 1);
         }
 

@@ -18,6 +18,7 @@ namespace DigDeep
         protected int depth;
 
         public bool Intangible => intangible;
+        protected virtual bool Harmless => false;   // touching it doesn't hurt (little fish, a fish flopping on land)
         protected bool fireLike, waterLike;   // water kills fire creatures outright, lava kills water creatures (and everything not made of fire)
         float breath = 6f, chokeT;
         protected bool InWater => Wd.FluidAtPoint(pos) == Fluids.Water;
@@ -42,9 +43,18 @@ namespace DigDeep
         protected Entity target;
         float retargetT;
 
+        // ELITES: now and then a creature born with the world is a bigger, meaner, glowing one. It carries an item.
+        public static bool GenSpawning;   // set while a chunk is being populated
+        public bool elite;
+        bool elitePending;
+        float novaT = 3f;
+        protected virtual bool CanBeElite => !(this is Boss) && !(this is WormSegment) && !Harmless;
+        protected virtual void OnTouch(Player p) { }   // after a touch hurts you (bee stings, burning slugs...)
+
         protected void Setup(string name, string key, int baseHp, int depth)
         {
             this.depth = depth;
+            if (GenSpawning && depth > 20 && Random.value < 0.012f) elitePending = true;
             maxHp = hp = Mathf.Max(1f, Mathf.Round(baseHp * (1f + depth / 110f) * 2f) / 2f);
             dmg = ContactDmg(depth);
             frames = Art.Enemy[key];
@@ -64,6 +74,7 @@ namespace DigDeep
             if (dead || hurtCd > 0f || intangible) return false;
             hurtCd = 0.12f;
             hp -= d;
+            if (TestMode.On && TestMode.Numbers && !(this is WormSegment)) TestMode.Number(pos + Vector2.up * half.y, d);
             flash = 0.08f;   // flat white for a frame or two
             vel += knock * 1.4f;   // hits shove enemies back hard (Super Crate Box)
             if (knock.sqrMagnitude > 0.01f) lastKnock = knock;
@@ -278,7 +289,71 @@ namespace DigDeep
             G.cam.Kick(dir * 0.18f);
             var ps = G.player.s;
             G.SpawnGold(pos, gold * ps.killGoldMul + ps.killGoldBonus);
+            if (elite)
+            {
+                // an elite carries something found at this depth
+                var d = DB.RollTrinket(Mathf.Max(0, depth), G.player, G.rng) ?? DB.RollRare(Mathf.Max(0, depth), G.player, G.rng);
+                if (d != null) G.Spawn(new LootPickup(pos, d, 0.6f, true));
+                G.sfx.Play("chest", 0.8f, 1.1f);
+                G.fx.Ring(pos, 2f, EliteColor);
+            }
             G.OnEnemyKilled(this);
+        }
+
+        // ---------------------------------------------------------------- elites
+
+        public void MakeEliteSoon() => elitePending = true;   // (test mode)
+
+        void MakeElite()
+        {
+            elite = true;
+            hp *= 6f; maxHp *= 6f;
+            dmg = dmg * 3 / 2;
+            gold = Mathf.Max(10, gold * 5);
+            novaT = 2.5f + Random.value * 2f;
+        }
+
+        // the element of an elite comes from where it lives
+        int EliteElem => Biomes.Index(Mathf.Max(0, depth));
+        public Color EliteColor
+        {
+            get
+            {
+                switch (EliteElem)
+                {
+                    case Biomes.Jungle: case Biomes.Fungal: return new Color(0.55f, 1f, 0.35f);   // poison
+                    case Biomes.Crystal: return new Color(0.6f, 0.9f, 1f);                       // frost
+                    case Biomes.Storm: return new Color(1f, 0.95f, 0.45f);                       // lightning
+                    case Biomes.Magma: return new Color(1f, 0.5f, 0.2f);                         // fire
+                    case Biomes.Kingdom: return new Color(1f, 0.85f, 0.4f);                      // gold
+                    default: return new Color(1f, 0.75f, 0.35f);                                 // stone
+                }
+            }
+        }
+
+        // now and then an elite lets loose a ring of its element
+        void EliteTick(float dt)
+        {
+            if (Random.value < 0.2f) G.fx.Burst(pos + Random.insideUnitCircle * half.x, 1, EliteColor, 1.2f, 0.5f, -2f, 1f, false);
+            if (!HasTarget || (TPos - pos).sqrMagnitude > 64f || intangible) return;
+            novaT -= dt;
+            if (novaT > 0f) return;
+            novaT = 4f + Random.value * 2f;
+            int n = 8;
+            float off = Random.value * 45f;
+            int e = EliteElem;
+            string spr = e == Biomes.Magma ? "b_fire" : e == Biomes.Storm ? "b_zap" : (e == Biomes.Jungle || e == Biomes.Fungal) ? "b_spit" : "b_enemy";
+            for (int i = 0; i < n; i++)
+            {
+                float a = (off + i * 360f / n) * Mathf.Deg2Rad;
+                var b = new Bullet(pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 5f, Team.Beast, EnemyShotDamage, dmg * 2 / 3, spr, EliteColor);
+                if (e == Biomes.Jungle || e == Biomes.Fungal) b.poison = true;
+                if (e == Biomes.Storm) b.zaps = true;
+                if (e == Biomes.Crystal) b.chills = true;
+                G.Spawn(b);
+            }
+            G.sfx.Play("shoot", 0.6f, 0.6f);
+            G.fx.Ring(pos, 1.5f, EliteColor);
         }
 
         public override void Kill()
@@ -378,8 +453,10 @@ namespace DigDeep
         protected void BaseTick(float dt)
         {
             animT += dt; flash -= dt; hurtCd -= dt; contactCd -= dt; frostCd -= dt; shockCd -= dt;
+            if (elitePending) { elitePending = false; if (CanBeElite) MakeElite(); }
             TickBurning(dt);
             if (dead) return;
+            if (elite) EliteTick(dt);
             if (poisonT > 0f)
             {
                 poisonT -= dt;
@@ -388,13 +465,14 @@ namespace DigDeep
                 if (hp <= 0f) { Die(); return; }
             }
             var p = G.player;
-            if (p.mode != Player.Mode.Dead && !intangible && contactCd <= 0f && U.Overlap(pos, half * 0.85f, p.pos, Player.Half))
+            if (p.mode != Player.Mode.Dead && !intangible && !Harmless && contactCd <= 0f && U.Overlap(pos, half * 0.85f, p.pos, Player.Half))
             {
                 p.Hurt(dmg, pos);
                 contactCd = 0.5f;
+                OnTouch(p);
             }
             // beasts maul raiders that get too close
-            if (team == Team.Beast && !intangible && contactCd <= 0f)
+            if (team == Team.Beast && !intangible && !Harmless && contactCd <= 0f)
                 foreach (var e in G.ents)
                 {
                     if (e.dead || !(e is Enemy o) || o.team != Team.Bandit) continue;
@@ -446,12 +524,14 @@ namespace DigDeep
                 if (burnT > 0f) c = Color.Lerp(new Color(1f, 0.7f, 0.4f), new Color(1f, 0.4f, 0.15f), 0.5f + 0.5f * Mathf.Sin(Time.time * 30f));
                 if (G.player.huntMark == this) c = Color.Lerp(c, new Color(1f, 0.9f, 0.2f), 0.5f + 0.5f * Mathf.Sin(Time.time * 10f));
                 if (G.InReveal(pos)) c = Color.Lerp(c, new Color(1f, 0.25f, 0.25f), (0.45f + 0.15f * Mathf.Sin(Time.time * 6f)) * G.RevealFade);
+                if (elite) c = Color.Lerp(c, EliteColor, 0.35f + 0.15f * Mathf.Sin(Time.time * 5f));
                 sr.color = c;
             }
             WeakSpot();
             Place(yOff);
             // a hit makes it pop bigger for a frame or two
-            if (!(this is Boss)) { float k = 1f + Mathf.Max(0f, flash) * 3f; go.transform.localScale = new Vector3(k, k, 1f); }
+            if (!(this is Boss)) { float k = (1f + Mathf.Max(0f, flash) * 3f) * (elite ? 1.4f : 1f); go.transform.localScale = new Vector3(k, k, 1f); }
+            if (elite) G.hud.Label(pos + Vector2.up * (half.y * 1.6f + 0.5f), "ELITE", EliteColor);
         }
 
         // SHARPSHOOTER: a red dot on the weak spot of everything
@@ -475,6 +555,7 @@ namespace DigDeep
 
         public override void AddLight(Lighting l)
         {
+            if (elite) { l.Add(pos, 3f, 0.8f); return; }
             if (burnT > 0f) { l.Add(pos, 3.2f, 0.85f); return; }   // burning things light up the cave
             if (G.player.huntMark == this) l.Add(pos, 2.6f, 0.85f);
             // eyes glow faintly so you can spot things in the dark (much more with the OWL SIGHT combo)

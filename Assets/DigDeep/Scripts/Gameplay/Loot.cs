@@ -143,7 +143,7 @@ namespace DigDeep
         public static string Extra(Def d)
         {
             if (d is SkillDef k && k.st.Any) return k.st.ToString();
-            if (d is SpecialDef s) return "SHIFT   RECHARGES IN " + s.cd.ToString("0.#", CultureInfo.InvariantCulture) + "S   MAX USES " + s.uses;
+            if (d is SpecialDef s) return "SPECIAL   RECHARGES IN " + s.cd.ToString("0.#", CultureInfo.InvariantCulture) + "S   MAX USES " + s.uses;
             if (d is AttackDef a) return Armoury.Stats(a);
             if (d is ModDef) return "APPLIES TO THE WEAPON IN YOUR HANDS";
             return null;
@@ -263,6 +263,11 @@ namespace DigDeep
             Tr("worldeater", "WORLD EATER", "", "skull", purple, Rarity.Relic, 1, new St { mining = 3, dmg = 1f }, null);
             Tr("crown", "MINER'S CROWN", "", "crown", gold, Rarity.Relic, 1, new St { hp = 60, dmg = 0.5f, swing = 0.2f, speed = 0.1f, mining = 1, jump = 0.1f, luck = 1f }, null);
             Tr("bottle", "LIGHTNING BOTTLE", "+1 MAX CHARGE, SPECIALS CHARGE 2X FASTER", "potion", cyan, Rarity.Relic, 1, default, p => { p.s.extraCharges++; p.s.chargeMul *= 0.5f; });
+            // the dragons' hearts: only ever dropped by the dragons themselves
+            Tr("heart_unda", "HEART OF UNDA", "BREATHE AND SWIM IN WATER. SHOTS FREEZE", "heart", U.C(90, 170, 255), Rarity.Relic, 1, new St { hp = 100 },
+                p => { p.s.gills = true; p.s.flippers = true; p.s.shotFrost = true; }).owner = "_boss";
+            Tr("heart_ignis", "HEART OF IGNIS", "FIRE AND LAVA CAN'T HURT YOU. SHOTS BURN", "heart", U.C(255, 110, 40), Rarity.Relic, 1, new St { hp = 100 },
+                p => { p.s.fireImmune = true; p.s.lavaImmune = true; p.s.shotFire = true; }).owner = "_boss";
 
 
             // ---------- run-changers (Isaac-style): every shot, your stats, how you move ----------

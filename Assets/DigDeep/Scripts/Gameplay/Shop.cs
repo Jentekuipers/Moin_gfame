@@ -132,10 +132,10 @@ namespace DigDeep
             G.hud.Label(pos + Vector2.up * 0.75f, price + "G", pl.s.gold >= price ? (premium ? new Color(1f, 0.95f, 0.55f) : new Color(1f, 0.85f, 0.3f)) : new Color(0.7f, 0.4f, 0.35f));
             if (pl.mode == Player.Mode.Dead) return;
             bool near = Mathf.Abs(pl.pos.x - pos.x) < 0.8f && Mathf.Abs(pl.pos.y - (baseY + Player.Half.y)) < 1.2f;
-            if (!near && G.MouseOver(pos, 0.7f)) G.hud.ItemLabel(pos + Vector2.up * 1.4f, def, "WALK UP, PRESS E TO BUY", pl, true);
+            if (!near && G.MouseOver(pos, 0.7f)) G.hud.ItemLabel(pos + Vector2.up * 1.4f, def, "WALK UP, PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, true);
             if (near)
             {
-                G.hud.ItemLabel(pos + Vector2.up * 1.4f, def, "PRESS E TO BUY", pl, G.MouseOver(pos, 0.7f));
+                G.hud.ItemLabel(pos + Vector2.up * 1.4f, def, "PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, G.MouseOver(pos, 0.7f));
                 if (GameInput.Take(Btn.Interact))
                 {
                     if (pl.s.gold < price)

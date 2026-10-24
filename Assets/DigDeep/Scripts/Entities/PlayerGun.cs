@@ -393,7 +393,7 @@ namespace DigDeep
             bool hc = w.Has(Mod.HighCaliber);
             bool crit = Random.value < CritChance + (w.Has(Mod.Crit) ? 0.2f : 0f) || (echo && Combo("echochamber") && Random.value < 0.5f);
             float dmg = Dmg(d.dmg) * (crit ? s.critMul : 1f) * (hc ? 2.5f : 1f) * s.meleeMul * MeleePower;   // BRASS KNUCKLES, GIANT'S GAUNTLET...
-            float reach = d.reach * s.meleeReach;
+            float reach = d.reach * s.meleeReach * MeleeReachMul + 0.2f;   // a longer, more forgiving swing
             int power = Mathf.Max(1, s.digPower) * d.mine * (w.Has(Mod.WallBreaker) ? 3 : 1) * (hc ? 2 : 1);
 
             var cells = new HashSet<Vector2Int>();
@@ -424,10 +424,11 @@ namespace DigDeep
                 foreach (var e in G.ents)
                 {
                     if (e.dead || !(e is Enemy en) || hitSet.Contains(en) || en.Intangible) continue;
-                    Vector2 v = en.pos - c0;
-                    float dist = v.magnitude - Mathf.Max(en.half.x, en.half.y) * 0.7f;
-                    if (dist > reach + 0.15f) continue;
-                    if (v.magnitude > 0.7f && Vector2.Angle(dir, v) > d.arc * 0.5f + 15f) continue;
+                    // measured to the nearest point of the foe's body, not its centre, so big things (bosses) are easy to hit
+                    Vector2 v = NearestPoint(en, c0) - c0;
+                    float dist = v.magnitude;
+                    if (dist > reach + 0.3f) continue;
+                    if (dist > 0.9f && Vector2.Angle(dir, v) > d.arc * 0.5f + 25f) continue;
                     hitSet.Add(en);
                     float dd = dmg * Backstab(en);
                     bool weak = w.Has(Mod.Sharpshooter) && v.magnitude < reach * 0.55f;
@@ -486,6 +487,11 @@ namespace DigDeep
 
         // melee hits hard: getting up close is the risk, this is the reward
         public const float MeleePower = 1.6f;
+        public const float MeleeReachMul = 1.25f;
+
+        // the point of a foe's body closest to p
+        static Vector2 NearestPoint(Enemy en, Vector2 p) =>
+            new Vector2(Mathf.Clamp(p.x, en.pos.x - en.half.x, en.pos.x + en.half.x), Mathf.Clamp(p.y, en.pos.y - en.half.y, en.pos.y + en.half.y));
 
         // shot items that set things alight, poison or freeze work on melee hits too
         void MeleeStatus(Enemy en)
@@ -541,10 +547,10 @@ namespace DigDeep
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en) || en.Intangible) continue;
-                Vector2 v = en.pos - c0;
-                float dist = v.magnitude - Mathf.Max(en.half.x, en.half.y) * 0.7f;
-                if (dist > reach + 0.15f) continue;
-                if (v.magnitude > 0.7f && Vector2.Angle(dir, v) > arc * 0.5f + 15f) continue;
+                Vector2 v = NearestPoint(en, c0) - c0;
+                float dist = v.magnitude;
+                if (dist > reach + 0.3f) continue;
+                if (dist > 0.9f && Vector2.Angle(dir, v) > arc * 0.5f + 25f) continue;
                 float dd = dmg * Backstab(en);
                 if (en.TakeShot(dd, dir * d.knock * 0.6f * s.knockMul + Vector2.up * 1.5f))
                 {
@@ -557,7 +563,7 @@ namespace DigDeep
             }
             if (kind == 1 && worms == 0 && FriendlyWorm.Alive < 24 && Random.value < 0.4f)
                 G.Spawn(new FriendlyWorm(this, weapon, c0 + dir * reach * 0.7f, dir, dmg * 0.6f));
-            float baseReach = Mathf.Max(0.3f, d.reach * s.meleeReach);
+            float baseReach = Mathf.Max(0.3f, d.reach * s.meleeReach * MeleeReachMul + 0.2f);
             G.Spawn(new Slash(this, dir, d, echo, swingSide, col, Mathf.Max(1.05f, reach / baseReach)));
             if (kind == 0)
                 for (int i = 1; i <= 7; i++) G.fx.Burst(c0 + dir * reach * i / 7f, 1, col, 0.6f, 0.15f, 0f);   // the laser's beam edge

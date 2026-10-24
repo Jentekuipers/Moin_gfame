@@ -109,7 +109,7 @@ namespace DigDeep
             if (nearL)
             {
                 bool needsUp = def.kind == Kind.Attack || def.kind == Kind.Special;
-                G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, needsUp ? "PRESS E TO SWAP" : null, pl, G.MouseOver(pos, 0.6f));
+                G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, needsUp ? "PRESS " + GameInput.Prompt(Btn.Interact) + " TO SWAP" : null, pl, G.MouseOver(pos, 0.6f));
                 if (noPick <= 0f && (!needsUp || GameInput.Take(Btn.Interact)))
                 {
                     if (pl.Grant(def)) { Kill(); return; }
@@ -179,7 +179,7 @@ namespace DigDeep
             if (nearW)
             {
                 bool free = pl.slots[0] == null || pl.slots[1] == null;
-                G.hud.WeaponLabel(pos + Vector2.up * 0.9f, w, free ? "PRESS E TO TAKE" : "PRESS E TO SWAP", pl, G.MouseOver(pos, 0.6f));
+                G.hud.WeaponLabel(pos + Vector2.up * 0.9f, w, free ? "PRESS " + GameInput.Prompt(Btn.Interact) + " TO TAKE" : "PRESS " + GameInput.Prompt(Btn.Interact) + " TO SWAP", pl, G.MouseOver(pos, 0.6f));
                 if (noPick <= 0f && GameInput.Take(Btn.Interact)) { pl.PickUpWeapon(w); Kill(); return; }
             }
             var c = w.Color;

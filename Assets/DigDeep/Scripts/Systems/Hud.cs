@@ -162,7 +162,7 @@ namespace DigDeep
                 lines.Add((Curses.Name(w.curse) + ": " + Curses.Desc[(int)w.curse], Curses.Col(w.curse)));
                 lines.Add(("LIFTS AFTER " + (Curses.KillsToLift - w.curseKills) + " MORE KILLS", Curses.Col(w.curse)));
             }
-            lines.Add((current ? "IN HAND" : "Q / WHEEL TO SWAP TO IT", new Color(0.6f, 0.6f, 0.6f)));
+            lines.Add((current ? "IN HAND" : (GameInput.UsingStick ? GameInput.Prompt(Btn.Swap) : GameInput.Prompt(Btn.Swap) + " / WHEEL") + " TO SWAP TO IT", new Color(0.6f, 0.6f, 0.6f)));
             Tip(w.def.name, w.Color, lines.ToArray());
         }
 
@@ -349,9 +349,13 @@ namespace DigDeep
             DrawStats(p, pad, y, S, sm);
 
             // ----- depth
-            PixelFont.Draw(Screen.width * 0.5f, pad, "DEPTH: -" + p.Depth, S, new Color(0.85f, 0.7f, 0.35f), 1);
-            var bio = Biomes.All[Biomes.Index(p.Depth)];
-            PixelFont.Draw(Screen.width * 0.5f, pad + 10f * S, bio.name, sm, (Color)bio.rim, 1);
+            if (World.SkyMode) PixelFont.Draw(Screen.width * 0.5f, pad, "ABOVE THE CLOUDS", S, new Color(1f, 0.85f, 0.4f), 1);
+            else
+            {
+                PixelFont.Draw(Screen.width * 0.5f, pad, "DEPTH: -" + p.Depth, S, new Color(0.85f, 0.7f, 0.35f), 1);
+                var bio = Biomes.All[Biomes.Index(p.Depth)];
+                PixelFont.Draw(Screen.width * 0.5f, pad + 10f * S, bio.name, sm, (Color)bio.rim, 1);
+            }
 
             // ----- best
             PixelFont.Draw(Screen.width - pad, pad, "BEST -" + g.best, sm, new Color(0.7f, 0.7f, 0.75f), 2);
@@ -364,7 +368,7 @@ namespace DigDeep
             float by = Screen.height - pad - bs - 9f * S;
             DrawWeapons(p, pad, by, bs, S, sm);
             float sx = pad + bs * 1.6f + 4f * S + bs * 0.9f + 6f * S;
-            Slot(sx, by, bs, S, sm, p.special != null ? p.special.icon : null, "SHIFT", null, p.charges > 0 ? 1f : 0.35f, new Color(0.45f, 0.85f, 1f));
+            Slot(sx, by, bs, S, sm, p.special != null ? p.special.icon : null, GameInput.Prompt(Btn.Special), null, p.charges > 0 ? 1f : 0.35f, new Color(0.45f, 0.85f, 1f));
             if (spFlash > 0f) Box(sx - S, by - S, bs + 2f * S, bs + 2f * S, new Color(0.6f, 0.9f, 1f, spFlash * 0.7f));   // flashes when a charge comes back
             if (p.special != null && Hover(sx, by, bs + 6f * S, bs))
             {
@@ -375,15 +379,16 @@ namespace DigDeep
             if (p.special != null) ChargeBar(p, barX, by, 4f * S, bs, S, sm, sx, bs);
             float ix = barX + 4f * S + 4f * S;
             ItemStack st = p.items.Count > 0 ? p.items[Mathf.Clamp(p.sel, 0, p.items.Count - 1)] : null;
-            Slot(ix, by, bs, S, sm, st != null ? st.def.icon : null, "C", st != null ? "x" + st.count : null, 1f, new Color(0.55f, 1f, 0.55f));
+            Slot(ix, by, bs, S, sm, st != null ? st.def.icon : null, GameInput.Prompt(Btn.Item), st != null ? "x" + st.count : null, 1f, new Color(0.55f, 1f, 0.55f));
             if (st != null && Hover(ix, by, bs, bs))
             {
                 TipDef(st.def, p);
                 tipLines.Add(("CARRYING " + st.count + "   C TO USE, V TO CYCLE", TipStat));
             }
             PixelFont.Draw(ix + bs + 3f * S, by + bs - 7f * sm, p.ItemTotal + "/" + p.s.itemCap + (p.items.Count > 1 ? "  V:SWAP" : ""), sm, new Color(0.7f, 0.7f, 0.7f));
-            string names = (p.special != null ? p.special.name : "") + (st != null ? "  /  " + st.def.name : "");
-            PixelFont.Draw(sx, by - 12f * S, names, sm, new Color(0.45f, 0.85f, 1f));
+            float small = Mathf.Max(1f, sm - (sm > 2f ? 1f : 0f));
+            if (p.special != null) PixelFont.Draw(sx, by - 10f * S, p.special.name, FitSize(p.special.name, small, ix - sx - 4f * S), new Color(0.45f, 0.85f, 1f));
+            if (st != null) PixelFont.Draw(ix, by - 10f * S, st.def.name, FitSize(st.def.name, small, Screen.width * 0.5f - ix - 4f * S), new Color(0.55f, 1f, 0.55f));
             if (p.CurrentBuff != Player.Buff.None)
             {
                 string b = p.CurrentBuff == Player.Buff.Speed ? "HUNTED: +SPEED" : p.CurrentBuff == Player.Buff.Damage ? "HUNTED: +DAMAGE" : "HUNTED: +FIRE RATE";
@@ -391,6 +396,7 @@ namespace DigDeep
             }
 
             if (g.boss != null && !g.boss.dead) DrawBossBar(g.boss, S, sm, pad);
+            if (g.boss2 != null && !g.boss2.dead) DrawBossBar(g.boss2, S, sm, pad, 16f * S, true);
 
             // ----- weapon name slam
             if (popT > 0f && !string.IsNullOrEmpty(popName))
@@ -414,8 +420,9 @@ namespace DigDeep
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height * 0.22f, cur.title, FitSize(cur.title, S * 2f, Screen.width * 0.9f), c, 1);
                 DrawWrapped(Screen.width * 0.5f, Screen.height * 0.22f + 18f * S, cur.sub, S, new Color(1f, 1f, 1f, a), Screen.width * 0.6f);
             }
-            else if (biomeT > 0f)
+            else if (biomeT > 0f && !World.SkyMode)
             {
+                var bio = Biomes.All[Biomes.Index(p.Depth)];
                 float a = Mathf.Clamp01(biomeT);
                 var c = (Color)bio.rim; c.a = a;
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height * 0.22f, bio.name, S * 2f, c, 1);
@@ -426,10 +433,16 @@ namespace DigDeep
             if (helpT > 0f && g.state == Game.State.Playing)
             {
                 var c = new Color(1f, 1f, 1f, Mathf.Clamp01(helpT));
-                string h1 = "A/D MOVE   SPACE JUMP   MOUSE AIM   LEFT CLICK SHOOT", h2 = "SHIFT SPECIAL   R RELOAD   C ITEM   V CYCLE   Q SWAP";
+                // the help speaks the language of whatever you're holding: keys and mouse, or the pad's buttons
+                string P(Btn b) => GameInput.Prompt(b);
+                string h1 = GameInput.UsingStick
+                    ? (GameInput.SwapSticks ? "R-STICK MOVE   L-STICK AIM   " : "L-STICK MOVE   R-STICK AIM   ") + P(Btn.Jump) + " JUMP   " + P(Btn.Attack) + " SHOOT"
+                    : P(Btn.Left) + "/" + P(Btn.Right) + " MOVE   " + P(Btn.Jump) + " JUMP   MOUSE AIM   CLICK SHOOT";
+                string h2 = P(Btn.Special) + " SPECIAL   " + P(Btn.Reload) + " RELOAD   " + P(Btn.Item) + " ITEM   " + P(Btn.Cycle) + " CYCLE   " + P(Btn.Swap) + " SWAP"
+                    + (GameInput.UsingStick ? "   " + P(Btn.Zoom) + " LOOK FAR" : "");
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height - pad - 30f * sm, h1, FitSize(h1, sm, Screen.width * 0.9f), c, 1);
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height - pad - 20f * sm, h2, FitSize(h2, sm, Screen.width * 0.9f), c, 1);
-                PixelFont.Draw(Screen.width * 0.5f, Screen.height - pad - 10f * sm, "E BUY / TAKE   ESC PAUSE", sm, c, 1);
+                PixelFont.Draw(Screen.width * 0.5f, Screen.height - pad - 10f * sm, P(Btn.Interact) + " BUY / TAKE   " + (GameInput.UsingStick ? "MENU" : "ESC") + " PAUSE", sm, c, 1);
             }
 
             if (g.state == Game.State.Playing && p.mode != Player.Mode.Dead)
@@ -444,7 +457,7 @@ namespace DigDeep
 
             // ----- pause / game over
             if (g.state != Game.State.Paused) { QuitHovered = false; OptionsHovered = false; }
-            if (g.state != Game.State.Dead) ChangeHovered = false;
+            if (g.state != Game.State.Dead) { ChangeHovered = false; DeadQuitHovered = false; }
             if (g.state == Game.State.Paused) DrawPause(p, S, sm, pad);
             else if (g.state == Game.State.Dead)
             {
@@ -456,15 +469,34 @@ namespace DigDeep
                 PixelFont.Draw(Screen.width * 0.5f, cy + 41f * S, "GOLD: " + p.s.gold + "    KILLS: " + p.s.kills, S, new Color(1f, 0.85f, 0.3f, a), 1);
                 PixelFont.Draw(Screen.width * 0.5f, cy + 52f * S, "TRINKETS: " + p.skillOrder.Count + "    COMBOS: " + p.comboOrder.Count, S, new Color(0.75f, 0.55f, 1f, a), 1);
                 PixelFont.Draw(Screen.width * 0.5f, cy + 63f * S, "BEST: -" + g.best + (g.newBest ? "  NEW RECORD!" : ""), S, new Color(0.8f, 0.8f, 0.9f, a), 1);
+                bool test = TestMode.On;
                 if (g.deadT > 1f && ((int)(Time.unscaledTime * 2f)) % 2 == 0)
-                    PixelFont.Draw(Screen.width * 0.5f, cy + 81f * S, "SPACE OR CLICK: DIG AGAIN", S, Color.white, 1);
+                {
+                    string again = test ? (GameInput.UsingStick ? "A: TEST AGAIN, SAME GEAR" : "SPACE OR CLICK: TEST AGAIN, SAME GEAR")
+                                        : (GameInput.UsingStick ? "A: DIG AGAIN" : "SPACE OR CLICK: DIG AGAIN");
+                    PixelFont.Draw(Screen.width * 0.5f, cy + 81f * S, again, S, Color.white, 1);
+                }
                 if (g.deadT > 1f)
                 {
-                    string ch = "E: CHANGE DIGGER";
-                    float cbw = PixelFont.Width(ch, sm) + 10f * sm, cbx = Screen.width * 0.5f - cbw * 0.5f, cby = cy + 93f * S - 2f * sm;
-                    ChangeHovered = new Rect(cbx, cby, cbw, 11f * sm).Contains(Event.current.mousePosition);
-                    Box(cbx, cby, cbw, 11f * sm, ChangeHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
-                    PixelFont.Draw(Screen.width * 0.5f, cy + 93f * S, ch, sm, ChangeHovered ? Color.black : Color.white, 1);
+                    // buttons side by side, with room between them: CHANGE DIGGER (not in test runs) and QUIT
+                    var mouse = Event.current.mousePosition;
+                    string ch = (GameInput.UsingStick ? "X" : "E") + ": CHANGE DIGGER";
+                    string qt = (GameInput.UsingStick ? "START" : "ESC") + ": QUIT TO MENU";
+                    float bh = 11f * sm, gap = 10f * S, by2 = cy + 93f * S - 2f * sm;
+                    float cbw = test ? 0f : PixelFont.Width(ch, sm) + 10f * sm, qbw = PixelFont.Width(qt, sm) + 10f * sm;
+                    float total = cbw + qbw + (test ? 0f : gap);
+                    float bx2 = Screen.width * 0.5f - total * 0.5f;
+                    if (!test)
+                    {
+                        ChangeHovered = new Rect(bx2, by2, cbw, bh).Contains(mouse);
+                        Box(bx2, by2, cbw, bh, ChangeHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
+                        PixelFont.Draw(bx2 + cbw * 0.5f, by2 + 2f * sm, ch, sm, ChangeHovered ? Color.black : Color.white, 1);
+                        bx2 += cbw + gap;
+                    }
+                    else ChangeHovered = false;
+                    DeadQuitHovered = new Rect(bx2, by2, qbw, bh).Contains(mouse);
+                    Box(bx2, by2, qbw, bh, DeadQuitHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
+                    PixelFont.Draw(bx2 + qbw * 0.5f, by2 + 2f * sm, qt, sm, DeadQuitHovered ? Color.black : Color.white, 1);
                 }
             }
         }
@@ -513,6 +545,7 @@ namespace DigDeep
         // Pages when it doesn't all fit.
         public bool QuitHovered { get; private set; }
         public bool ChangeHovered { get; private set; }   // the death screen's CHANGE DIGGER button
+        public bool DeadQuitHovered { get; private set; } // the death screen's QUIT TO MENU button
         public bool OptionsHovered { get; private set; }
 
         void DrawPause(Player p, float S, float sm, float pad)
@@ -523,7 +556,7 @@ namespace DigDeep
 
             // options button, top left
             {
-                string label = "OPTIONS (E)";
+                string label = GameInput.UsingStick ? "OPTIONS (X)" : "OPTIONS (E)";
                 float bw = PixelFont.Width(label, sm) + 10f * sm, bh = 11f * sm;
                 float bx = pad * 2f, by = pad * 2f;
                 OptionsHovered = new Rect(bx, by, bw, bh).Contains(Event.current.mousePosition);
@@ -532,14 +565,14 @@ namespace DigDeep
             }
             // save & quit button, top right
             {
-                string label = "SAVE & QUIT (Q)";
+                string label = GameInput.UsingStick ? "SAVE & QUIT (Y)" : "SAVE & QUIT (Q)";
                 float bw = PixelFont.Width(label, sm) + 10f * sm, bh = 11f * sm;
                 float bx = Screen.width - pad * 2f - bw, by = pad * 2f;
                 QuitHovered = new Rect(bx, by, bw, bh).Contains(Event.current.mousePosition);
                 Box(bx, by, bw, bh, QuitHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
                 PixelFont.Draw(bx + bw * 0.5f, by + 2f * sm, label, sm, QuitHovered ? Color.black : Color.white, 1);
             }
-            PixelFont.Draw(Screen.width * 0.5f, pad * 2f + 26f * S, "ESC TO RESUME    HOVER FOR DETAILS", sm, new Color(0.8f, 0.8f, 0.8f), 1);
+            PixelFont.Draw(Screen.width * 0.5f, pad * 2f + 26f * S, GameInput.UsingStick ? "B TO RESUME    LEFT/RIGHT TURN PAGES" : "ESC TO RESUME    HOVER FOR DETAILS", sm, new Color(0.8f, 0.8f, 0.8f), 1);
 
             float top = pad * 2f + 42f * S;
             float bottom = Screen.height - pad - 14f * S;
@@ -577,7 +610,27 @@ namespace DigDeep
                 if (Hover(gx, y, isz, isz)) { TipDef(it.def, p); tipLines.Add(("CARRYING " + it.count, TipStat)); }
                 gx += isz + 3f * S;
             }
-            y += isz + 8f * S;
+            y += isz + 4f * S;
+            for (int i = 0; i < 2; i++)
+            {
+                var w = p.slots[i];
+                if (w == null) continue;
+                float wx = x;
+                PixelFont.Draw(wx, y, w.def.name, sm, w.Color);
+                wx += PixelFont.Width(w.def.name, sm) + 6f * sm;
+                foreach (var m in w.mods)
+                {
+                    string mn = Mods.Names[(int)m];
+                    float mw = PixelFont.Width(mn, sm);
+                    if (wx + mw + 12f * sm > x + colW) break;
+                    Box(wx - sm, y - 2f * sm, mw + 2f * sm, 11f * sm, new Color(Mods.Signature.r, Mods.Signature.g, Mods.Signature.b, 0.28f));
+                    PixelFont.Draw(wx, y, mn, sm, Mods.Ui);
+                    if (Hover(wx - sm, y - 2f * sm, mw + 2f * sm, 11f * sm)) Tip(mn, Mods.Signature, (Mods.Desc[(int)m], TipGrey));
+                    wx += mw + 6f * sm;
+                }
+                y += 12f * sm;
+            }
+            y += 4f * S;
 
             // ---- left: trinkets as an icon grid
             int n = p.skillOrder.Count;
@@ -786,7 +839,7 @@ namespace DigDeep
             var gold = new Color(1f, 0.82f, 0.3f);
 
             // top band
-            float bandH = 74f * S;
+            float bandH = 90f * S;
             Box(0, 0, W, bandH, new Color(0f, 0f, 0f, 0.78f));
             Box(0, bandH, W, S, new Color(gold.r, gold.g, gold.b, 0.6f));
             PixelFont.Draw(W * 0.5f, 6f * S, c.name + "  THE " + c.animal, S * 2f, gold, 1);
@@ -833,10 +886,54 @@ namespace DigDeep
                 }
                 if (camp.Hover >= 0 && camp.Hover != g.charIndex) NameOver(camp.Hover, new Color(0.85f, 0.85f, 0.9f));
             }
+            {
+                // how far along the road to the gods, top left: the diamonds every digger has found
+                int have = 0;
+                foreach (var ch in Chars.All) if (PlayerPrefs.GetInt("digdeep_won_" + ch.id, 0) == 1) have++;
+                bool all = have >= Chars.All.Count;
+                float u = Mathf.Max(1f, S - 1f);
+                WonGem(pad + 5.5f * u, pad, u, all, true);
+                string cnt = have + " / " + Chars.All.Count;
+                PixelFont.Draw(pad + 14f * u, pad + 1f * u, cnt, sm, all ? gold : new Color(0.7f, 0.9f, 1f));
+                if (Hover(pad, pad, 14f * u + PixelFont.Width(cnt, sm), 10f * u))
+                    Tip("GOD-DIAMONDS " + cnt, new Color(0.6f, 0.9f, 1f), (all ? "EVERY DIGGER HAS ONE. THE GODS AWAIT ABOVE THE CLOUDS" : "FIND THE GOD-DIAMOND WITH EVERY DIGGER", TipGrey));
 
-            string hint = "A / D OR CLICK: CHOOSE     CLICK AGAIN OR SPACE: START     ESC: BACK";
+                // this digger's achievements, under the loadout: the God-Diamond (greyed out until found)
+                bool mine = PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) == 1, beat = PlayerPrefs.GetInt("digdeep_godwon_" + c.id, 0) == 1;
+                float gy = cy + isz + 15f * S;
+                WonGem(W * 0.5f, gy, u, beat, mine);
+                if (Hover(W * 0.5f - 6f * u, gy, 12f * u, 10f * u))
+                    Tip("GOD-DIAMOND", new Color(0.6f, 0.9f, 1f), (beat ? "FOUND, AND THE GOD ABOVE THE CLOUDS BEATEN" : mine ? "FOUND" : "NOT FOUND YET", TipGrey));
+            }
+
+            string hint = GameInput.UsingStick ? "LEFT / RIGHT: CHOOSE     A: START     B: BACK" : "A / D OR CLICK: CHOOSE     CLICK AGAIN OR SPACE: START     ESC: BACK";
             PixelFont.Draw(W * 0.5f, H - pad - 10f * S, hint, FitSize(hint, sm, W * 0.94f), Color.white, 1);
             DrawTooltip(S, sm);
+        }
+
+        // An 11x9 pixel diamond with a tick in it, centred on x, top at y. Gold when the god has fallen too.
+        void WonGem(float x, float y, float u, bool god, bool found = true)
+        {
+            int[] hw = { 3, 4, 5, 5, 4, 3, 2, 1, 0 };
+            Color o = new Color(0.08f, 0.06f, 0.12f), hi = god ? new Color(1f, 0.95f, 0.7f) : new Color(0.85f, 0.98f, 1f), mid = god ? new Color(1f, 0.78f, 0.25f) : new Color(0.4f, 0.85f, 1f);
+            if (!found) { hi = new Color(0.4f, 0.4f, 0.45f); mid = new Color(0.25f, 0.25f, 0.3f); }
+            float x0 = Mathf.Round(x - 5.5f * u), y0 = Mathf.Round(y);
+            for (int r = 0; r < hw.Length; r++)
+                for (int col = 0; col < 11; col++)
+                {
+                    int dx = Mathf.Abs(col - 5);
+                    if (dx > hw[r]) continue;
+                    bool edge = dx == hw[r] || r == 0 || r == hw.Length - 1;
+                    Box(x0 + col * u, y0 + r * u, u, u, edge ? o : r <= 1 ? hi : mid);
+                }
+            if (!found) return;
+            // the tick
+            int[,] tick = { { 3, 4 }, { 4, 5 }, { 5, 4 }, { 6, 3 }, { 7, 2 } };
+            for (int i = 0; i < tick.GetLength(0); i++)
+            {
+                Box(x0 + tick[i, 0] * u, y0 + (tick[i, 1] + 1) * u, u, u, o);
+                Box(x0 + tick[i, 0] * u, y0 + tick[i, 1] * u, u, u, Color.white);
+            }
         }
 
         // The weapon panel. It jolts on every shot.
@@ -876,12 +973,15 @@ namespace DigDeep
                     }
                     PixelFont.Draw(x + ox + big - 2f * S, y + oy + bs - 9f * sm, am + "/" + mag, sm, ac, 2);
                 }
-                float ty = y - 12f * S;
-                PixelFont.Draw(x, ty - (w.mods.Count > 0 ? 9f * sm : 0f), w.def.name, sm, w.Color);
+                float ty = y - 10f * S;
+                // just the name (modifiers show when you hover the weapon, and in the pause menu), fitted to its slot
+                float avail = big + 3f * S + bs * 0.9f;
+                string wn = w.def.name;
+                PixelFont.Draw(x, ty, wn, FitSize(wn, Mathf.Max(1f, sm - (sm > 2f ? 1f : 0f)), avail), w.Color);
                 if (w.curse != Curse.None)
                 {
                     // the curse rides above the weapon's name: its lantern, its name and the kills still needed
-                    float cy = ty - (w.mods.Count > 0 ? 9f * sm : 0f) - 11f * sm;
+                    float cy = ty - 11f * sm;
                     var cc = Curses.Col(w.curse);
                     float pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 4f);
                     Icon(Curses.Icon(w.curse), x, cy - 2f * sm, 10f * sm, Color.white);
@@ -890,21 +990,8 @@ namespace DigDeep
                     if (Hover(x, cy - 2f * sm, 12f * sm + PixelFont.Width(cn, sm), 10f * sm))
                         Tip(Curses.Name(w.curse), cc, (Curses.Desc[(int)w.curse], TipGrey), ("KILL " + (Curses.KillsToLift - w.curseKills) + " MORE FOES TO LIFT IT", TipStat));
                 }
-                if (w.mods.Count > 0)
-                {
-                    float mx = x;
-                    foreach (var m in w.mods)
-                    {
-                        Icon(Mods.Icon(m), mx, ty - sm, 8f * sm, Color.white);
-                        string n = Mods.Names[(int)m];
-                        if (Hover(mx, ty - sm, 9f * sm + PixelFont.Width(n, sm), 9f * sm)) Tip(n, Mods.Signature, (Mods.Desc[(int)m], TipGrey));
-                        Box(mx - sm, ty - 2f * sm, 11f * sm + PixelFont.Width(n, sm), 11f * sm, new Color(Mods.Signature.r, Mods.Signature.g, Mods.Signature.b, 0.28f));   // a pink pill behind each modifier
-                        PixelFont.Draw(mx + 9f * sm, ty, n, sm, Mods.Ui);
-                        mx += 9f * sm + PixelFont.Width(n, sm) + 5f * sm;
-                    }
-                }
             }
-            PixelFont.Draw(x + big * 0.5f, y + bs + 2f * S, "CLICK", sm, new Color(0.8f, 0.8f, 0.8f), 1);
+            PixelFont.Draw(x + big * 0.5f, y + bs + 2f * S, GameInput.Prompt(Btn.Attack), sm, new Color(0.8f, 0.8f, 0.8f), 1);
             // the other slot, smaller
             var o = p.slots[1 - p.cur];
             float sx = x + big + 3f * S, ss = bs * 0.75f;
@@ -912,11 +999,22 @@ namespace DigDeep
             if (other != null && Hover(sx, y + bs - ss, ss * 1.2f, ss)) TipWeapon(other, false);
             Box(sx, y + bs - ss, ss * 1.2f, ss, new Color(0f, 0f, 0f, 0.5f));
             if (o != null) Icon(o.def.icon, sx + 2f * S, y + bs - ss + 2f * S, ss - 4f * S, new Color(1f, 1f, 1f, 0.6f));
-            PixelFont.Draw(sx + ss * 0.6f, y + bs + 2f * S, "Q", sm, new Color(0.6f, 0.6f, 0.6f), 1);
+            PixelFont.Draw(sx + ss * 0.6f, y + bs + 2f * S, GameInput.Prompt(Btn.Swap), sm, new Color(0.6f, 0.6f, 0.6f), 1);
         }
 
         void DrawCrosshair(Game g, Player p, float S)
         {
+            if (GameInput.UsingStick)
+            {
+                // the circle the reticle rides on, faintly: the twin-stick aiming ring
+                float r = g.PadAimDist;
+                for (int i = 0; i < 40; i++)
+                {
+                    float a = i / 40f * Mathf.PI * 2f;
+                    Vector3 q = g.cam.cam.WorldToScreenPoint(new Vector3(p.pos.x + Mathf.Cos(a) * r, p.pos.y + Mathf.Sin(a) * r, 0f));
+                    Box(q.x - S * 0.5f, Screen.height - q.y - S * 0.5f, S, S, new Color(1f, 1f, 1f, 0.12f));
+                }
+            }
             Vector3 sp = g.cam.cam.WorldToScreenPoint(new Vector3(g.aim.x, g.aim.y, 0f));
             float cx = sp.x, cy = Screen.height - sp.y;
             float gap = (3f + crossKick * 4f + (p.attack != null ? p.attack.spread * 0.15f : 0f)) * S;
@@ -965,16 +1063,20 @@ namespace DigDeep
 
         float bossTrail = 1f;
 
-        void DrawBossBar(Boss b, float S, float sm, float pad)
+        float bossTrail2 = 1f;
+
+        void DrawBossBar(Boss b, float S, float sm, float pad, float yo = 0f, bool second = false)
         {
             float w = Screen.width * 0.46f, h = 5f * S;
-            float x = (Screen.width - w) * 0.5f, y = pad + 26f * S;
+            float x = (Screen.width - w) * 0.5f, y = pad + 26f * S + yo;
             float k = b.HpFrac;
-            bossTrail = Mathf.Max(k, Mathf.MoveTowards(bossTrail, k, Time.unscaledDeltaTime * 0.35f));
+            float trail = second ? bossTrail2 : bossTrail;
+            trail = Mathf.Max(k, Mathf.MoveTowards(trail, k, Time.unscaledDeltaTime * 0.35f));
+            if (second) bossTrail2 = trail; else bossTrail = trail;
             PixelFont.Draw(Screen.width * 0.5f, y - 9f * sm, b.title, sm, new Color(1f, 0.45f, 0.4f), 1);
             Box(x - S, y - S, w + 2f * S, h + 2f * S, Color.white);
             Box(x, y, w, h, new Color(0.08f, 0.02f, 0.03f));
-            Box(x, y, w * bossTrail, h, new Color(1f, 0.9f, 0.75f));
+            Box(x, y, w * trail, h, new Color(1f, 0.9f, 0.75f));
             Box(x, y, w * k, h, Color.Lerp(new Color(0.75f, 0.1f, 0.1f), new Color(0.95f, 0.25f, 0.2f), 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f)));
             Box(x + w * 0.5f - S * 0.5f, y, S, h, new Color(0f, 0f, 0f, 0.5f));   // phase 2 marker
         }

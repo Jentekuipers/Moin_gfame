@@ -11,21 +11,24 @@ namespace DigDeep
 
         static readonly Slide[] Intro =
         {
-            new Slide { img = 0, text = "IN THE BEGINNING, A DEITY FORGED THE GOD-DIAMOND: THE MIGHTIEST STONE THAT EVER WAS." },
-            new Slide { img = 1, text = "ORNIN, KING OF THE DWARFS, STOLE IT FROM THE HEAVENS." },
-            new Slide { img = 2, text = "ITS POWER MADE THE DWARFS LIKE GODS. THEY LIVED IN PEACE, IN THE MOUNTAINS AND ON THE OPEN LAND." },
-            new Slide { img = 3, text = "BUT ORNIN GREW PROUD. HE RAISED TOWERS THAT PIERCED THE CLOUDS, TO CLIMB TO THE GODS AND MAKE WAR ON THEM." },
-            new Slide { img = 4, text = "THE GODS STRUCK BACK. THE TOWERS FELL, THE LAND BURNED, AND KING ORNIN WAS SLAIN." },
-            new Slide { img = 5, text = "THE DWARFS WERE CURSED: TWISTED INTO HALF-BEASTS AND DRIVEN UNDERGROUND, TO DIG FOR ALL ETERNITY." },
-            new Slide { img = 6, text = "THE GOD-DIAMOND STILL LIES FAR BELOW, GUARDED BY WHAT REMAINS OF ORNIN." },
-            new Slide { img = -1, text = "DIG DEEP. FIND THE GOD-DIAMOND, AND THE CURSE WILL BE BROKEN." },
+            new Slide { img = 0, text = "LONG AGO, TWO PEOPLES SHARED THE LAND: THE DWARFS, AND THE GODS." },
+            new Slide { img = 1, text = "KING HALDRIN WAS WISE AND KIND. THE GODS CALLED HIM FRIEND, AND GAVE HIM THE GOD-DIAMOND." },
+            new Slide { img = 2, text = "WHEN HALDRIN DIED, HIS SON ORNIN TOOK THE THRONE. NO ONE HAD EVER TOLD HIM NO." },
+            new Slide { img = 3, text = "BEING A FRIEND OF THE GODS WAS NOT ENOUGH FOR ORNIN. HE WANTED TO BE ONE." },
+            new Slide { img = 4, text = "HE DROVE HIS PEOPLE TO RAISE PYRAMIDS THAT PIERCED THE CLOUDS." },
+            new Slide { img = 5, text = "AT THE TOP, WITH THE DIAMOND'S POWER, HE RAISED HIS SWORD AGAINST THE HEAVENS." },
+            new Slide { img = 6, text = "THE GODS ANSWERED WITH FIRE AND THUNDER." },
+            new Slide { img = 7, text = "FOR ORNIN'S PRIDE, EVERY DWARF WAS CURSED: TWISTED INTO HALF-BEASTS." },
+            new Slide { img = 8, text = "THEY FLED INTO THE DARK EARTH, TO DIG FOR ALL ETERNITY." },
+            new Slide { img = -1, text = "THE GOD-DIAMOND STILL LIES FAR BELOW, GUARDED BY WHAT REMAINS OF ORNIN." },
+            new Slide { img = -1, text = "DIG DEEP. FIND IT, AND THE CURSE WILL BE BROKEN." },
         };
 
         const string EndText = "THE CURSE WAS BROKEN. THE DWARFS RETURNED TO THE SUNLIT LAND, AND LIVED IN PEACE ONCE MORE.";
         const float FadeIn = 1.6f, FadeOut = 1.3f, TypeRate = 26f, Hold = 2.6f;
 
-        readonly Texture2D[] slides = new Texture2D[7];
-        readonly Texture2D ending;
+        readonly Texture2D[] slides = new Texture2D[9];
+        readonly Texture2D ending, looming;
         int index;
         float t, blipT, endT;
         int typed;
@@ -36,6 +39,7 @@ namespace DigDeep
         {
             for (int i = 0; i < slides.Length; i++) slides[i] = Load("slide" + (i + 1));
             ending = Load("ending");
+            looming = Load("ending2");   // the same land, the god looming over it
         }
 
         static Texture2D Load(string name)
@@ -89,15 +93,16 @@ namespace DigDeep
             float textTop;
             if (sl.img >= 0 && slides[sl.img] != null)
             {
+                // Undertale framing: a wide panel up top, scaled by whole pixels, the typed text underneath
                 var tex = slides[sl.img];
-                float k = Mathf.Max(1f, Mathf.Floor(H * 0.56f / tex.height));
-                float sz = tex.height * k;
-                float x = Mathf.Round((W - sz) * 0.5f), y = Mathf.Round(H * 0.07f);
+                float k = Mathf.Max(1f, Mathf.Floor(Mathf.Min(H * 0.55f / tex.height, W * 0.82f / tex.width)));
+                float pw = tex.width * k, ph = tex.height * k;
+                float x = Mathf.Round((W - pw) * 0.5f), y = Mathf.Round(H * 0.08f);
                 var old = GUI.color;
                 GUI.color = new Color(1f, 1f, 1f, a);
-                GUI.DrawTexture(new Rect(x, y, sz, sz), tex);
+                GUI.DrawTexture(new Rect(x, y, pw, ph), tex);
                 GUI.color = old;
-                textTop = y + sz + H * 0.06f;
+                textTop = y + ph + H * 0.06f;
             }
             else textTop = H * 0.42f;
 
@@ -141,8 +146,8 @@ namespace DigDeep
 
         // ------------------------------------------------------------------ start screen
 
-        public const string Continue = "CONTINUE", NewRun = "NEW RUN", WatchIntro = "WATCH INTRO", Options = "OPTIONS", Credits = "CREDITS", Quit = "QUIT";
-        static readonly string[] withSave = { Continue, NewRun, Options, Credits, Quit }, noSave = { NewRun, Options, Credits, Quit };
+        public const string Continue = "CONTINUE", NewRun = "NEW RUN", WatchIntro = "WATCH INTRO", Options = "OPTIONS", Credits = "CREDITS", Quit = "QUIT", Test = "TEST MODE";
+        static readonly string[] withSave = { Continue, NewRun, Test, Options, Credits, Quit }, noSave = { NewRun, Test, Options, Credits, Quit };
         public static string[] TitleItems => SaveGame.Exists ? withSave : noSave;
 
         // where each menu line was drawn (GUI coordinates), for the mouse
@@ -231,25 +236,46 @@ namespace DigDeep
         }
 
         // ------------------------------------------------------------------ ending
+        // Variant 0: the plain ending. 1: ...but the gods still loom over the dwarfs (not every digger has the
+        // God-Diamond yet). 2: the true ending, after the God above the clouds has fallen.
+        const string LoomText = "BUT FAR ABOVE THE CLOUDS, THE GODS STILL WATCHED.";
+        const string TrueText = "THE GOD FELL, AND THE SKY WENT QUIET. NO CURSE WOULD EVER TOUCH THE DWARFS AGAIN.";
+        int variant, typed2;
+        float loomStart;   // when the second painting begins
 
-        public void StartEnding() { endT = 0f; typed = 0; }
+        public void StartEnding(int variant = 0)
+        {
+            endT = 0f; typed = 0; typed2 = 0; this.variant = variant;
+            loomStart = 5f + EndText.Length / (TypeRate * 0.8f) + 2.5f;
+        }
         public float EndT => endT;
+        string FirstText => variant == 2 ? TrueText : EndText;
 
         public void TickEnding(float dt)
         {
             endT += dt;
-            float tt = endT - 5f;
-            int want = Mathf.Clamp((int)(tt * TypeRate * 0.8f), 0, EndText.Length);
-            if (want > typed)
+            Type(FirstText, endT - 5f, ref typed);
+            if (variant == 1) Type(LoomText, endT - loomStart - 1.8f, ref typed2);
+        }
+
+        void Type(string text, float tt, ref int count)
+        {
+            int want = Mathf.Clamp((int)(tt * TypeRate * 0.8f), 0, text.Length);
+            if (want > count)
             {
-                char ch = EndText[want - 1];
-                typed = want;
+                char ch = text[want - 1];
+                count = want;
                 blipT -= 1f;
-                if (ch != ' ' && blipT <= 0f) { Game.I.sfx.Play("blip", 0.18f, 0.9f, 0.04f); blipT = 1.5f; }
+                if (ch != ' ' && blipT <= 0f) { Game.I.sfx.Play("blip", 0.18f, variant == 1 && endT > loomStart ? 0.7f : 0.9f, 0.04f); blipT = 1.5f; }
             }
         }
 
-        public bool EndingCanExit => endT > 5f + EndText.Length / (TypeRate * 0.8f) + 1.5f;
+        // when the story (painting and text) has been read: it fades out, then THE END comes up in the middle
+        float StoryDone => variant == 1 ? loomStart + 1.8f + LoomText.Length / (TypeRate * 0.8f) + 2.5f
+                                        : 5f + FirstText.Length / (TypeRate * 0.8f) + 2.5f;
+        const float StoryFade = 1.4f;
+        float ExitAt => StoryDone + StoryFade + 1.2f;
+        public bool EndingCanExit => endT > ExitAt;
 
         public void DrawEnding(Game g)
         {
@@ -258,21 +284,42 @@ namespace DigDeep
             Black();
             // 0-2s: pure white. 2-4.5s: white fades into the peaceful painting.
             float white = endT < 2f ? 1f : 1f - Mathf.Clamp01((endT - 2f) / 2.5f);
-            if (ending != null && endT >= 2f)
+            bool loom = variant == 1 && endT > loomStart + 0.9f;
+            var pic = loom && looming != null ? looming : ending;
+            if (pic != null && endT >= 2f)
             {
-                float k = Mathf.Max(1f, Mathf.Floor(H * 0.56f / ending.height));
-                float sz = ending.height * k;
-                GUI.DrawTexture(new Rect(Mathf.Round((W - sz) * 0.5f), Mathf.Round(H * 0.07f), sz, sz), ending);
+                float k = Mathf.Max(1f, Mathf.Floor(H * 0.56f / pic.height));
+                float sz = pic.height * k;
+                GUI.DrawTexture(new Rect(Mathf.Round((W - sz) * 0.5f), Mathf.Round(H * 0.07f), sz, sz), pic);
                 float textTop = H * 0.07f + sz + H * 0.06f;
-                DrawTyped(EndText, typed, textTop, S, 1f, false);
-                if (EndingCanExit)
+                if (loom)
                 {
-                    float a = Mathf.Clamp01((endT - 5f - EndText.Length / (TypeRate * 0.8f) - 1.5f) * 0.8f);
-                    var p = g.player;
-                    string stats = p != null ? p.character.name + " THE " + p.character.animal + "   DEPTH -" + g.maxDepth + "   GOLD " + p.s.gold + "   KILLS " + p.s.kills : "";
-                    PixelFont.Draw(W * 0.5f, H - S * 26f, "THE END", S * 2f, new Color(1f, 0.85f, 0.4f, a), 1);
-                    PixelFont.Draw(W * 0.5f, H - S * 12f, stats, Mathf.Max(1f, S - 1f), new Color(0.75f, 0.75f, 0.75f, a), 1);
+                    DrawTyped(LoomText, typed2, textTop, S, 1f, false);
+                    int have = 0;
+                    foreach (var c in Chars.All) if (PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) == 1) have++;
+                    float a2 = Mathf.Clamp01((endT - loomStart - 3f) * 0.8f);
+                    PixelFont.Draw(W * 0.5f, textTop + 22f * S, "FIND THE GOD-DIAMOND WITH EVERY DIGGER   " + have + " / " + Chars.All.Count, Mathf.Max(1f, S - 1f), new Color(0.75f, 0.8f, 1f, a2), 1);
                 }
+                else DrawTyped(FirstText, typed, textTop, S, 1f, false);
+            }
+            // the story fades away... and THE END comes up in the middle of the screen
+            float gone = Mathf.Clamp01((endT - StoryDone) / StoryFade);
+            if (gone > 0f) Box(0, 0, W, H, new Color(0f, 0f, 0f, gone));
+            if (endT > StoryDone + StoryFade)
+            {
+                float a = Mathf.Clamp01((endT - StoryDone - StoryFade) * 0.8f);
+                var p = g.player;
+                string stats = p != null ? p.character.name + " THE " + p.character.animal + "   DEPTH -" + g.maxDepth + "   GOLD " + p.s.gold + "   KILLS " + p.s.kills : "";
+                string end = variant == 1 ? "THE END?" : "THE END";
+                PixelFont.Draw(W * 0.5f, H * 0.5f - S * 12f, end, S * 3f, new Color(1f, 0.85f, 0.4f, a), 1);
+                PixelFont.Draw(W * 0.5f, H * 0.5f + S * 18f, stats, Mathf.Max(1f, S - 1f), new Color(0.75f, 0.75f, 0.75f, a), 1);
+            }
+            // the cut between the two paintings: a dip to black
+            if (variant == 1)
+            {
+                float d = Mathf.Abs(endT - (loomStart + 0.9f));
+                float dark = 1f - Mathf.Clamp01(d / 0.9f);
+                if (dark > 0f) Box(0, 0, W, H, new Color(0f, 0f, 0f, dark));
             }
             if (white > 0f) Box(0, 0, W, H, new Color(1f, 1f, 1f, white));
         }

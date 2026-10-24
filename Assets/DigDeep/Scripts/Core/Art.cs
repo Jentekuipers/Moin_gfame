@@ -390,6 +390,9 @@ namespace DigDeep
             InitExtra();
             InitGuns();
             InitPlants();
+            InitFish();
+            InitDragons();
+            InitCreatures();
             InitStorm();
             InitHeroes();
             InitLooks();

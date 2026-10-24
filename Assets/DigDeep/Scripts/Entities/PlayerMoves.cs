@@ -264,7 +264,7 @@ namespace DigDeep
                 }
             if (hit.x == int.MinValue) return;
             bool chest = Wd.Get(hit.x, hit.y) == Block.Chest;
-            G.hud.Label(new Vector2(hit.x + 0.5f, hit.y + 1.6f), chest ? "E: OPEN CHEST" : "E: OPEN WEAPON CRATE",
+            G.hud.Label(new Vector2(hit.x + 0.5f, hit.y + 1.6f), chest ? GameInput.Prompt(Btn.Interact) + ": OPEN CHEST" : GameInput.Prompt(Btn.Interact) + ": OPEN WEAPON CRATE",
                 chest ? new Color(1f, 0.85f, 0.35f) : (Color)DB.RarityColor(Crates.RarityAt(hit.x, hit.y)));
             if (GameInput.Take(Btn.Interact))
             {
@@ -379,6 +379,16 @@ namespace DigDeep
             G.fx.Smoke(pos, 6, 1f);
         }
 
+        // CHILLED (frost wisps, frost elites, ice shards): slow for a moment
+        public float chillT;
+        public void Chill(float t)
+        {
+            if (mode == Mode.Dead || s.fireImmune) return;   // a heart of fire keeps you warm
+            if (chillT <= 0f) G.Popup(pos + Vector2.up, "CHILLED", new Color(0.6f, 0.9f, 1f));
+            chillT = Mathf.Max(chillT, t);
+            Extinguish();
+        }
+
         public void Poison(float t)
         {
             if (mode == Mode.Dead || s.poisonImmune) return;
@@ -389,6 +399,11 @@ namespace DigDeep
         // Damage over time: no knockback or mercy time, just health ticking away.
         void TickBurnAndPoison(float dt)
         {
+            if (chillT > 0f)
+            {
+                chillT -= dt;
+                if (Random.value < 0.25f) G.fx.Burst(pos, 1, new Color(0.7f, 0.92f, 1f), 1f, 0.5f, 3f);
+            }
             if (burnT > 0f)
             {
                 // water, a fast dash or swing, or a load of sand on your head puts it out

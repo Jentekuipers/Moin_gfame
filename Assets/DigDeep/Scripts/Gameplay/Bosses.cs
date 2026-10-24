@@ -93,6 +93,15 @@ namespace DigDeep
         public float CenterX => room.ax0 + ArenaRoom.AW * 0.5f;
         bool started, cleared;
         Boss boss;
+        readonly List<Boss> bosses = new List<Boss>();
+        public bool Started => started;
+        public bool Active => started && !cleared;
+        public static int ForceKind = -1;   // TEST MODE: the next arena fights this boss (see BossKinds)
+
+        // every boss the arenas can hold (also the test mode's list)
+        public static readonly string[] BossKinds = { "MOLE KING", "SPORE MOTHER", "CRYSTAL COLOSSUS", "CINDER LORD", "KING ORNIN", "THE DEVOURER",
+            "CAPTAIN VASK", "ASH WRAITH", "VERDANT MAW", "UNDA, WATER DRAGON", "IGNIS, FIRE DRAGON", "IGNIS AND UNDA (BOTH)",
+            "BOULDER TROLL", "HIVE QUEEN", "TOADSTOOL KING", "FORGE GOLEM" };
         public bool Cleared => cleared;
         public void MarkCleared() { started = true; cleared = true; }   // (restoring a saved run)
 
@@ -111,6 +120,14 @@ namespace DigDeep
         {
             var p = G.player;
             if (p.mode == Player.Mode.Dead) return;
+            // on the way up to the gods (and on the test road to them) every hall counts as beaten: nothing seals you in
+            if ((Ascent.Flying || (TestMode.On && TestMode.PretendAllDiamonds)) && (!started || !cleared))
+            {
+                if (started && !cleared) SetPerimeter(Block.Brick);
+                started = true; cleared = true;
+                if (G.boss == boss) G.boss = null;
+                return;
+            }
             if (!started)
             {
                 bool inside = p.pos.x > MinX + 0.4f && p.pos.x < MaxX - 0.4f && p.pos.y > FloorY && p.pos.y < CeilY - 0.6f;
@@ -124,6 +141,18 @@ namespace DigDeep
             }
             if (started && !cleared && Random.value < 0.3f)
                 foreach (var t in Torches()) G.fx.Burst(t, 1, new Color(1f, 0.6f, 0.2f), 1f, 0.35f, -4f, 1f, false);
+            if (started && !cleared) Confine(p);
+        }
+
+        // Once the doors seal there is no way out: no dash, blink, grapple, super jump or teleport leaves the hall.
+        void Confine(Player p)
+        {
+            float x0 = MinX + Player.Half.x + 0.02f, x1 = MaxX - Player.Half.x - 0.02f;
+            float y0 = FloorY + Player.Half.y + 0.002f, y1 = CeilY - Player.Half.y - 0.02f;
+            if (p.pos.x < x0) { p.pos.x = x0; if (p.vel.x < 0f) p.vel.x = 0f; }
+            if (p.pos.x > x1) { p.pos.x = x1; if (p.vel.x > 0f) p.vel.x = 0f; }
+            if (p.pos.y < y0) { p.pos.y = y0; if (p.vel.y < 0f) p.vel.y = 0f; }
+            if (p.pos.y > y1) { p.pos.y = y1; if (p.vel.y > 0f) p.vel.y = 0f; }
         }
 
         IEnumerable<Vector2> Torches()
@@ -164,6 +193,19 @@ namespace DigDeep
             float hpMul = 2f * (0.8f + room.D / 400f);   // twice as tough as before, and tougher the deeper the arena
             var spawnAt = new Vector2(CenterX + (G.player.pos.x < CenterX ? 7f : -7f), FloorY);
             if (room.IsFinal) kind = 4;
+            // the dragon worms: the water dragon may rule the crystal depths, the fire dragon the storm caverns;
+            // in harder runs (after you've broken the curse) both can turn up together
+            var rr = new System.Random(Gen.Seed * 13 + room.D);
+            int wins = PlayerPrefs.GetInt("digdeep_wins", 0);
+            float twin = Mathf.Min(0.6f, 0.12f + 0.2f * wins);
+            if (room.D == 202 && rr.NextDouble() < 0.5) kind = rr.NextDouble() < twin ? 11 : 9;
+            if (room.D == 240 && rr.NextDouble() < 0.5) kind = rr.NextDouble() < twin ? 11 : 10;
+            // every biome's second boss: half the time the hall holds that one instead
+            if (room.D == 62 && rr.NextDouble() < 0.5) kind = 12;
+            if (room.D == 126 && rr.NextDouble() < 0.5) kind = 13;
+            if (room.D == 164 && rr.NextDouble() < 0.5) kind = 14;
+            if (room.D == 332 && rr.NextDouble() < 0.5) kind = 15;
+            if (ForceKind >= 0) { kind = ForceKind; ForceKind = -1; }
             switch (kind)
             {
                 case 4: boss = new OrninBoss(this, spawnAt, 720f * hpMul); break;
@@ -174,12 +216,31 @@ namespace DigDeep
                 case 6: boss = new RaiderCaptain(this, spawnAt, 220f * hpMul); break;
                 case 7: boss = new AshWraith(this, spawnAt, 300f * hpMul); break;
                 case 8: boss = new VerdantMaw(this, new Vector2(CenterX, FloorY), 190f * hpMul); break;
+                case 9: boss = new Dragon(this, Dragon.Elem.Water, 250f * hpMul, false); break;
+                case 10: boss = new Dragon(this, Dragon.Elem.Fire, 260f * hpMul, false); break;
+                case 12: boss = new BoulderTroll(this, spawnAt, 95f * hpMul); break;
+                case 13: boss = new HiveQueen(this, spawnAt, 185f * hpMul); break;
+                case 14: boss = new ToadstoolKing(this, spawnAt, 170f * hpMul); break;
+                case 15: boss = new ForgeGolem(this, spawnAt, 370f * hpMul); break;
+                case 11:
+                    {
+                        var f = new Dragon(this, Dragon.Elem.Fire, 175f * hpMul, true);
+                        var w = new Dragon(this, Dragon.Elem.Water, 170f * hpMul, true);
+                        G.Spawn(new DragonDuo(this, f, w));
+                        G.Spawn(w);
+                        bosses.Add(w);
+                        G.boss2 = w;
+                        boss = f;
+                        break;
+                    }
                 default: boss = new CinderLord(this, spawnAt, 360f * hpMul); break;
             }
             G.Spawn(boss);
+            bosses.Add(boss);
             G.boss = boss;
             G.music.PlayBoss();
-            G.hud.Banner(boss.title, boss.subtitle, new Color(1f, 0.35f, 0.3f));
+            if (kind == 11) G.hud.Banner("IGNIS AND UNDA", "THE TWIN DRAGONS", new Color(1f, 0.35f, 0.3f));
+            else G.hud.Banner(boss.title, boss.subtitle, new Color(1f, 0.35f, 0.3f));
             G.sfx.Play("rumble", 1f, 0.7f);
             G.sfx.Play("explode", 0.6f, 0.5f);
             G.cam.Shake(0.6f);
@@ -189,8 +250,12 @@ namespace DigDeep
         public void OnBossDefeated()
         {
             if (cleared) return;
+            // two bosses: the fight goes on until both are down
+            foreach (var b in bosses)
+                if (!b.dead) { G.boss = b; G.boss2 = null; G.hud.Banner("ONE DOWN", "THE OTHER FIGHTS ON", new Color(1f, 0.6f, 0.4f)); return; }
             cleared = true;
             if (G.boss == boss) G.boss = null;
+            G.boss2 = null;
             SetPerimeter(Block.Brick);
             if (room.IsFinal)
             {
@@ -204,7 +269,17 @@ namespace DigDeep
             for (int x = cx - 1; x <= cx + 1; x++)
                 for (int d = room.D; d <= room.D + 1; d++) Wd.Set(x, -d, Block.Air);
             var c = new Vector2(CenterX, FloorY + 3f);
-            G.RareReward(c);
+            // some bosses carry something of their own (the dragons' hearts) instead of the usual reward
+            int own = 0;
+            foreach (var b in bosses)
+            {
+                var dd = b.Drop;
+                if (dd == null) continue;
+                G.Spawn(new LootPickup(c + Vector2.right * (own * 1.5f - 0.75f * (bosses.Count - 1)), dd, 0.8f, true));
+                own++;
+            }
+            if (own > 0) { G.sfx.Play("chest", 0.9f, 0.9f); G.fx.Burst(c, 40, new Color(1f, 0.85f, 0.3f), 9f, 0.9f, 4f); G.fx.Ring(c, 3f, new Color(1f, 0.85f, 0.3f)); }
+            else G.RareReward(c);
             G.Spawn(new HealOrb(c + Vector2.right * 2f, 100));
             G.hud.Banner("VICTORY!", "THE FLOOR CRACKS OPEN", new Color(1f, 0.85f, 0.3f));
             G.music.PlayLevel(3f);
@@ -235,6 +310,9 @@ namespace DigDeep
         float delay, life = 7f, spin;
         readonly Color col;
         public bool poison;   // jungle seeds poison you
+        public bool chills, burns;   // frost shards slow you, embers set you alight
+        public int dmgOverride = -1; // (the God above the clouds hits harder than the depth says)
+        public Color body = Color.white;   // the shot's own tint once it flies
 
         public override bool AlwaysActive => true;
 
@@ -256,7 +334,7 @@ namespace DigDeep
                 Place();
                 return;
             }
-            sr.color = Color.white;
+            sr.color = body;
             life -= dt;
             vel.y -= grav * dt;
             pos += vel * dt;
@@ -271,8 +349,10 @@ namespace DigDeep
             var pl = G.player;
             if (pl.mode != Player.Mode.Dead && U.Overlap(pos, new Vector2(rad, rad), pl.pos, Player.Half))
             {
-                pl.Hurt(Enemy.ContactDmg(-Mathf.FloorToInt(pos.y)), pos);
+                pl.Hurt(dmgOverride >= 0 ? dmgOverride : Enemy.ContactDmg(-Mathf.FloorToInt(pos.y)), pos);
                 if (poison) pl.Poison(3f);
+                if (chills) pl.Chill(2.5f);
+                if (burns) pl.SetOnFire();
                 G.fx.Burst(pos, 10, col, 5f, 0.35f, 10f);
                 Kill();
                 return;
@@ -301,6 +381,8 @@ namespace DigDeep
         protected bool Phase2 => hp < maxHp * 0.5f;
         protected static Player P => Game.I.player;
         public float HpFrac => Mathf.Clamp01(hp / maxHp);
+        public virtual Def Drop => null;   // a boss's own drop, replacing the usual reward
+        protected virtual void OnDefeatedFree() { }   // a boss outside any arena (the God above the clouds)
 
         protected void SetupBoss(string nm, string sub, string key, float hpVal, float sc, Vector2 h, BossArena a, Vector2 at)
         {
@@ -339,7 +421,8 @@ namespace DigDeep
             G.sfx.Play("explode", 1f, 0.6f);
             G.HitStop(0.25f);
             ClearAttacks();
-            arena.OnBossDefeated();
+            if (arena != null) arena.OnBossDefeated();
+            else OnDefeatedFree();
         }
 
         // The boss is dead: every shot, warning zone and summoned skull it left behind fizzles out.
@@ -348,7 +431,8 @@ namespace DigDeep
             foreach (var e in G.ents)
             {
                 if (e.dead) continue;
-                bool mine = e is BossShot || e is Hazard || e is BeamStrike || e is HomingSkull || (e is Bullet b && b.team == Team.Boss) || (this is VerdantMaw && e is Snapper);
+                if (e is ArenaWater aw) { aw.Drain(); continue; }   // the flood drains away
+                bool mine = e is BossShot || e is Hazard || e is BeamStrike || e is HomingSkull || e is FloorFire || (e is Bullet b && b.team == Team.Boss) || (this is VerdantMaw && e is Snapper) || (this is HiveQueen && e is Bee) || e is SlugEmber;
                 if (!mine) continue;
                 G.fx.Burst(e.pos, 4, new Color(1f, 0.9f, 0.7f, 0.8f), 2f, 0.3f, 0f, 1f, false);
                 e.Kill();
@@ -374,8 +458,12 @@ namespace DigDeep
         protected void FacePlayer() { facing = P.pos.x > pos.x ? 1 : -1; }
         protected Vector2 ToPlayer => (P.pos - pos).normalized;
 
-        protected void Shot(Vector2 p, Vector2 v, Sprite s, Color c, float grav = 0f, float delay = 0f, float sc = 1f)
-            => G.Spawn(new BossShot(p, v, s, c, grav, delay, sc));
+        protected BossShot Shot(Vector2 p, Vector2 v, Sprite s, Color c, float grav = 0f, float delay = 0f, float sc = 1f)
+        {
+            var b = new BossShot(p, v, s, c, grav, delay, sc);
+            G.Spawn(b);
+            return b;
+        }
 
         protected void Ring(Vector2 c, int n, float speed, float offsetDeg, Sprite s, Color col)
         {

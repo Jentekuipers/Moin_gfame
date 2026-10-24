@@ -37,16 +37,19 @@ namespace DigDeep
             halfW = halfH * cam.aspect;
         }
 
-        public void Shake(float a) { a *= Settings.Shake; trauma = Mathf.Min(1f, Mathf.Max(trauma, a) + a * 0.25f); }   // SCREEN SHAKE option
+        // during a boss fight the screen calms down a lot: you need to read the bullets
+        static float BossDamp => Game.I != null && Game.I.boss != null && !Game.I.boss.dead ? 0.35f : 1f;
+
+        public void Shake(float a) { a *= Settings.Shake * BossDamp; trauma = Mathf.Min(1f, Mathf.Max(trauma, a) + a * 0.25f); }   // SCREEN SHAKE option
 
         // A directional shove (gun kick): the view jerks and springs back fast.
-        public void Kick(Vector2 d) => kick = Vector2.ClampMagnitude(kick + d * Settings.Shake, 0.9f);
+        public void Kick(Vector2 d) => kick = Vector2.ClampMagnitude(kick + d * Settings.Shake * BossDamp, 0.9f);
 
         // Vlambeer zoom punch: the view snaps in a little and eases back out (kills, big hits).
-        public void Punch(float a) => punch = Mathf.Min(0.9f, Mathf.Max(punch, a * Settings.Shake));
+        public void Punch(float a) => punch = Mathf.Min(0.9f, Mathf.Max(punch, a * Settings.Shake * BossDamp));
 
         // Low constant rumble that builds with chain reactions and slowly dies away.
-        public void AddRumble(float a) => rumble = Mathf.Min(0.9f, rumble + a * Settings.Shake);
+        public void AddRumble(float a) => rumble = Mathf.Min(0.9f, rumble + a * Settings.Shake * BossDamp);
 
         public void Snap(Vector2 p)
         {
@@ -82,6 +85,7 @@ namespace DigDeep
 
         Vector2 Clamp(Vector2 p)
         {
+            if (World.SkyMode || Ascent.Flying) return p;   // the ascent and above the clouds: no walls, no ceiling
             float minX = halfW, maxX = World.W - halfW;
             p.x = minX > maxX ? World.W * 0.5f : Mathf.Clamp(p.x, minX, maxX);
             p.y = Mathf.Min(p.y, 1f - halfH);   // never look above the dark-matter ceiling
