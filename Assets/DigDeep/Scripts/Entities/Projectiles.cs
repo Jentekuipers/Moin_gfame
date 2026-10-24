@@ -128,7 +128,7 @@ namespace DigDeep
                 if (fuse <= 0f)
                 {
                     Kill();
-                    int dmg = type == Type.Mega ? 16 : type == Type.Bomb ? 9 : 6;   // blasts are risky, so they hit hard
+                    int dmg = type == Type.Mega ? 16 : type == Type.Bomb ? 12 : 6;   // blasts are risky, so they hit hard
                     G.Explode(pos, radius, dmg, false, true, true);   // your own bombs count as your blasts (SHRAPNEL PRISM, NAPALM)
                     if (type == Type.Mega) G.cam.Shake(1f);
                     return;

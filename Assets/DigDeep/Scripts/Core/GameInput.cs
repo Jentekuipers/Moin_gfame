@@ -280,6 +280,7 @@ namespace DigDeep
         }
 
         public static bool Held(Btn b) => cur[(int)b];
+        public static bool AnyHeld() { for (int i = 0; i < cur.Length; i++) if (cur[i]) return true; return false; }
 
         // any key / gamepad button / mouse click this frame (used to skip the intro)
         public static bool AnyPressed()

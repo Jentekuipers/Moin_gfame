@@ -22,7 +22,7 @@ namespace DigDeep
             s.damage = dmg;
             s.swing = swing;
             s.speedMul = speed;
-            s.digPower = mining;
+            s.digPower = 1;   // there is no mining stat any more: how hard you hit rock is down to the weapon
             s.jumpMul = jump;
             s.luck = luck;
         }
@@ -84,7 +84,7 @@ namespace DigDeep
                 trait = "AMBUSH (HITS FROM BEHIND DEAL 1.5X) + FEATHER (HOLD JUMP TO GLIDE)",
                 hp = 75, dmg = 0.95f, swing = 1.2f, speed = 1f, mining = 1, jump = 1.1f, luck = 0.5f,
                 weapon = "boltcaster", special = "phase", skills = new[] { "ambush", "feather" },
-                innate = p => p.s.darkMul *= 0.85f,
+                innate = p => p.s.lightMul += 0.15f,   // an owl sees a little further in the dark
                 frames = Art.HeroOwl(),
             });
             All.Add(new CharDef

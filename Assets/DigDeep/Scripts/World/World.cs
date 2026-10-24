@@ -16,6 +16,7 @@ namespace DigDeep
         public float[] liq = new float[World.W * World.CH];   // fluid amount per cell (0..1)
         public byte[] lt = new byte[World.W * World.CH];      // fluid type per cell (see Fluids)
         public byte[] fl = new byte[World.W * World.CH];      // plant growth in an empty cell: 1 grass, 2 vine (both burn)
+        public bool[] seen = new bool[World.W * World.CH];    // has the player ever had this cell in sight? (it stays dimly lit)
         public int Y0 => ci * World.CH;
     }
 
@@ -28,6 +29,10 @@ namespace DigDeep
 
         readonly Dictionary<int, Chunk> chunks = new Dictionary<int, Chunk>();
         readonly HashSet<long> pendingFall = new HashSet<long>();
+        readonly HashSet<long> anchored = new HashSet<long>();   // the floor under altars and shrines: never breaks
+
+        public void Anchor(int x, int y) => anchored.Add(Key(x, y));
+        public bool Anchored(int x, int y) => anchored.Contains(Key(x, y));
         readonly Transform root;
         readonly List<Chunk> scratch = new List<Chunk>();
 
@@ -151,6 +156,7 @@ namespace DigDeep
 
         // Above the clouds (the fight with the God) there is nothing but sky.
         public static bool SkyMode;
+        public static bool Void;   // the void world: a run through black versions of everything (see Game.EnterVoid)
         public const int SkyFloor = 40;
 
         public Block Get(int x, int y)
@@ -168,6 +174,19 @@ namespace DigDeep
             if (x < 0 || x >= W) return Block.Bedrock;
             if (chunks.TryGetValue(U.FloorDiv(y, CH), out var c)) return c.t[(y - c.Y0) * W + x];
             return Gen.Base(x, y);
+        }
+
+        // vision memory: cells the player has had in line of sight stay dimly lit
+        public bool Seen(int x, int y)
+        {
+            if (x < 0 || x >= W || !chunks.TryGetValue(U.FloorDiv(y, CH), out var c)) return false;
+            return c.seen[(y - c.Y0) * W + x];
+        }
+
+        public void MarkSeen(int x, int y)
+        {
+            if (x < 0 || x >= W || !chunks.TryGetValue(U.FloorDiv(y, CH), out var c)) return;
+            c.seen[(y - c.Y0) * W + x] = true;
         }
 
         public void PokeRaw(Chunk c, int x, int y, Block b)
@@ -207,7 +226,7 @@ namespace DigDeep
         static float GrassChance(int biome, Block below)
         {
             bool earth = below == Block.Dirt;
-            bool rock = below == Block.Stone || below == Block.HardStone || below == Block.Brick || below == Block.Wood;
+            bool rock = below == Block.Stone || below == Block.HardStone || below == Block.Brick || below == Block.GildBrick || below == Block.Wood;
             switch (biome)
             {
                 case Biomes.Topsoil: return earth ? 0.45f : 0f;
@@ -226,12 +245,12 @@ namespace DigDeep
                     int i = ly * W + x, y = c.Y0 + ly;
                     if (c.t[i] != Block.Air || c.lt[i] != Fluids.None || y >= 0) continue;
                     int bio = Biomes.Index(-y);
-                    Block below = ly > 0 ? c.t[i - W] : Gen.Base(x, y - 1);
+                    Block below = ly > 0 ? c.t[i - W] : Peek(x, y - 1);   // (the real block, which may already be dug out)
                     // grass in patches: a coarse noise decides where it grows at all
                     float patch = U.H01(x >> 2, y >> 1, 401);
                     if (patch < 0.75f && U.H01(x, y, 402) < GrassChance(bio, below)) c.fl[i] |= Grass;
                     // vines (grass ropes) hang from ceilings, mostly in the jungle
-                    Block above = ly < CH - 1 ? c.t[i + W] : Gen.Base(x, y + 1);
+                    Block above = ly < CH - 1 ? c.t[i + W] : Peek(x, y + 1);
                     float vineChance = bio == Biomes.Jungle ? 0.22f : bio == Biomes.Topsoil ? 0.02f : 0f;
                     if (Tiles.Solid(above) && above != Block.Spikes && U.H01(x, y, 403) < vineChance)
                     {
@@ -369,7 +388,7 @@ namespace DigDeep
             Block b = Get(x, y);
             var d = Tiles.Def(b);
             if (b == Block.Air || b == Block.Lava) return Hit.Empty;
-            if (d.unbreakable) return Hit.Unbreakable;
+            if (d.unbreakable || (anchored.Count > 0 && anchored.Contains(Key(x, y)))) return Hit.Unbreakable;
             if (BigOre.Is(b)) return DamageBig(x, y, amount, byPlayer);
             var c = GetChunk(U.FloorDiv(y, CH));
             int i = (y - c.Y0) * W + x;
@@ -388,6 +407,7 @@ namespace DigDeep
         {
             Block b = Get(x, y);
             if (b == Block.Air) return;
+            if (anchored.Count > 0 && anchored.Contains(Key(x, y))) return;
             if (BigOre.Is(b)) { DamageBig(x, y, 999999, byPlayer); return; }
             var d = Tiles.Def(b);
             var bio = Biomes.At(x, y);
@@ -404,6 +424,7 @@ namespace DigDeep
                     g.SpawnGold(cpos, Mathf.Max(1, Mathf.RoundToInt(n * goldMul)));
                 }
                 if (b == Block.Chest) g.OpenChest(cpos);
+                if (b == Block.Supply) g.OpenSupply(cpos);
                 if (b == Block.Crate) g.OpenCrate(cpos, Crates.RarityAt(x, y));
             }
             if (b == Block.TNT) g.Spawn(new Fuse(x, y, b, 0.2f, 3.1f, 7));
@@ -462,7 +483,7 @@ namespace DigDeep
             if (!chunks.TryGetValue(U.FloorDiv(y, CH), out var ch)) return;
             int i = (y - ch.Y0) * W + x;
             Block b = ch.t[i];
-            if (!Tiles.Solid(b) || BigOre.Is(b) || b == Block.Chest || b == Block.Crate) return;
+            if (!Tiles.Solid(b) || BigOre.Is(b) || b == Block.Chest || b == Block.Crate || b == Block.Supply) return;
             int lx = gx - x * PX, ly = gy - y * PX;
             if (ch.stains == null) ch.stains = new Dictionary<int, List<int>>();
             if (!ch.stains.TryGetValue(i, out var list)) { list = new List<int>(); ch.stains[i] = list; }
@@ -500,7 +521,8 @@ namespace DigDeep
         {
             if (!chunks.ContainsKey(U.FloorDiv(y, CH))) return;
             Block b = Get(x, y);
-            if (!Tiles.Def(b).gravity && b != Block.Spikes && b != Block.Chest && b != Block.Crate) return;
+            if (anchored.Contains(Key(x, y))) return;
+            if (!Tiles.Def(b).gravity && b != Block.Spikes && b != Block.Chest && b != Block.Crate && b != Block.Supply) return;
             long k = Key(x, y);
             if (pendingFall.Contains(k)) return;
             pendingFall.Add(k);
@@ -553,6 +575,17 @@ namespace DigDeep
             return false;
         }
 
+        public static bool DropThrough;   // set while the player holds down: spear ledges don't hold them
+
+        // standing ground: solid blocks, or a spear ledge right under the feet
+        public bool Ground(Vector2 p, Vector2 h)
+        {
+            if (BoxSolid(p, h)) return true;
+            if (Spear.All.Count == 0) return false;
+            float feet = p.y - h.y;   // (p is already nudged down a touch by the caller)
+            return Spear.Under(p, h, feet + 0.1f, feet, out _);
+        }
+
         public bool MoveY(ref Vector2 p, Vector2 h, float dy, out Vector2Int hit)
         {
             hit = new Vector2Int(int.MinValue, 0);
@@ -574,6 +607,8 @@ namespace DigDeep
                 }
                 else
                 {
+                    // spear ledges: you land on them from above only (walk and jump through them otherwise)
+                    if (Spear.All.Count > 0 && Spear.Under(p, h, p.y - h.y, ny - h.y, out float top)) { p.y = top + h.y; return true; }
                     int cy = Mathf.FloorToInt(ny - h.y + E);
                     for (int x = x0; x <= x1; x++)
                         if (Solid(x, cy)) { p.y = cy + 1 + h.y; hit = new Vector2Int(x, cy); return true; }

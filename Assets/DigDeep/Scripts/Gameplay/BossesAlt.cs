@@ -55,13 +55,15 @@ namespace DigDeep
                     squash = -0.12f;
                     if (stateT <= 0f)
                     {
-                        Vector2 from = pos + new Vector2(facing * 0.4f, half.y + 0.4f);
+                        // real boulders: they land, roll and stay in the hall (and it bats them around when it bumps into them)
+                        Vector2 from = pos + new Vector2(facing * 0.4f, half.y + 0.6f);
                         float dx = P.pos.x - from.x;
                         float tFly = Mathf.Clamp(Mathf.Abs(dx) / 9f, 0.5f, 1.2f);
-                        Shot(from, new Vector2(dx / tFly, (P.pos.y - from.y) / tFly + 0.5f * 24f * tFly), rock, Rock, 24f, 0f, 1.1f);
+                        int bhp = World.MaxHp(Block.Boulder, Mathf.FloorToInt(pos.y));
+                        G.Spawn(new BoulderBody(from, new Vector2(dx / tFly, (P.pos.y - from.y) / tFly + 0.5f * 38f * tFly), bhp, this));
                         if (Phase2)
                             for (int i = -1; i <= 1; i += 2)
-                                Shot(from, new Vector2(dx / tFly + i * 3f, (P.pos.y - from.y) / tFly + 0.5f * 24f * tFly + 2f), rock, Rock, 24f, 0f, 0.6f);
+                                G.Spawn(new BoulderBody(from + Vector2.up * 0.3f * i, new Vector2(dx / tFly + i * 3f, (P.pos.y - from.y) / tFly + 0.5f * 38f * tFly + 2f), bhp, this));
                         G.sfx.Play("swing", 0.9f, 0.5f);
                         squash = 0.15f;
                         Go(S.Walk, Phase2 ? 1.2f : 1.8f);
@@ -117,7 +119,31 @@ namespace DigDeep
                     if (stateT <= 0f) Go(S.Walk, 1.4f);
                     break;
             }
+            BumpBoulders();
             DrawBoss(0f);
+        }
+
+        // whenever it touches a boulder (loose or lying in the hall) it sends it bouncing away
+        void BumpBoulders()
+        {
+            var reach = half + new Vector2(0.25f, 0.1f);
+            foreach (var b in BoulderBody.All)
+            {
+                if (b.dead || b.age < 0.5f || b.bumpCd > 0f || !U.Overlap(pos, reach, b.pos, BoulderBody.H)) continue;
+                float side = Mathf.Sign(b.pos.x - pos.x == 0f ? facing : b.pos.x - pos.x);
+                b.vel = new Vector2(side * 6f + vel.x * 0.4f, 8f);
+                b.bumpCd = 0.6f;
+                G.sfx.Play("land", 0.6f, 0.7f);
+            }
+            int x0 = Mathf.FloorToInt(pos.x - reach.x), x1 = Mathf.FloorToInt(pos.x + reach.x);
+            int y0 = Mathf.FloorToInt(pos.y - reach.y + 0.3f), y1 = Mathf.FloorToInt(pos.y + reach.y);
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                    if (Wd.Get(x, y) == Block.Boulder)
+                    {
+                        float side = Mathf.Sign(x + 0.5f - pos.x == 0f ? facing : x + 0.5f - pos.x);
+                        if (Wd.PushBoulder(x, y, new Vector2(side * 6f, 8f))) G.sfx.Play("land", 0.6f, 0.7f);
+                    }
         }
 
         public override bool Hurt(float d, Vector2 knock) => base.Hurt((S)state == S.Stunned ? d * 1.5f : d, knock);   // reeling: hit it hard

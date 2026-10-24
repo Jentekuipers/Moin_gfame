@@ -80,6 +80,8 @@ namespace DigDeep
             Block at = Wd.Get(x, land);
             bool free = at == Block.Air || at == Block.Lava || at == Block.Spikes;
             if (b != Block.Boulder && b != Block.Sand) free = at == Block.Air;   // spikes, chests and crates need open air
+            if (b == Block.Boulder) Fire.DouseNear(new Vector2(x + 0.5f, land + 0.5f), 1.0f);   // and smothers fire
+            if (b == Block.Boulder && at == Block.Spikes) { Wd.Set(x, land, Block.Air); G.fx.Debris(new Vector2(x + 0.5f, land + 0.5f), new Color(0.65f, 0.65f, 0.7f), 8); }   // a boulder crushes spikes
             if (!free)
             {
                 G.fx.Debris(new Vector2(x + 0.5f, land + 0.5f), TileDraw.DebrisColor(b, Biomes.At(x, land)), 16);
@@ -348,6 +350,16 @@ namespace DigDeep
         public override bool AlwaysActive => true;
         public float Speed => vel.magnitude;
 
+        public float age, bumpCd;   // (the Boulder Troll bats its own boulders around)
+        public Enemy thrower;       // a boulder never hurts whoever threw it
+
+        // a boulder thrown from anywhere (the Boulder Troll's)
+        public BoulderBody(Vector2 at, Vector2 v, int hp, Enemy thrower) : this(Mathf.FloorToInt(at.x), Mathf.FloorToInt(at.y), v, hp)
+        {
+            pos = at; this.thrower = thrower; topY = pos.y;
+            Place();
+        }
+
         public BoulderBody(int x, int y, Vector2 v, int hp)
         {
             pos = new Vector2(x + 0.5f, y + 0.5f);
@@ -391,7 +403,7 @@ namespace DigDeep
 
         public override void Tick(float dt)
         {
-            hitCd -= dt;
+            hitCd -= dt; age += dt; bumpCd -= dt;
             pushedT -= dt;
             if (pushedT <= 0f) pushHeld = 0f;
             bool wet = Wd.FluidAtPoint(pos) == Fluids.Water;
@@ -420,6 +432,23 @@ namespace DigDeep
             grounded = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), H);
             if (grounded || vel.y > 0f) topY = pos.y;
 
+            // a boulder rolling or dropping over fire smothers it
+            if (Speed > 0.5f)
+            {
+                Fire.DouseNear(pos, 1.0f);
+                foreach (var e in G.ents)
+                    if (!e.dead && e is Ember && (e.pos - pos).sqrMagnitude < 0.8f) { G.fx.Smoke(e.pos, 2, 0.4f); e.Kill(); }
+            }
+            // a boulder rolling or dropping over spikes flattens them
+            if (Speed > 0.5f)
+                for (int sx = Mathf.FloorToInt(pos.x - H.x); sx <= Mathf.FloorToInt(pos.x + H.x); sx++)
+                    for (int sy = Mathf.FloorToInt(pos.y - H.y - 0.1f); sy <= Mathf.FloorToInt(pos.y + H.y); sy++)
+                        if (Wd.Get(sx, sy) == Block.Spikes)
+                        {
+                            Wd.Set(sx, sy, Block.Air);
+                            G.fx.Debris(new Vector2(sx + 0.5f, sy + 0.5f), new Color(0.65f, 0.65f, 0.7f), 8);
+                            G.sfx.Play("break", 0.5f, 1.3f);
+                        }
             ang -= vel.x * dt / H.x * Mathf.Rad2Deg;
             Place();
             if (grounded && Mathf.Abs(vel.x) < 0.6f) ang = Mathf.MoveTowardsAngle(ang, Mathf.Round(ang / 90f) * 90f, 360f * Time.deltaTime);   // rolls to a stop flat
@@ -499,6 +528,7 @@ namespace DigDeep
 
         void Collide()
         {
+            if (Speed > HurtSpeed) Keeper.HitAt(pos, H, Speed * Speed * 0.1f, pos - vel);   // a rolling boulder flattens a shopkeeper too
             var pl = G.player;
             if (pl.mode != Player.Mode.Dead && U.Overlap(pos, H, pl.pos, Player.Half))
             {
@@ -538,7 +568,7 @@ namespace DigDeep
             }
             foreach (var e in G.ents)
             {
-                if (e.dead || !(e is Enemy en) || en.Intangible || !U.Overlap(pos, H, en.pos, en.half)) continue;
+                if (e.dead || !(e is Enemy en) || en.Intangible || en == thrower || !U.Overlap(pos, H, en.pos, en.half)) continue;
                 float closing = Vector2.Dot(vel, (en.pos - pos).normalized);   // only what it's moving towards
                 if (closing > 2.5f && hitCd <= 0f)
                 {

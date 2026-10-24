@@ -23,6 +23,7 @@ namespace DigDeep
                 case Block.Bedrock: return bedrockC;
                 case Block.Wood: return U.C(160, 104, 60);
                 case Block.Brick: return brickC;
+                case Block.GildBrick: return U.C(214, 168, 64);
                 case Block.Sand: return sandC;
                 case Block.Magma: return magmaC;
                 case Block.Crystal: return b.crystal;
@@ -30,6 +31,7 @@ namespace DigDeep
                 case Block.TNT: return tntC;
                 case Block.Chest: return chestC;
                 case Block.Crate: return U.C(70, 76, 88);
+                case Block.Supply: return U.C(168, 116, 62);
                 case Block.Ice: return U.C(150, 205, 235);
                 case Block.Plate: return U.C(120, 128, 145);
                 case Block.Boulder: return boulderC;
@@ -54,6 +56,7 @@ namespace DigDeep
             {
                 case Block.Bedrock: return U.C(72, 68, 78);
                 case Block.Brick: return U.C(176, 124, 84);
+                case Block.GildBrick: return U.C(255, 226, 120);
                 case Block.Crystal: return Pal.Shade(b.crystal, 1.35f);
                 case Block.Volatile: return U.C(255, 140, 180);
                 case Block.Magma: return U.C(255, 130, 40);
@@ -79,6 +82,16 @@ namespace DigDeep
                 if (n > 0.996f) return U.C(230, 230, 255);
                 return sky;
             }
+            if (World.Void)
+            {
+                // the void: near-black, crumbling into bands of loose squares (dissolving gradients)
+                int band = ((-gy) % 96 + 96) % 96;
+                float k = band / 96f;
+                float h = U.H01(gx >> 1, gy >> 1, 9);
+                if (h < k * k * 0.55f) return Pal.Ramp(b.bg, 3);
+                if (h > 0.997f) return U.C(150, 80, 220);
+                return Pal.Ramp(b.bg, U.H01(gx >> 3, gy >> 3, 3) < 0.4f ? 1 : 2);
+            }
             // the cave wall behind: low-contrast clustered stone in the biome's dark, violet-shifted colours
             float cl = U.H01(gx >> 2, gy >> 2, 3), fine = U.H01(gx >> 1, gy >> 1, 4);
             int lv = cl < 0.3f ? 1 : 2;
@@ -95,8 +108,9 @@ namespace DigDeep
 
         public static void Draw(Color32[] buf, int stride, int ox, int oy, Block t, int wx, int wy, int mask, float dmg, Biome b, byte plants = 0)
         {
+            if (t == Block.Boulder) { wx = 3; wy = -3; }   // every boulder looks the same, so one that rolls and settles doesn't change its face
             if (t == Block.Bedrock) t = Block.DarkMatter;   // world walls and floors look like the void, not like background rock
-            bool full = Tiles.Solid(t) && t != Block.Chest && t != Block.Boulder && t != Block.Crate;
+            bool full = Tiles.Solid(t) && t != Block.Chest && t != Block.Boulder && t != Block.Crate && t != Block.Supply;
             Color32 rim = RimColor(t, b);
             Color32 baseC = BaseColor(t, b);
             for (int py = 0; py < 16; py++)
@@ -116,12 +130,14 @@ namespace DigDeep
                 case Block.Lava: Lava(buf, stride, ox, oy, wx, wy, mask); break;
                 case Block.Spikes: Spikes(buf, stride, ox, oy); break;
                 case Block.Chest: Chest(buf, stride, ox, oy); break;
+                case Block.Supply: Supply(buf, stride, ox, oy); break;
                 case Block.Crate: Crate(buf, stride, ox, oy, Crates.RarityAt(wx, wy)); break;
                 case Block.Boulder: Boulder(buf, stride, ox, oy, wx, wy); break;
                 case Block.Gold: Nuggets(buf, stride, ox, oy, wx, wy); break;
                 case Block.Gem: Gems(buf, stride, ox, oy, wx, wy); break;
             }
-            if (dmg > 0.01f && Tiles.Solid(t)) Cracks(buf, stride, ox, oy, wx, wy, dmg);
+            if (dmg > 0.01f && t == Block.Boulder) BoulderCracks(buf, stride, ox, oy, dmg);
+            else if (dmg > 0.01f && Tiles.Solid(t)) Cracks(buf, stride, ox, oy, wx, wy, dmg);
         }
 
         static Color32 SolidPx(Block t, Color32 baseC, Color32 rim, int mask, int px, int py, int gx, int gy)
@@ -134,9 +150,11 @@ namespace DigDeep
             switch (t)
             {
                 case Block.Brick:
+                case Block.GildBrick:
                     {
                         int row = py >> 2, off = (row & 1) * 4;
                         if ((py & 3) == 0 || ((px + off) & 7) == 0) s = 0.55f;
+                        else if (t == Block.GildBrick && (py & 3) == 1 && U.H01(gx >> 3, gy >> 2, 77) > 0.55f) s *= 1.25f;   // a glint along each gilded brick
                         break;
                     }
                 case Block.Crystal:
@@ -323,6 +341,25 @@ namespace DigDeep
             for (int px = 0; px < 16; px++) Put(buf, stride, ox, oy, px, 0, U.C(90, 86, 98));
         }
 
+        // Supply crate: a plain wooden box with a cross brace and a little red cross stencilled on it.
+        static void Supply(Color32[] buf, int stride, int ox, int oy)
+        {
+            Color32 dark = U.C(70, 40, 18), wood = U.C(168, 116, 62), lite = U.C(204, 150, 86), red = U.C(200, 52, 44);
+            for (int py = 0; py <= 10; py++)
+                for (int px = 2; px <= 13; px++)
+                {
+                    bool border = px == 2 || px == 13 || py == 0 || py == 10;
+                    Color32 c;
+                    if (border) c = dark;
+                    else if (px == 3 || px == 12 || py == 1 || py == 9) c = lite;   // the frame
+                    else c = py % 3 == 0 ? Pal.Shade(wood, 0.8f) : wood;   // planks
+                    int dx = px - 2, dy = py;   // the brace runs corner to corner
+                    if (!border && (dx * 10 / 11 == dy || dx * 10 / 11 == dy - 1)) c = Pal.Shade(wood, 0.7f);
+                    if ((px == 7 || px == 8) && py >= 3 && py <= 7 || (py == 5 && px >= 5 && px <= 10)) c = red;
+                    Put(buf, stride, ox, oy, px, py, c);
+                }
+        }
+
         static void Chest(Color32[] buf, int stride, int ox, int oy)
         {
             Color32 dark = U.C(60, 32, 16), gold = U.C(236, 184, 60), key = U.C(40, 20, 10);
@@ -407,6 +444,34 @@ namespace DigDeep
                 Put(buf, stride, ox, oy, cx + 1, cy, Pal.Shade(c, 0.7f));
                 Put(buf, stride, ox, oy, cx, cy - 1, Pal.Shade(c, 0.6f));
                 Put(buf, stride, ox, oy, cx, cy + 1, U.C(255, 255, 255));
+            }
+        }
+
+        // boulders roll, so their cracks are the same wherever they rest and look identical after every quarter turn
+        static void BoulderCracks(Color32[] buf, int stride, int ox, int oy, float dmg)
+        {
+            int steps = 2 + (int)(dmg * 7f);
+            var hit = new bool[256];
+            int px = 8, py = 8;
+            for (int i = 0; i < steps; i++)
+            {
+                uint h = U.Hash(11, 5, 300 + i);
+                int dir = (int)(h % 3);   // wander outward, towards the top-right
+                if (dir != 1) px++;
+                if (dir != 0) py++;
+                px = Mathf.Clamp(px, 1, 14); py = Mathf.Clamp(py, 1, 14);
+                int qx = px, qy = py;
+                for (int r = 0; r < 4; r++)
+                {
+                    hit[qy * 16 + qx] = true;
+                    int nx = 15 - qy; qy = qx; qx = nx;
+                }
+            }
+            for (int i = 0; i < 256; i++)
+            {
+                if (!hit[i]) continue;
+                int idx = (oy + i / 16) * stride + ox + i % 16;
+                buf[idx] = Pal.Shade(buf[idx], 0.4f);
             }
         }
 

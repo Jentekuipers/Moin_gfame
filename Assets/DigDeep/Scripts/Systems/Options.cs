@@ -9,8 +9,19 @@ namespace DigDeep
     public class OptionsMenu
     {
         enum Tab { Audio, Video, Gameplay, Controls, Gamepad }
-        static readonly string[] TabNames = { "AUDIO", "VIDEO", "GAMEPLAY", "KEYBOARD", "GAMEPAD" };
-        const int TabCount = 5;
+        static readonly string[] TabNames = { "AUDIO", "VIDEO", "GAMEPLAY", "CONTROLS" };
+        const int TabCount = 4;   // CONTROLS holds two tabs of its own: keyboard and controller
+        bool padSub;
+        int VisTab => tab == Tab.Gamepad ? 3 : (int)tab;
+        bool InControls => tab == Tab.Controls || tab == Tab.Gamepad;
+
+        void SetSub(bool pad)
+        {
+            if (padSub == pad && InControls) return;
+            padSub = pad;
+            tab = pad ? Tab.Gamepad : Tab.Controls; sel = 0; rebinding = Btn.COUNT; padRebinding = Btn.COUNT;
+            Game.I.sfx.Play("swing", 0.5f, 1.1f);
+        }
 
         class Row
         {
@@ -40,7 +51,7 @@ namespace DigDeep
             back = from;
             openFrame = Time.frameCount;   // the click that opened the menu mustn't also press something in it
             sel = 0;
-            tab = Tab.Audio;
+            tab = Tab.Audio; padSub = GameInput.UsingStick;
             rebinding = Btn.COUNT; padRebinding = Btn.COUNT;
             Game.I.state = Game.State.Options;
         }
@@ -84,6 +95,7 @@ namespace DigDeep
                     Slider("BRIGHTNESS", () => Settings.Brightness, v => Settings.Brightness = v);
                     rows.Add(new Row { label = "UI SCALE", value = () => Pct(Settings.UiScale), get01 = () => (Settings.UiScale - 0.75f) / 0.75f, set01 = v => Settings.UiScale = 0.75f + Mathf.Round(v * 15f) / 20f,
                         change = d => Settings.UiScale = Mathf.Clamp(Settings.UiScale + d * 0.05f, 0.75f, 1.5f) });
+                    rows.Add(new Row { label = "AUTO PICK-UP", hint = "OFF: PRESS INTERACT TO TAKE TRINKETS AND ITEMS", value = () => OnOff(Settings.AutoPickup), change = d => Settings.AutoPickup = !Settings.AutoPickup });
                     rows.Add(new Row { label = "PAUSE WHEN UNFOCUSED", value = () => OnOff(Settings.PauseOnFocusLoss), change = d => Settings.PauseOnFocusLoss = !Settings.PauseOnFocusLoss });
                     rows.Add(new Row { label = resetArmT > 0f ? "SURE? PRESS AGAIN TO ERASE" : "RESET ALL PROGRESS", hint = "BEST DEPTH, WINS, UNLOCKS AND THE SAVED RUN",
                         value = () => "", activate = () =>
@@ -93,10 +105,12 @@ namespace DigDeep
                         } });
                     break;
                 case Tab.Controls:
+                    DeviceRow();
                     foreach (var b in GameInput.Rebindable) rows.Add(new Row { label = GameInput.ActionName(b), bind = b });
                     rows.Add(new Row { label = "RESET CONTROLS", value = () => "", activate = () => { GameInput.DefaultBindings(); Game.I.sfx.Play("buy", 0.6f); } });
                     break;
                 case Tab.Gamepad:
+                    DeviceRow();
                     rows.Add(new Row { label = "LAYOUT", hint = GameInput.Presets[Mathf.Clamp(GameInput.PadPreset, 0, GameInput.Presets.Length - 1)].blurb,
                         value = () => GameInput.MatchesPreset(GameInput.PadPreset) ? GameInput.Presets[GameInput.PadPreset].name : "CUSTOM",
                         change = d =>
@@ -120,6 +134,9 @@ namespace DigDeep
             } });
             rows.Add(new Row { label = "BACK", value = () => "", activate = Close });
         }
+
+        void DeviceRow() => rows.Add(new Row { label = "SHOWING", hint = "KEYBOARD OR CONTROLLER BUTTONS (OR CLICK THE TABS ABOVE)",
+            value = () => padSub ? "CONTROLLER" : "KEYBOARD", change = d => SetSub(!padSub) });
 
         void Slider(string label, System.Func<float> get, System.Action<float> set)
         {
@@ -167,8 +184,8 @@ namespace DigDeep
                 return;
             }
             if (GameInput.Pressed(Btn.Pause)) { Close(); return; }
-            if (GameInput.Pressed(Btn.Swap) || GameInput.PadPressed(Pad.LB)) SetTab(((int)tab + TabCount - 1) % TabCount);
-            if (GameInput.Pressed(Btn.Interact) || GameInput.PadPressed(Pad.RB)) SetTab(((int)tab + 1) % TabCount);
+            if (GameInput.Pressed(Btn.Swap) || GameInput.PadPressed(Pad.LB)) SetTab((VisTab + TabCount - 1) % TabCount);
+            if (GameInput.Pressed(Btn.Interact) || GameInput.PadPressed(Pad.RB)) SetTab((VisTab + 1) % TabCount);
             if (GameInput.Pressed(Btn.Up)) { sel = (sel + rows.Count - 1) % rows.Count; sfx.Play("swing", 0.4f, 1.4f); }
             if (GameInput.Pressed(Btn.Down)) { sel = (sel + 1) % rows.Count; sfx.Play("swing", 0.4f, 1.4f); }
             sel = Mathf.Clamp(sel, 0, rows.Count - 1);
@@ -196,8 +213,8 @@ namespace DigDeep
 
         void SetTab(int t)
         {
-            if ((int)tab == t) return;
-            tab = (Tab)t; sel = 0; rebinding = Btn.COUNT; padRebinding = Btn.COUNT;
+            if (VisTab == t) return;
+            tab = t == 3 ? (padSub ? Tab.Gamepad : Tab.Controls) : (Tab)t; sel = 0; rebinding = Btn.COUNT; padRebinding = Btn.COUNT;
             Game.I.sfx.Play("swing", 0.5f, 1.1f);
         }
 
@@ -250,11 +267,27 @@ namespace DigDeep
                 var rect = new Rect(tx, ty, tw - 2f * S, 12f * S);
                 bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
                 if (hov && click) SetTab(i);
-                bool on = (int)tab == i;
+                bool on = VisTab == i;
                 Box(rect.x, rect.y, rect.width, rect.height, on ? new Color(1f, 0.82f, 0.3f, 0.85f) : new Color(1f, 1f, 1f, hov ? 0.15f : 0.06f));
                 PixelFont.Draw(rect.center.x, ty + 3f * S, TabNames[i], sm, on ? Color.black : Color.white, 1);
             }
             Build();
+
+            // CONTROLS: a keyboard tab and a controller tab
+            if (InControls)
+            {
+                float sw = (pw - 16f * S) * 0.5f, sy = ty + 14f * S;
+                for (int i = 0; i < 2; i++)
+                {
+                    var rect = new Rect(px + 8f * S + i * sw, sy, sw - 2f * S, 11f * S);
+                    bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
+                    if (hov && click) SetSub(i == 1);
+                    bool on = padSub == (i == 1);
+                    Box(rect.x, rect.y, rect.width, rect.height, on ? new Color(0.55f, 0.8f, 1f, 0.8f) : new Color(1f, 1f, 1f, hov ? 0.15f : 0.06f));
+                    PixelFont.Draw(rect.center.x, sy + 3f * S, i == 0 ? "KEYBOARD" : "CONTROLLER", sm, on ? Color.black : Color.white, 1);
+                }
+                ty += 14f * S;
+            }
 
             // the controller picture with what every button does
             if (padTab)
@@ -353,7 +386,7 @@ namespace DigDeep
                 : "W/S PICK    A/D CHANGE    SPACE OR CLICK    Q/E TABS    ESC BACK";
             if (hint != null) PixelFont.Draw(W * 0.5f, py + ph - 20f * S, hint, sm, new Color(0.6f, 0.6f, 0.65f), 1);
             if (tab == Tab.Controls && rebinding == Btn.COUNT && hint == null)
-                PixelFont.Draw(W * 0.5f, py + ph - 20f * S, "GAMEPAD BUTTONS ARE ON THE GAMEPAD TAB", sm, new Color(0.6f, 0.6f, 0.65f), 1);
+                PixelFont.Draw(W * 0.5f, py + ph - 20f * S, "CONTROLLER BUTTONS ARE ON THE CONTROLLER TAB", sm, new Color(0.6f, 0.6f, 0.65f), 1);
             PixelFont.Draw(W * 0.5f, py + ph - 11f * S, foot, Mathf.Max(1f, sm - 1f), new Color(0.75f, 0.75f, 0.8f), 1);
         }
 

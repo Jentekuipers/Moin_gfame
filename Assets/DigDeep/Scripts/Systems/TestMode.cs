@@ -37,6 +37,7 @@ namespace DigDeep
                     case 1: ToggleMod(p, (Mod)mod, false); break;
                     case 2: p.s.maxHp += Stats.Heart; p.s.hp += Stats.Heart; break;
                     case 3: p.AddGold(1000); break;
+                    case 4: p.voidShards = 3; break;
                 }
             }
         }
@@ -251,6 +252,18 @@ namespace DigDeep
                     ("SPAWN SPARK BEETLE", () => SpawnAt(g, p, (x, y, d) => new SparkBeetle(x, y, d))),
                     ("SPAWN MIMIC", () => SpawnAt(g, p, (x, y, d) => new Mimic(new Vector2(x + 0.5f, y + 0.5f), d))),
                     ("START THE ASCENT (FLY UP TO THE GOD)", () => { if (!World.SkyMode && !Ascent.Flying) { Open = false; Setup = false; g.StartAscent(); } }),
+                    ("SPAWN TURTLE", () => SpawnAt(g, p, (x, y, d) => new Turtle(x, y, d))),
+                    ("SPAWN SKELETON", () => SpawnAt(g, p, (x, y, d) => new Skeleton(x, y, d))),
+                    ("SPAWN WOLF", () => SpawnAt(g, p, (x, y, d) => new Wolf(x, y, d))),
+                    ("SPAWN GLIDER BAT", () => SpawnAt(g, p, (x, y, d) => new GliderBat(x, y + 3, d))),
+                    ("SPAWN ROCK MAGE", () => SpawnAt(g, p, (x, y, d) => new RockMage(x, y, d))),
+                    ("SPAWN SLIME", () => SpawnAt(g, p, (x, y, d) => new Slime(x, y, d))),
+                    ("SPAWN LANTERN SHROOM", () => SpawnAt(g, p, (x, y, d) => new MushroomElite(x, y, d))),
+                    ("SPAWN VOID MAGE", () => SpawnAt(g, p, (x, y, d) => new VoidMage(x, y + 1, d, (VoidMage.Kind)Random.Range(0, 3)))),
+                    ("SPAWN VOID ARCHMAGE", () => SpawnAt(g, p, (x, y, d) => new VoidMage(x, y + 1, d, VoidMage.Kind.Elite))),
+                    ("SPAWN SHRINE", () => SpawnShrine(g, p)),
+                    ("VOID KEY (BOTH PARTS)", () => { p.voidShards = 3; picks.Add((4, null, 0)); }),
+                    ("ENTER THE VOID NOW", () => { Open = false; Setup = false; g.RequestVoid(); }),
                     ("SPAWN ELITE GOLEM", () => SpawnAt(g, p, (x, y, d) => { var e = new Crawler(x, y, d, true); e.MakeEliteSoon(); return e; })),
                 };
                 int cc = cheats.Count > 16 ? 3 : 2;
@@ -280,6 +293,19 @@ namespace DigDeep
             else if (noteT > 0f && note != null) PixelFont.Draw(px + 6f * S, bottom + 6f * S, note, sm, new Color(1f, 0.5f, 0.4f));
             else PixelFont.Draw(px + 6f * S, bottom + 6f * S, tab == 1 ? "CLICK A MODIFIER TO PUT IT ON (OR TAKE IT OFF) THE WEAPON IN HAND, 3 AT MOST" : "CLICK TO GET IT    Q/E OR LB/RB: TABS", sm, new Color(0.7f, 0.7f, 0.75f));
             lastMouse = mouse;
+        }
+
+        static int shrineN;
+        static void SpawnShrine(Game g, Player p)
+        {
+            int x = Mathf.FloorToInt(p.pos.x + p.facing * 3f), y = Mathf.FloorToInt(p.pos.y - Player.Half.y + 0.1f);
+            switch (shrineN++ % 4)
+            {
+                case 0: g.Spawn(new RandomAltar(x, y)); break;
+                case 1: g.Spawn(new DeathAltar(x, y)); break;
+                case 2: g.Spawn(new GoldChalice(x, y)); break;
+                default: g.Spawn(new StoneDragon(x, y)); break;
+            }
         }
 
         static void SpawnAt(Game g, Player p, System.Func<int, int, int, Enemy> make)

@@ -32,6 +32,8 @@ namespace DigDeep
         public float radius;                      // explodes on impact with this radius
         public float grav, accel;                 // lobbed grenades / accelerating rockets
         public bool lob, flame, homing, selfHurt, abuses, deflect, doubleGold;
+        public bool spear;   // thrown spears: they punch through blockPierce blocks, then lodge (see Spears.cs)
+        public bool bow;   // hold to draw, let go to loose: a full draw hits hardest (fire rate draws faster)
         public float charge;                      // seconds to fully charge (railgun)
         public string sfx = "pistol", bullet = "b_bullet";
         public float pitch = 1f;
@@ -148,6 +150,7 @@ namespace DigDeep
         // Some modifiers make no sense on some weapons.
         public static bool Fits(AttackDef d, Mod m)
         {
+            if (d.spear) return m == Mod.Triple || m == Mod.HighCaliber || m == Mod.WallBreaker || m == Mod.Fire;
             if (d.Melee) return m != Mod.Homing && m != Mod.Ricochet && m != Mod.Pierce && m != Mod.Skip;
             if (d.type == WType.Rail) return m != Mod.Homing && m != Mod.Ricochet && m != Mod.Pierce && m != Mod.Skip;
             if (d.lob) return m != Mod.Ricochet && m != Mod.Explosive;
@@ -216,12 +219,13 @@ namespace DigDeep
         // From the second biome on, better crates slowly take over.
         public static Rarity RarityFor(int d, float h)
         {
+            d = Mathf.RoundToInt(d / Biomes.Stretch);   // the biomes are longer now: scale by how far through the run you are
             float past = Mathf.Max(0, d - 70);
             // luck makes every better crate more likely
             var pl = Game.I != null ? Game.I.player : null;
             float lk = 1f + 0.1f * Mathf.Clamp(pl != null ? pl.s.luck : 0f, -5f, 15f);
-            float relic = (d > 60 ? Mathf.Min(0.006f + (d - 60) * 0.0001f, 0.04f) : 0.002f) * lk;
-            float rare = Mathf.Min(0.015f + past * 0.0008f, 0.25f) * lk;
+            float relic = (d > 90 ? Mathf.Min(0.002f + (d - 90) * 0.00007f, 0.035f) : 0.0005f) * lk;
+            float rare = Mathf.Min(0.006f + past * 0.0006f, 0.22f) * lk;
             float unc = Mathf.Min(0.12f + d * 0.0005f + past * 0.0015f, 0.42f) * lk;
             if (h < relic) return Rarity.Relic;
             if (h < relic + rare) return Rarity.Rare;
@@ -378,12 +382,41 @@ namespace DigDeep
             a.type = WType.Melee; a.dmg = 2.4f; a.delay = 0.26f; a.reach = 2f; a.arc = 150f; a.mine = 4; a.knock = 10f; a.recoil = -2f; a.kick = 0.2f;
             a.shake = 0.12f; a.deflect = true; a.sfx = "esword"; a.col = cyan;
 
+            // ---------------- bows (hand-drawn): silent, quick arrows that pierce
+            Color wood = new Color(0.85f, 0.7f, 0.45f);
+            a = G("bow", "HUNTING BOW", "HOLD TO DRAW, LET GO TO LOOSE. ARROWS PIERCE A FOE", Rarity.Common, 0, 90);
+            a.dmg = 2.6f; a.delay = 0.36f; a.speed = 34f; a.spread = 2f; a.life = 1.1f; a.pierce = 1; a.knock = 4f; a.recoil = 0.6f; a.kick = 0.1f;
+            a.shake = 0.03f; a.bullet = "b_arrow"; a.sfx = "swing"; a.pitch = 1.6f; a.col = wood; a.mine = 1; a.bow = true;
+            a = G("hunterbow", "TWIN BOW", "HOLD TO DRAW: TWO ARROWS AT ONCE. EACH PIERCES 2 FOES", Rarity.Uncommon, 20, 150);
+            a.dmg = 1.8f; a.count = 2; a.delay = 0.38f; a.speed = 36f; a.spread = 6f; a.life = 1.1f; a.pierce = 2; a.knock = 4f; a.recoil = 0.7f;
+            a.kick = 0.12f; a.shake = 0.04f; a.bullet = "b_arrow"; a.sfx = "swing"; a.pitch = 1.5f; a.col = wood; a.mine = 1; a.bow = true;
+            a = G("stormbow", "STORM BOW", "HOLD TO DRAW: A FAN OF THREE PIERCING ARROWS THAT PUNCH THROUGH A BLOCK", Rarity.Rare, 60, 250);
+            a.dmg = 2f; a.count = 3; a.delay = 0.42f; a.speed = 42f; a.spread = 12f; a.life = 1.2f; a.pierce = 3; a.blockPierce = 1; a.knock = 5f;
+            a.recoil = 0.9f; a.kick = 0.15f; a.shake = 0.05f; a.bullet = "b_arrow"; a.sfx = "swing"; a.pitch = 1.3f; a.col = cyan; a.mine = 2; a.bow = true;
+            // ---------------- spears: thrown, they punch through blocks and lodge in what stops them (ledges to stand on)
+            a = G("spear", "WOODEN SPEAR", "THROWN. PUNCHES THROUGH 3 BLOCKS, THEN STICKS: STAND ON IT", Rarity.Common, 0, 95);
+            a.spear = true; a.dmg = 4.2f; a.delay = 0.55f; a.speed = 24f; a.spread = 1f; a.blockPierce = 3; a.knock = 5f; a.recoil = 0.5f; a.kick = 0.2f;
+            a.shake = 0.04f; a.sfx = "swing"; a.pitch = 0.9f; a.col = wood; a.mag = 0;
+            a = G("ironspear", "IRON SPEAR", "THROWN. PUNCHES THROUGH 4 BLOCKS, THEN STICKS: STAND ON IT", Rarity.Uncommon, 20, 150);
+            a.spear = true; a.dmg = 5.2f; a.delay = 0.55f; a.speed = 27f; a.spread = 1f; a.blockPierce = 4; a.knock = 6f; a.recoil = 0.6f; a.kick = 0.2f;
+            a.shake = 0.05f; a.sfx = "swing"; a.pitch = 0.8f; a.col = white; a.mag = 0;
+            a = G("crystalpike", "CRYSTAL PIKE", "THROWN. PUNCHES THROUGH 5 BLOCKS, THEN STICKS: STAND ON IT", Rarity.Rare, 60, 250);
+            a.spear = true; a.dmg = 6.4f; a.delay = 0.55f; a.speed = 30f; a.spread = 1f; a.blockPierce = 5; a.knock = 7f; a.recoil = 0.7f; a.kick = 0.22f;
+            a.shake = 0.06f; a.sfx = "swing"; a.pitch = 1.1f; a.col = cyan; a.mag = 0;
+            a = G("starlance", "STAR LANCE", "THROWN. PUNCHES THROUGH 7 BLOCKS, THEN STICKS: STAND ON IT", Rarity.Relic, 0, 320);
+            a.spear = true; a.dmg = 8.5f; a.delay = 0.5f; a.speed = 34f; a.spread = 0.5f; a.blockPierce = 7; a.knock = 8f; a.recoil = 0.8f; a.kick = 0.25f;
+            a.shake = 0.08f; a.sfx = "swing"; a.pitch = 0.7f; a.col = gold; a.mag = 0;
+            // ---------------- the legendary blade
+            a = G("prismblade", "PRISM GREATSWORD", "LEGENDARY. A HUGE CRYSTAL SWORD: VAST REACH, DEFLECTS EVERYTHING", Rarity.Relic, 0, 400);
+            a.type = WType.Melee; a.dmg = 5.5f; a.delay = 0.42f; a.reach = 2.5f; a.arc = 160f; a.mine = 5; a.knock = 15f; a.recoil = -2f; a.kick = 0.3f;
+            a.shake = 0.18f; a.deflect = true; a.sfx = "esword"; a.pitch = 0.8f; a.col = new Color(1f, 0.4f, 0.75f);
+
             // ---------------- relics: puzzle altars and golden crates only
             a = G("seeker", "SEEKER SWARM", "4 HOMING MINI-ROCKETS", Rarity.Relic, 0, 320);
             a.dmg = 2.6f; a.count = 4; a.spread = 50f; a.speed = 16f; a.delay = 0.7f; a.homing = true; a.radius = 0.9f; a.knock = 3f; a.recoil = 2f;
             a.kick = 0.25f; a.shake = 0.12f; a.sfx = "rocket"; a.pitch = 1.4f; a.bullet = "b_seeker"; a.life = 2.2f; a.mine = 1; a.col = red;
 
-            a = G("starpick", "STAR PICK", "BLINDINGLY FAST. HUGE MINING", Rarity.Relic, 0, 320);
+            a = G("starpick", "STAR PICK", "BLINDINGLY FAST", Rarity.Relic, 0, 320);
             a.type = WType.Melee; a.dmg = 1.07f; a.delay = 0.1f; a.reach = 1.45f; a.arc = 90f; a.mine = 8; a.knock = 7f; a.kick = 0.1f; a.shake = 0.06f;
             a.deflect = true; a.sfx = "swing"; a.col = gold;
 
@@ -436,7 +469,7 @@ namespace DigDeep
             string dmg = a.dmg.ToString("0.##", ci) + (a.count > 1 ? "x" + a.count : "") + (a.burst > 1 ? "x" + a.burst : "");
             float rate = 1f / Mathf.Max(0.02f, a.delay + (a.type == WType.Rail ? a.charge : 0f));
             string ammo = a.UsesHeat ? "   OVERHEATS" : a.mag > 0 ? "   MAG " + a.mag : "";
-            return (a.Melee ? "MELEE  " : "") + "DMG " + dmg + "   RATE " + rate.ToString("0.0", ci) + "/S   MINE " + a.mine + ammo;
+            return (a.Melee ? "MELEE  " : "") + "DMG " + dmg + "   RATE " + rate.ToString("0.0", ci) + "/S" + ammo;
         }
     }
 }

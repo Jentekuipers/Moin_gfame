@@ -246,11 +246,15 @@ namespace DigDeep
             byte fl = Wd.FluidAtPoint(pos);
             if (fl == Fluids.Water)
             {
-                if (flame && team == Team.Player && age < 0.04f)
+                if (flame && team == Team.Player)
                 {
-                    // point blank: the first instant of a flame still bites (and digs) before the water snuffs it
-                    vel *= 0.3f;
-                    life = Mathf.Min(life, 0.03f);
+                    // a flamethrower under water boils the water around it away and keeps burning (and digging) through
+                    int fx0 = Mathf.FloorToInt(pos.x), fy0 = Mathf.FloorToInt(pos.y);
+                    float wa0 = Wd.LiquidAmount(fx0, fy0) - 0.3f;
+                    if (wa0 <= 0.02f) Wd.SetLiquid(fx0, fy0, Fluids.None, 0f); else Wd.SetLiquid(fx0, fy0, Fluids.Water, wa0);
+                    Wd.AddSteam(fx0, fy0 + 1, 0.12f);
+                    if (Random.value < 0.3f) G.fx.Smoke(pos, 1, 0.6f);
+                    vel *= 1f - Mathf.Min(0.8f, 2.5f * dt);
                 }
                 else if (flame || main == Art.Bullets["b_fire"])
                 {
@@ -265,8 +269,11 @@ namespace DigDeep
                 }
                 // frost shots no longer freeze on touching water: they swim on and dig like any shot; a few of
                 // them flash-freeze the water where they finally stop (see Kill), and foes they hit in water get iced in
-                vel *= 1f - Mathf.Min(0.9f, 4f * dt);
-                life -= dt;
+                if (!flame)
+                {
+                    vel *= 1f - Mathf.Min(0.9f, 4f * dt);
+                    life -= dt;
+                }
             }
             else if (fl == Fluids.Lava && frost && team == Team.Player) { FreezeAround(); Kill(); return; }
             // LINGERING SHOTS: brake hard, then hang in the air, drifting
@@ -565,6 +572,12 @@ namespace DigDeep
                 }
             }
 
+            if (team == Team.Player && Keeper.HitAt(pos, h, dmg, pos - vel))
+            {
+                if (radius > 0f) { Explode(pos); return true; }
+                Kill();
+                return true;
+            }
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en) || hit.Contains(en) || en.Intangible) continue;

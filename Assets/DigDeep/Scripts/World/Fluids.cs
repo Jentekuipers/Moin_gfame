@@ -60,7 +60,7 @@ namespace DigDeep
             return vy < cap ? Mathf.MoveTowards(vy, cap, 90f * dt) : vy;
         }
 
-        public static bool Blocks(Block b) => Tiles.Solid(b) && b != Block.Chest && b != Block.Crate && b != Block.Spikes;
+        public static bool Blocks(Block b) => Tiles.Solid(b) && b != Block.Chest && b != Block.Crate && b != Block.Supply && b != Block.Spikes;
 
         void Simulate(float camY, float halfH)
         {

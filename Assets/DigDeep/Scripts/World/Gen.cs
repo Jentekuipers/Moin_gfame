@@ -202,7 +202,7 @@ namespace DigDeep
             Block m = Block.Dirt;
             if (rock > th) m = Block.Stone;
             if (depth > 60 && rock > th + 0.18f) m = Block.HardStone;
-            if (depth > 220 && rock > th + 0.30f) m = Block.Obsidian;
+            if (depth > 330 && rock > th + 0.30f) m = Block.Obsidian;
             if (m == Block.Dirt)
             {
                 float s = Mathf.PerlinNoise(x * 0.16f + o4, y * 0.16f + o4 * 0.2f);
@@ -239,8 +239,9 @@ namespace DigDeep
                     return wbi == Biomes.Crystal ? Block.Ice : Block.Water;
                 if (RawSolid(x, y - 1))
                 {
-                    if (depth > 6 && r < 0.011f) return Block.Chest;
-                    if (depth > 8 && r < 0.0145f) return Block.Crate;
+                    if (depth > 6 && r < 0.0065f) return Block.Chest;   // fewer chests: loot should feel earned
+                    if (depth > 8 && r < 0.01f) return Block.Crate;
+                    if (depth > 6 && r < 0.014f) return Block.Supply;   // wooden supply crates: bombs, potions and other consumables
                     int bi = Biomes.Index(depth);
                     if (bi == Biomes.Magma && Mathf.PerlinNoise(x * 0.2f + o5, y * 0.2f) > 0.6f) return Block.Lava;   // the Magma Core: plenty
                     if (bi != Biomes.Magma && bi != Biomes.Jungle && bi != Biomes.Storm && depth > 40 && Mathf.PerlinNoise(x * 0.09f + o4, y * 0.09f + 3.1f) > 0.8f) return Block.Lava;   // rare pockets elsewhere
@@ -260,13 +261,13 @@ namespace DigDeep
                 float tnt = depth < 18 ? 0f : Mathf.Min(0.003f + depth * 0.00002f, 0.011f);
                 if (r < gold + gem + tnt) return Block.TNT;
                 // buried treasure only where something solid holds it up (never in a cave ceiling)
-                if (r > 0.997f && depth > 5 && RawSolid(x, y - 1)) return Block.Chest;
+                if (r > 0.9982f && depth > 5 && RawSolid(x, y - 1)) return Block.Chest;
                 if (r > 0.9978f && depth > 20 && RawSolid(x, y - 1)) return Block.Crate;
                 float r2 = U.H01(x, y, seed + 23);
                 if (Biomes.Index(depth) >= Biomes.Crystal)
                 {
                     if (r2 < 0.035f) return Block.Crystal;
-                    if (depth > 165 && r2 < 0.035f + Mathf.Min((depth - 165) * 0.0001f, 0.02f)) return Block.Volatile;
+                    if (depth > 250 && r2 < 0.035f + Mathf.Min((depth - 250) * 0.0001f, 0.02f)) return Block.Volatile;
                 }
                 if (depth > 10 && r2 > 1f - Mathf.Min(0.006f + depth * 0.00004f, 0.02f) && RawSolid(x, y - 1)) return Block.Boulder;
             }

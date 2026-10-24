@@ -13,7 +13,7 @@ namespace DigDeep
         public Team team = Team.Beast;
         protected Sprite[] frames, whites;
         protected float animT, flash, hurtCd, contactCd;
-        protected Color blood = new Color(0.5f, 0.9f, 0.4f);
+        public Color blood = new Color(0.5f, 0.9f, 0.4f);
         protected bool intangible;   // e.g. a burrowed boss: can't hurt or be hurt
         protected int depth;
 
@@ -50,12 +50,39 @@ namespace DigDeep
         float novaT = 3f;
         protected virtual bool CanBeElite => !(this is Boss) && !(this is WormSegment) && !Harmless;
         protected virtual void OnTouch(Player p) { }   // after a touch hurts you (bee stings, burning slugs...)
+        protected virtual Sprite[] DeathAnim => null;   // played where it dies (a bat's death), instead of a corpse
+        protected virtual bool LeavesCorpse => true;
+
+        // a frame of one of the extra hand-drawn strips (a slime's squash, a skeleton's punch...), flashing white when hit
+        protected Sprite StripFrame(string key, int i)
+        {
+            if (!Art.Strips.TryGetValue(key, out var s) || s == null || s.Length == 0) return null;
+            i = Mathf.Clamp(i, 0, s.Length - 1);
+            if (flash > 0f && Art.EnemyWhite.TryGetValue(key, out var w) && w != null && w.Length == s.Length) return w[i];
+            return s[i];
+        }
+
+        // THE VOID WORLD: every creature is a darker, meaner version of itself
+        bool voidDone;
+        float voidT = 4f;
+        public static readonly Color VoidTint = new Color(0.55f, 0.38f, 0.72f);
+        public bool IsVoid => voidDone;
+        void MakeVoid()
+        {
+            voidDone = true;
+            hp *= 1.6f; maxHp *= 1.6f;
+            dmg = dmg * 3 / 2;
+            gold = Mathf.Max(gold + 1, gold * 3 / 2);
+            if (this is Boss b) b.TintVoid();
+        }
+        // void creatures burst into a ring of void shards when they die; void bosses also strike out every few seconds
+        protected virtual void VoidStrike() { }
 
         protected void Setup(string name, string key, int baseHp, int depth)
         {
             this.depth = depth;
             if (GenSpawning && depth > 20 && Random.value < 0.012f) elitePending = true;
-            maxHp = hp = Mathf.Max(1f, Mathf.Round(baseHp * (1f + depth / 110f) * 2f) / 2f);
+            maxHp = hp = Mathf.Max(1f, Mathf.Round(baseHp * (1f + depth / Biomes.Stretch / 85f) * 2f) / 2f);   // tougher the deeper it lives
             dmg = ContactDmg(depth);
             frames = Art.Enemy[key];
             whites = Art.EnemyWhite[key];
@@ -153,7 +180,7 @@ namespace DigDeep
             bool landed = Wd.MoveY(ref p, half, vel.y * dt, out _);
             if (landed) { vel.y = vyWas < -6f ? -vyWas * 0.25f : 0f; vel.x *= 0.8f; }   // a little bounce off hard landings
             pos = p;
-            bool onGround = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), half);
+            bool onGround = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             if (onGround && vel.y <= 0.01f) vel.x = Mathf.MoveTowards(vel.x, 0f, 16f * dt);   // skids to a stop
 
             if (vel.magnitude > 5f)
@@ -274,7 +301,20 @@ namespace DigDeep
             Vector2 kd = lastKnock.sqrMagnitude > 0.01f ? lastKnock : Vector2.up * 3f;
             Vector2 dir = kd.normalized;
             // the body flies off along the killing shot
-            if (!(this is Boss)) G.Spawn(new Corpse(this, dir * Mathf.Clamp(kd.magnitude * 1.6f + 7f, 8f, 26f) + Vector2.up * 4f));
+            if (!(this is Boss))
+            {
+                if (DeathAnim != null) G.Spawn(new FrameAnim(pos, DeathAnim, 12f, facing < 0, 12, dir * 2f, 6f));
+                else if (LeavesCorpse) G.Spawn(new Corpse(this, dir * Mathf.Clamp(kd.magnitude * 1.6f + 7f, 8f, 26f) + Vector2.up * 4f));
+            }
+            if (voidDone && !(this is Boss) && !(this is WormSegment))
+            {
+                // the void bloom: shards of black fly out of it
+                for (int i = 0; i < 6; i++)
+                {
+                    float a = (i * 60f + Random.value * 20f) * Mathf.Deg2Rad;
+                    G.Spawn(new Bullet(pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 3.5f, Team.Beast, EnemyShotDamage, Mathf.Max(1, dmg / 3), "b_enemy", new Color(0.6f, 0.3f, 1f), 0.8f, 0.9f));
+                }
+            }
             G.fx.Blood(pos, dir, blood, 26);
             G.fx.Blood(pos, Vector2.up, blood, 10);
             G.fx.Gibs(pos, dir, blood, 6);
@@ -334,7 +374,7 @@ namespace DigDeep
         // now and then an elite lets loose a ring of its element
         void EliteTick(float dt)
         {
-            if (Random.value < 0.2f) G.fx.Burst(pos + Random.insideUnitCircle * half.x, 1, EliteColor, 1.2f, 0.5f, -2f, 1f, false);
+            if (Random.value < 0.5f) G.fx.Burst(pos + Random.insideUnitCircle * (half.x + 0.3f), 1, EliteColor, 1.4f, 0.6f, -2f, 1f, false);   // its aura
             if (!HasTarget || (TPos - pos).sqrMagnitude > 64f || intangible) return;
             novaT -= dt;
             if (novaT > 0f) return;
@@ -403,10 +443,10 @@ namespace DigDeep
             return true;
         }
 
-        protected float EnemyShotDamage => 2f * (1f + depth / 110f);
+        protected float EnemyShotDamage => 2f * (1f + depth / Biomes.Stretch / 110f);
 
         // What a touch (or a normal enemy bullet) does to you, in health points. A heart is 100.
-        public static int ContactDmg(int depth) => Mathf.RoundToInt(60f + Mathf.Max(0, depth) * 0.25f);
+        public static int ContactDmg(int depth) => Mathf.RoundToInt(60f + Mathf.Max(0, depth) / Biomes.Stretch * 0.25f);
 
         // ---------------------------------------------------------------- tick helpers
 
@@ -454,6 +494,12 @@ namespace DigDeep
         {
             animT += dt; flash -= dt; hurtCd -= dt; contactCd -= dt; frostCd -= dt; shockCd -= dt;
             if (elitePending) { elitePending = false; if (CanBeElite) MakeElite(); }
+            if (!voidDone && World.Void && !(this is SkyGod)) MakeVoid();
+            if (voidDone && this is Boss && !intangible && HasPlayerNear(14f))
+            {
+                voidT -= dt;
+                if (voidT <= 0f) { voidT = 5.5f; VoidStrike(); }
+            }
             TickBurning(dt);
             if (dead) return;
             if (elite) EliteTick(dt);
@@ -524,6 +570,7 @@ namespace DigDeep
                 if (burnT > 0f) c = Color.Lerp(new Color(1f, 0.7f, 0.4f), new Color(1f, 0.4f, 0.15f), 0.5f + 0.5f * Mathf.Sin(Time.time * 30f));
                 if (G.player.huntMark == this) c = Color.Lerp(c, new Color(1f, 0.9f, 0.2f), 0.5f + 0.5f * Mathf.Sin(Time.time * 10f));
                 if (G.InReveal(pos)) c = Color.Lerp(c, new Color(1f, 0.25f, 0.25f), (0.45f + 0.15f * Mathf.Sin(Time.time * 6f)) * G.RevealFade);
+                if (voidDone) c = Color.Lerp(c, VoidTint, 0.55f) * new Color(0.75f, 0.7f, 0.85f, 1f);
                 if (elite) c = Color.Lerp(c, EliteColor, 0.35f + 0.15f * Mathf.Sin(Time.time * 5f));
                 sr.color = c;
             }
@@ -531,7 +578,6 @@ namespace DigDeep
             Place(yOff);
             // a hit makes it pop bigger for a frame or two
             if (!(this is Boss)) { float k = (1f + Mathf.Max(0f, flash) * 3f) * (elite ? 1.4f : 1f); go.transform.localScale = new Vector3(k, k, 1f); }
-            if (elite) G.hud.Label(pos + Vector2.up * (half.y * 1.6f + 0.5f), "ELITE", EliteColor);
         }
 
         // SHARPSHOOTER: a red dot on the weak spot of everything
@@ -552,6 +598,8 @@ namespace DigDeep
             weakGo.transform.localScale = new Vector3(s, s, 1f);
             weakGo.transform.position = new Vector3(U.Snap(pos.x), U.Snap(pos.y), 0);
         }
+
+        bool HasPlayerNear(float r) => G.player != null && G.player.mode != Player.Mode.Dead && (G.player.pos - pos).sqrMagnitude < r * r;
 
         public override void AddLight(Lighting l)
         {
@@ -620,6 +668,8 @@ namespace DigDeep
         float t, shootT, navT;
         Vector2 navPt;
         readonly bool imp;
+
+        protected override Sprite[] DeathAnim => imp ? null : Art.BatDeath;
 
         public Bat(int x, int y, int depth, bool imp)
         {

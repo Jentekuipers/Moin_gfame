@@ -57,7 +57,7 @@ namespace DigDeep
             FindTarget(range + 2f, true, dt);
             bool has = HasTarget;
             vel.y = Mathf.Max(vel.y - 40f * dt, -16f);
-            grounded = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), half);
+            grounded = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             float want = 0f;
             if (has)
             {

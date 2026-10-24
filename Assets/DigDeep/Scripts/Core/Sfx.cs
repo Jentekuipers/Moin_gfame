@@ -73,10 +73,10 @@ namespace DigDeep
             switch (b)
             {
                 case Block.Dirt: case Block.Sand: return "m_dirt";
-                case Block.Stone: case Block.HardStone: case Block.Obsidian: case Block.Boulder: case Block.Magma: case Block.Brick: return "m_rock";
+                case Block.Stone: case Block.HardStone: case Block.Obsidian: case Block.Boulder: case Block.Magma: case Block.Brick: case Block.GildBrick: return "m_rock";
                 case Block.Gold: case Block.Gem: case Block.Crystal: case Block.Volatile: case Block.BigGold2: case Block.BigGold4: case Block.BigGold6: case Block.Ice: return "m_crystal";
                 case Block.Crate: case Block.Spikes: return "m_metal";
-                case Block.Chest: case Block.TNT: case Block.Wood: return "m_wood";
+                case Block.Chest: case Block.Supply: case Block.TNT: case Block.Wood: return "m_wood";
                 case Block.DarkMatter: case Block.Seal: case Block.Bedrock: return "m_void";
             }
             return null;

@@ -13,6 +13,9 @@ namespace DigDeep
         public int seed, charIndex, maxDepth;
         public float time;
         public float px, py;
+        public bool isVoid;      // a run through the void world
+        public bool voidDragon;  // the void dragon has already turned up this void run
+        public int voidShards;   // the parts of the void key you carry (1 + 2)
         public bool ascent;      // saved on the way to the gods: come back at the surface (ax, ay), ready to fly up
         public float ax, ay;
 

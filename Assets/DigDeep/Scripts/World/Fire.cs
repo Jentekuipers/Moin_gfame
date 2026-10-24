@@ -147,7 +147,13 @@ namespace DigDeep
                 return;
             }
             // the burning block got knocked out from under it early
-            if (onBlock && !Tiles.Def(Wd.Get(cx, cy)).burnable) { Burnout(false); return; }
+            // the thing it was burning is gone (knocked out, or the floor under it broke): it tumbles down, still burning
+            if ((onBlock && !Tiles.Def(Wd.Get(cx, cy)).burnable) || (!onBlock && !Wd.Solid(cx, cy - 1) && !Fire.HasFuel(cx, cy)))
+            {
+                Burnout(false);
+                if (t < life - 0.3f) G.Spawn(new Ember(new Vector2(cx + 0.5f, cy + 0.4f)));
+                return;
+            }
 
             // spread to everything touching it
             if ((spreads == 0 && t >= 1f) || (spreads == 1 && t >= 2.5f))

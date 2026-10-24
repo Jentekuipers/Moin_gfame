@@ -72,6 +72,54 @@ namespace DigDeep
             }
         }
 
+        // A light that only reaches what you can see: vis holds how visible each cell is (0..1), vw x vh cells from (vx0, vy0).
+        // It's sampled smoothly between cell centres, so the edges fade out in texel steps rather than cutting off at a cell.
+        public void AddVis(Vector2 p, float r, float intensity, float[] vis, int vx0, int vy0, int vw, int vh)
+        {
+            if (r <= 0f || lum == null) return;
+            float lx = (p.x - origin.x) * RES, ly = (p.y - origin.y) * RES, rr = r * RES;
+            int x0 = Mathf.Max(0, (int)(lx - rr)), x1 = Mathf.Min(tw - 1, (int)(lx + rr));
+            int y0 = Mathf.Max(0, (int)(ly - rr)), y1 = Mathf.Min(th - 1, (int)(ly + rr));
+            if (x0 > x1 || y0 > y1) return;
+            float inv = 1f / (rr * rr);
+            for (int y = y0; y <= y1; y++)
+            {
+                float wy = origin.y + (y + 0.5f) / RES - vy0 - 0.5f;   // in cell-centre space
+                int cy = Mathf.FloorToInt(wy); float fy = wy - cy;
+                if (cy < 0 || cy + 1 >= vh) continue;
+                float dy = y + 0.5f - ly;
+                int row = y * tw;
+                for (int x = x0; x <= x1; x++)
+                {
+                    float wx = origin.x + (x + 0.5f) / RES - vx0 - 0.5f;
+                    int cx = Mathf.FloorToInt(wx); float fx = wx - cx;
+                    if (cx < 0 || cx + 1 >= vw) continue;
+                    int k = cy * vw + cx;
+                    float vv = Mathf.Lerp(Mathf.Lerp(vis[k], vis[k + 1], fx), Mathf.Lerp(vis[k + vw], vis[k + vw + 1], fx), fy);
+                    if (vv <= 0.01f) continue;
+                    float dx = x + 0.5f - lx;
+                    float d = (dx * dx + dy * dy) * inv;
+                    if (d >= 1f) continue;
+                    float v = (1f - d);
+                    v = v * v * (3f - 2f * v) * intensity * vv;
+                    if (v > lum[row + x]) lum[row + x] = v;
+                }
+            }
+        }
+
+        // every texel of one cell at least this bright (remembered cells)
+        public void FloorCell(int cx, int cy, float v)
+        {
+            if (lum == null) return;
+            int x0 = (cx - (int)origin.x) * RES, y0 = (cy - (int)origin.y) * RES;
+            if (x0 < 0 || y0 < 0 || x0 + RES > tw || y0 + RES > th) return;
+            for (int y = y0; y < y0 + RES; y++)
+            {
+                int row = y * tw;
+                for (int x = x0; x < x0 + RES; x++) if (v > lum[row + x]) lum[row + x] = v;
+            }
+        }
+
         // Full light over a whole rectangle (soft one-tile edge).
         public void AddRect(Vector2 min, Vector2 max, float intensity)
         {

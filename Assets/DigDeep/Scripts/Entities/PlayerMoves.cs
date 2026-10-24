@@ -258,14 +258,15 @@ namespace DigDeep
                 for (int x = cx - 1; x <= cx + 1; x++)
                 {
                     Block b = Wd.Get(x, y);
-                    if (b != Block.Chest && b != Block.Crate) continue;
+                    if (b != Block.Chest && b != Block.Crate && b != Block.Supply) continue;
                     float d = (new Vector2(x + 0.5f, y + 0.5f) - pos).sqrMagnitude;
                     if (d < best) { best = d; hit = new Vector2Int(x, y); }
                 }
             if (hit.x == int.MinValue) return;
-            bool chest = Wd.Get(hit.x, hit.y) == Block.Chest;
-            G.hud.Label(new Vector2(hit.x + 0.5f, hit.y + 1.6f), chest ? GameInput.Prompt(Btn.Interact) + ": OPEN CHEST" : GameInput.Prompt(Btn.Interact) + ": OPEN WEAPON CRATE",
-                chest ? new Color(1f, 0.85f, 0.35f) : (Color)DB.RarityColor(Crates.RarityAt(hit.x, hit.y)));
+            Block hb = Wd.Get(hit.x, hit.y);
+            bool chest = hb == Block.Chest, supply = hb == Block.Supply;
+            G.hud.Label(new Vector2(hit.x + 0.5f, hit.y + 1.6f), GameInput.Prompt(Btn.Interact) + (chest ? ": OPEN CHEST" : supply ? ": OPEN SUPPLIES" : ": OPEN WEAPON CRATE"),
+                chest ? new Color(1f, 0.85f, 0.35f) : supply ? new Color(0.9f, 0.7f, 0.45f) : (Color)DB.RarityColor(Crates.RarityAt(hit.x, hit.y)));
             if (GameInput.Take(Btn.Interact))
             {
                 Wd.Break(hit.x, hit.y, true, GoldMul);
@@ -333,7 +334,7 @@ namespace DigDeep
                 for (int x = x0; x <= x1; x++)
                 {
                     var b = Wd.Get(x, y);
-                    if (b == Block.Chest || b == Block.Crate) continue;
+                    if (b == Block.Chest || b == Block.Crate || b == Block.Supply) continue;
                     if (Wd.Solid(x, y)) return true;
                 }
             return false;

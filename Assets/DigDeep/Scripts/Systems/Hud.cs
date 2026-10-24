@@ -120,11 +120,17 @@ namespace DigDeep
                         lines.Add((done ? "* " + tf.name + ": " + tf.desc : "TRANSFORMATION " + tf.name + " " + Mathf.Min(have, tf.count) + "/" + tf.count,
                             done ? DB.TransformColor : new Color(0.45f, 0.75f, 0.7f)));
                     }
+            // combos only show once they're real: one you have, or the one this very thing would complete
             foreach (var c in DB.Combos)
             {
                 if (c.IsTransform || System.Array.IndexOf(c.needs, d.id) < 0) continue;
-                string s = p.Combo(c.id) ? "* " + c.name + ": " + c.desc : "? COMBO WITH " + ComboPartners(c, d.id, p);
-                lines.Add((s, p.Combo(c.id) ? DB.ComboColor : new Color(0.65f, 0.6f, 0.45f)));
+                if (p.Combo(c.id)) lines.Add(("COMBO " + c.name + ": " + c.desc, DB.ComboColor));
+                else if (DB.Completes(c, d, p))
+                {
+                    float k = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f);
+                    lines.Add(("COMPLETES COMBO " + c.name + "!", Color.Lerp(DB.ComboColor, Color.white, k)));
+                    lines.Add((c.desc, DB.ComboColor));
+                }
             }
             Tip(d.name, DB.ColorOf(d), lines.ToArray());
         }
@@ -153,7 +159,7 @@ namespace DigDeep
                 int perPull = d.count * (w.Has(Mod.Triple) ? 3 : 1) * Mathf.Max(1, pl.s.multiShot) * (pl.s.freeDouble ? 2 : 1) * Mathf.Max(1, d.burst);
                 float dmg = pl.Dmg(d.dmg) * (w.Has(Mod.HighCaliber) ? 2.5f : 1f) * (d.Melee ? pl.s.meleeMul * Player.MeleePower : 1f);
                 float rate = pl.SwingRate / Mathf.Max(0.02f, d.delay * Player.DelayMul(w));
-                lines.Add(((d.Melee ? "MELEE  " : "") + "DMG " + dmg.ToString("0.#", ci) + (perPull > 1 ? " X" + perPull : "") + "   RATE " + rate.ToString("0.0", ci) + "/S   MINE " + d.mine + ammo, TipStat));
+                lines.Add(((d.Melee ? "MELEE  " : "") + "DMG " + dmg.ToString("0.#", ci) + (perPull > 1 ? " X" + perPull : "") + "   RATE " + rate.ToString("0.0", ci) + "/S" + ammo, TipStat));
             }
             else lines.Add((Armoury.Stats(d), TipStat));
             foreach (var m in w.mods) lines.Add(("+ " + Mods.Names[(int)m] + ": " + Mods.Desc[(int)m], Mods.Ui));
@@ -162,7 +168,7 @@ namespace DigDeep
                 lines.Add((Curses.Name(w.curse) + ": " + Curses.Desc[(int)w.curse], Curses.Col(w.curse)));
                 lines.Add(("LIFTS AFTER " + (Curses.KillsToLift - w.curseKills) + " MORE KILLS", Curses.Col(w.curse)));
             }
-            lines.Add((current ? "IN HAND" : (GameInput.UsingStick ? GameInput.Prompt(Btn.Swap) : GameInput.Prompt(Btn.Swap) + " / WHEEL") + " TO SWAP TO IT", new Color(0.6f, 0.6f, 0.6f)));
+            if (current) lines.Add(("IN HAND", new Color(0.6f, 0.6f, 0.6f)));
             Tip(w.def.name, w.Color, lines.ToArray());
         }
 
@@ -345,6 +351,18 @@ namespace DigDeep
             float gp = 1f + goldPop * 0.3f;
             Icon(Art.Icons["coin"], pad, y - goldPop * S, 8f * S * gp, Color.white);
             PixelFont.Draw(pad + 11f * S, y + 0.5f * S - goldPop * 2f * S, p.s.gold.ToString(), S * (goldPop > 0.5f ? 1.25f : 1f), Color.Lerp(new Color(1f, 0.85f, 0.3f), Color.white, goldPop));
+            // the void key: its parts, or the whole key
+            if (p.voidShards != 0)
+            {
+                float kx = pad + 11f * S + PixelFont.Width(p.s.gold.ToString(), S * 1.25f) + 8f * S;
+                if (p.voidShards == 3 && Art.VoidKey != null) Icon(Art.VoidKey, kx, y - 2f * S, 11f * S, Color.white);
+                else if (Art.KeyShine != null)
+                    for (int i = 0; i < 2; i++)
+                        Icon(Art.KeyShine[0], kx + i * 7f * S, y - 1f * S, 9f * S, (p.voidShards & (1 << i)) != 0 ? new Color(0.85f, 0.6f, 1f) : new Color(0.3f, 0.3f, 0.35f, 0.6f));
+                if (Hover(kx, y - 2f * S, 16f * S, 11f * S))
+                    Tip(p.voidShards == 3 ? "THE VOID KEY" : "PART OF THE VOID KEY", new Color(0.8f, 0.55f, 1f),
+                        (p.voidShards == 3 ? "BEAT ORNIN WITH IT AND A DOOR TO THE VOID OPENS" : "BEAT THE SECOND BOSS WITHIN 6 MINUTES FOR THE OTHER PART", TipGrey));
+            }
             y += 12f * S;
             DrawStats(p, pad, y, S, sm);
 
@@ -353,7 +371,7 @@ namespace DigDeep
             else
             {
                 PixelFont.Draw(Screen.width * 0.5f, pad, "DEPTH: -" + p.Depth, S, new Color(0.85f, 0.7f, 0.35f), 1);
-                var bio = Biomes.All[Biomes.Index(p.Depth)];
+                var bio = Biomes.Cur[Biomes.Index(p.Depth)];
                 PixelFont.Draw(Screen.width * 0.5f, pad + 10f * S, bio.name, sm, (Color)bio.rim, 1);
             }
 
@@ -422,7 +440,7 @@ namespace DigDeep
             }
             else if (biomeT > 0f && !World.SkyMode)
             {
-                var bio = Biomes.All[Biomes.Index(p.Depth)];
+                var bio = Biomes.Cur[Biomes.Index(p.Depth)];
                 float a = Mathf.Clamp01(biomeT);
                 var c = (Color)bio.rim; c.a = a;
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height * 0.22f, bio.name, S * 2f, c, 1);
@@ -520,21 +538,7 @@ namespace DigDeep
                 if (Hover(x, y, sz, sz)) { TipDef(k, p); if (cnt > 1) tipLines.Insert(0, ("x" + cnt, Color.white)); }
                 if (cnt > 1) PixelFont.Draw(x + sz, y + sz - 6f * sm, cnt.ToString(), sm, Color.white, 2);
             }
-            int rows = (n + cols - 1) / cols;
-            float cy = top + rows * (sz + gap) + (n > 0 ? 3f * S : 0f);
-            foreach (var c in p.comboOrder)
-            {
-                PixelFont.Draw(right, cy, "* " + c.name, sm, DB.ColorOfCombo(c), 2);
-                float cw = PixelFont.Width("* " + c.name, sm);
-                if (Hover(right - cw, cy, cw, 8f * sm))
-                {
-                    string parts = "";
-                    if (c.IsTransform) { foreach (var k in p.skillOrder) if (k.tags != null && System.Array.IndexOf(k.tags, c.tag) >= 0) parts += (parts.Length > 0 ? " + " : "") + k.name; }
-                    else foreach (var need in c.needs) parts += (parts.Length > 0 ? " + " : "") + DB.Name(need);
-                    Tip((c.IsTransform ? "TRANSFORMATION: " : "COMBO: ") + c.name, DB.ColorOfCombo(c), (c.desc, TipGrey), (parts, new Color(0.7f, 0.7f, 0.7f)));
-                }
-                cy += 9f * sm;
-            }
+            // (combos are listed in the pause menu only)
         }
 
         int pausePage, pausePages = 1;
@@ -681,27 +685,6 @@ namespace DigDeep
                 }
                 ry += line * 1.15f;
             }
-            if (pausePage == cPages - 1)
-            {
-                ry += line * 0.5f;
-                int hints = 0;
-                foreach (var c in DB.Combos)
-                {
-                    if (p.Combo(c.id) || c.IsTransform) continue;
-                    int have = 0;
-                    foreach (var need in c.needs) if (p.Owns(need)) have++;
-                    if (have == 0 || have == c.needs.Length) continue;
-                    if (ry > bottom - line) break;
-                    if (hints == 0) { PixelFont.Draw(rx, ry, "HALF-FINISHED COMBOS", sm, new Color(0.6f, 0.6f, 0.6f)); ry += line; }
-                    string str = "? ";
-                    for (int i = 0; i < c.needs.Length; i++)
-                        str += (i > 0 ? " + " : "") + (p.Owns(c.needs[i]) ? DB.Name(c.needs[i]) : "???");
-                    PixelFont.Draw(rx, ry, str, FitSize(str, sm, colW), new Color(0.65f, 0.6f, 0.45f));
-                    ry += line;
-                    hints++;
-                }
-            }
-
             if (pausePages > 1)
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height - pad - 8f * S, "< A   PAGE " + (pausePage + 1) + " / " + pausePages + "   D >", S, Color.white, 1);
             DrawTooltip(S, sm);
@@ -709,28 +692,26 @@ namespace DigDeep
 
         // ================================================================== Isaac-style stat column
 
-        static readonly string[] StatNames = { "SPD", "RATE", "DMG", "MINE", "JUMP", "LUCK" };
-        static readonly string[] StatLong = { "SPEED", "FIRE RATE", "DAMAGE", "MINING", "JUMP", "LUCK" };
+        static readonly string[] StatNames = { "SPD", "RATE", "DMG", "JUMP", "LUCK" };
+        static readonly string[] StatLong = { "SPEED", "FIRE RATE", "DAMAGE", "JUMP", "LUCK" };
         static readonly string[] StatHelp =
         {
             "HOW FAST YOU RUN",
             "ATTACKS PER SECOND WITH THE WEAPON IN HAND",
             "DAMAGE PER TRIGGER PULL WITH THE WEAPON IN HAND",
-            "HOW HARD YOUR SHOTS AND SWINGS HIT ROCK",
             "HOW HIGH YOU JUMP",
             "CRITS, LUCKY DROPS AND BETTER LOOT",
         };
         static Sprite[] statIcons;
-        readonly float[] lastStat = new float[6], statDelta = new float[6], statT = new float[6];
+        readonly float[] lastStat = new float[5], statDelta = new float[5], statT = new float[5];
         bool statInit;
 
-        static float[] StatValues(Player p) => new[] { p.Speed, p.SwingsPerSec, p.WeaponDamage, (float)p.MinePower, p.JumpMul, p.Luck };
+        static float[] StatValues(Player p) => new[] { p.Speed, p.SwingsPerSec, p.WeaponDamage, p.JumpMul, p.Luck };
 
         static string Fmt(int i, float v)
         {
             var ci = System.Globalization.CultureInfo.InvariantCulture;
-            if (i == 3) return ((int)v).ToString(ci);
-            if (i == 1 || i == 5) return v.ToString("0.0", ci);
+            if (i == 1 || i == 4) return v.ToString("0.0", ci);
             return v.ToString("0.00", ci);
         }
 
@@ -744,7 +725,7 @@ namespace DigDeep
             if (lastMaxHp >= 0 && p.s.maxHp > lastMaxHp) { hpGain = p.s.maxHp - lastMaxHp; hpFlashT = 2.5f; }
             lastMaxHp = p.s.maxHp;
             var v = StatValues(p);
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 5; i++)
             {
                 statT[i] -= dt;
                 if (statInit && Mathf.Abs(v[i] - lastStat[i]) > 0.001f) { statDelta[i] = v[i] - lastStat[i]; statT[i] = 2.5f; }
@@ -759,11 +740,11 @@ namespace DigDeep
                 statIcons = new[]
                 {
                     Art.Trinket("boot", U.C(80, 200, 100)), Art.Trinket("gem", U.C(80, 220, 240)), Art.Trinket("blade", U.C(220, 80, 80)),
-                    Art.Icons["pickaxe"], Art.Trinket("wing", U.C(200, 230, 240)), Art.Trinket("coin", U.C(170, 230, 70)),
+                    Art.Trinket("wing", U.C(200, 230, 240)), Art.Trinket("coin", U.C(170, 230, 70)),
                 };
             var v = StatValues(p);
             float row = 9f * sm;
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 5; i++)
             {
                 Icon(statIcons[i], x, y + i * row - sm, 8f * sm, Color.white);
                 string val = Fmt(i, v[i]);
@@ -774,7 +755,7 @@ namespace DigDeep
                     float d = statDelta[i];
                     var c = d > 0f ? DB.StatUp : DB.StatDown;
                     c.a = Mathf.Clamp01(statT[i]);
-                    PixelFont.Draw(x + 10f * sm + PixelFont.Width(val, sm) + 4f * sm, y + i * row, (d > 0f ? "+" : "") + Fmt(i == 3 ? 3 : 0, d), sm, c);
+                    PixelFont.Draw(x + 10f * sm + PixelFont.Width(val, sm) + 4f * sm, y + i * row, (d > 0f ? "+" : "") + Fmt(0, d), sm, c);
                 }
             }
         }
@@ -806,6 +787,8 @@ namespace DigDeep
         }
 
         // Stacked label above a pickup / shop item: action, combo hint, name, description, stats or charge info.
+        const float LabelGap = 0.58f;   // world units between stacked label lines (they overlapped at 0.4)
+
         public void ItemLabel(Vector2 at, Def d, string action, Player p, bool hovered = false)
         {
             // kept short: name, one line on what it does, the action. Hover it for everything else.
@@ -818,11 +801,19 @@ namespace DigDeep
                 string fit = w == null ? "NO WEAPON IN HAND" : ok ? "GOES ON YOUR " + w.def.name : w.Has(md.mod) ? "ALREADY ON IT" :
                              w.mods.Count >= Mods.Max ? "WEAPON IS FULL" : "WON'T FIT";
                 Label(at + Vector2.up * y, fit, ok ? DB.StatUp : DB.StatDown);
-                y += 0.4f;
+                y += LabelGap;
             }
+            // one short line on what it does, and the stat changes (if any) under it
+            if (d is SkillDef sk && sk.st.Any && !string.IsNullOrEmpty(d.desc)) { Label(at + Vector2.up * y, sk.st.ToString(), DB.ExtraColor(d)); y += LabelGap; }
             string line = !string.IsNullOrEmpty(d.desc) ? d.desc : DB.Extra(d);
-            if (!string.IsNullOrEmpty(line)) { Label(at + Vector2.up * y, Short(line), new Color(0.85f, 0.85f, 0.85f)); y += 0.4f; }
-            Label(at + Vector2.up * y, d.name + (DB.IsComboPiece(d, p) ? " *" : ""), DB.ColorOf(d)); y += 0.4f;
+            if (!string.IsNullOrEmpty(line)) { Label(at + Vector2.up * y, Short(line), new Color(0.85f, 0.85f, 0.85f)); y += LabelGap; }
+            var cc = DB.CompletesAny(d, p);
+            if (cc != null)
+            {
+                float k = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (hovered ? 12f : 6f));
+                Label(at + Vector2.up * y, "COMPLETES " + cc.name + "!", Color.Lerp(DB.ComboColor, Color.white, hovered ? k : k * 0.4f)); y += LabelGap;
+            }
+            Label(at + Vector2.up * y, d.name, DB.ColorOf(d)); y += LabelGap;
             if (action != null) Label(at + Vector2.up * y, action, Color.white);
         }
 
@@ -901,9 +892,14 @@ namespace DigDeep
                 // this digger's achievements, under the loadout: the God-Diamond (greyed out until found)
                 bool mine = PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) == 1, beat = PlayerPrefs.GetInt("digdeep_godwon_" + c.id, 0) == 1;
                 float gy = cy + isz + 15f * S;
-                WonGem(W * 0.5f, gy, u, beat, mine);
-                if (Hover(W * 0.5f - 6f * u, gy, 12f * u, 10f * u))
+                bool voided = PlayerPrefs.GetInt("digdeep_voidwon_" + c.id, 0) == 1;
+                float gx1 = W * 0.5f - 8f * u, gx2 = W * 0.5f + 8f * u;
+                WonGem(gx1, gy, u, beat, mine);
+                if (Hover(gx1 - 6f * u, gy, 12f * u, 10f * u))
                     Tip("GOD-DIAMOND", new Color(0.6f, 0.9f, 1f), (beat ? "FOUND, AND THE GOD ABOVE THE CLOUDS BEATEN" : mine ? "FOUND" : "NOT FOUND YET", TipGrey));
+                WonGem(gx2, gy, u, false, voided, true);
+                if (Hover(gx2 - 6f * u, gy, 12f * u, 10f * u))
+                    Tip("VOID DIAMOND", new Color(0.8f, 0.55f, 1f), (voided ? "THE VOID ARCHMAGE BEATEN" : "NOT FOUND YET. A SECRET KEY OPENS THE WAY", TipGrey));
             }
 
             string hint = GameInput.UsingStick ? "LEFT / RIGHT: CHOOSE     A: START     B: BACK" : "A / D OR CLICK: CHOOSE     CLICK AGAIN OR SPACE: START     ESC: BACK";
@@ -912,10 +908,11 @@ namespace DigDeep
         }
 
         // An 11x9 pixel diamond with a tick in it, centred on x, top at y. Gold when the god has fallen too.
-        void WonGem(float x, float y, float u, bool god, bool found = true)
+        void WonGem(float x, float y, float u, bool god, bool found = true, bool isVoid = false)
         {
             int[] hw = { 3, 4, 5, 5, 4, 3, 2, 1, 0 };
             Color o = new Color(0.08f, 0.06f, 0.12f), hi = god ? new Color(1f, 0.95f, 0.7f) : new Color(0.85f, 0.98f, 1f), mid = god ? new Color(1f, 0.78f, 0.25f) : new Color(0.4f, 0.85f, 1f);
+            if (isVoid) { hi = new Color(0.75f, 0.5f, 1f); mid = new Color(0.22f, 0.1f, 0.34f); }
             if (!found) { hi = new Color(0.4f, 0.4f, 0.45f); mid = new Color(0.25f, 0.25f, 0.3f); }
             float x0 = Mathf.Round(x - 5.5f * u), y0 = Mathf.Round(y);
             for (int r = 0; r < hw.Length; r++)
@@ -1048,16 +1045,16 @@ namespace DigDeep
             // short: modifiers and curse by name only, one line of description. Hover it for the numbers.
             if (hovered) hoverWeapon = w;
             float y = 0f;
-            if (w.curse != Curse.None) { Label(at + Vector2.up * y, Curses.Name(w.curse), Curses.Col(w.curse)); y += 0.4f; }
+            if (w.curse != Curse.None) { Label(at + Vector2.up * y, Curses.Name(w.curse), Curses.Col(w.curse)); y += LabelGap; }
             if (w.mods.Count > 0)
             {
                 string ms = "";
                 foreach (var m in w.mods) ms += (ms.Length > 0 ? " + " : "+ ") + Mods.Names[(int)m];
                 Label(at + Vector2.up * y, ms, Mods.Ui);
-                y += 0.4f;
+                y += LabelGap;
             }
-            Label(at + Vector2.up * y, Short(w.def.desc), new Color(0.85f, 0.85f, 0.85f)); y += 0.4f;
-            Label(at + Vector2.up * y, w.def.name + (w.mods.Count >= 3 ? "  ***" : ""), w.Color); y += 0.4f;
+            Label(at + Vector2.up * y, Short(w.def.desc), new Color(0.85f, 0.85f, 0.85f)); y += LabelGap;
+            Label(at + Vector2.up * y, w.def.name + (w.mods.Count >= 3 ? "  ***" : ""), w.Color); y += LabelGap;
             if (action != null) Label(at + Vector2.up * y, action, Color.white);
         }
 

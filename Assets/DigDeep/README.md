@@ -601,6 +601,123 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
   - **THE GOD (FROM ORNIN'S HALL)** in the BOSSES tab drops you into Ornin's hall with Ornin beaten and the God-Diamond free, as if every digger had theirs. Touch it to test the whole ascent and the fight. Test runs never count towards your real diamonds or God wins.
   - **Bug fixed**: the click that opened the set-up screen could land on a boss button underneath (usually Ignis) and drop you straight into that fight. It no longer counts, and a test boss pick never carries over into another run.
 
+### Hand-drawn art, the void key and the void world (batch 56)
+
+- **Your art from "New stuff"**:
+  - It was cleaned up: backgrounds removed, the zoomed screenshots sampled back down to real pixels, cropped and cut into strips. The results are in `Resources/DigDeepArt/new`.
+  - Some pieces got colour where they had none, missing legs and bodies were added, and everything gets the game's violet outline.
+  - The build script for them is `art_tools/build_art.py`, if you want to redo or tweak them.
+- **Replaced art**:
+  - The **bats**, with their own death animation.
+  - The **water slimes**: they wobble, stretch as they fall, squash as they land and jiggle when hit.
+  - **Coins** glint, with a pickup sparkle.
+  - **Fire**.
+  - The **shopkeeper**.
+  - The **toxic toad**, which is now your frog, with a body.
+  - The **Crystal Colossus**, which is now your ice golem.
+- **New creatures**:
+  - **Turtles** (topsoil, jungle): they pull into their shell and slide across the floor at you, bouncing off walls. Bullets glance off a sliding shell.
+  - **Skeletons** (topsoil, fungal hollows, the kingdom): a heap of bones that pulls itself together when you come close, then shambles after you and punches. Smashed, it scatters bones.
+  - **Wolves** (topsoil, jungle): often in pairs. They run you down and leap the last bit.
+  - **Glider bats** (jungle, crystal, storm): they hang from the ceiling, then swoop down at you in a long glide.
+  - **Rock mages** (topsoil, crystal): they raise rock spikes under your feet and blink away when you get close.
+  - **The Lantern Shroom** (fungal hollows): an elite. It lobs poison lanterns, calls spore puffs, and always carries an item.
+- **The Bone Slime**: a new boss, sometimes instead of the Devourer at depth 100. It hops and slams (shockwaves and falling bones), spits globs of slime, and swells up to call slimes and skeletons.
+- **Pets**:
+  - **Good Dog** bites foes and noses coins over to you.
+  - **Slime Pal** spins into foes that come close.
+  - **Bone Buddy** throws bones.
+  - **Baby Dragon** breathes a short cone of fire.
+  - **Ace Fox** is very rare (relic). It dashes, slashes hard, then blasts the next foe.
+- **Weapons**:
+  - Three **bows**: the Hunting Bow, the Twin Bow and the Storm Bow. They fire quick, piercing arrows.
+  - The legendary **Prism Greatsword** (relic): huge reach, deflects everything.
+- **Shrines**, rare, on flat floors:
+  - **Altar of Chance**: rerolls the weapon in your hand into another of the same rarity, keeping its modifiers.
+  - **Altar of Death**: costs one heart of max health, gives a relic.
+  - **Golden Chalice**: pour in half your gold. Half the time you get double back.
+  - **Sleeping Stone Dragon**: land on it hard three times (a ground pound, or a long fall) and it gives up its hoard.
+- **The void key**:
+  - Beat the **first boss within 3 minutes** of the start of a run and it drops part 1 of the void key. Beat the **second boss within 6 minutes** and it drops part 2.
+  - While a part can still be won, a small purple timer sits under the depth. The parts you carry show next to your gold.
+- **The void world**:
+  - Beat **Ornin** carrying the whole key and a black portal opens beside the God-Diamond. Take the diamond for the normal ending, or step through the portal.
+  - The portal starts the whole world again from the top, but everything is void: near-black, violet-rimmed walls crumbling into bands of loose squares, and darker caves. You keep everything you carry.
+  - **Every creature is a void version**: 60% more health and harder hits. When it dies it bursts into black shards.
+  - **Every boss** also strikes out every few seconds: a ring of void shards, or void spikes stabbing up under you.
+  - Black **void spikes** lurk in the floors.
+- **The void biome and the Void Archmage**:
+  - The forgotten kingdom is replaced by **THE VOID**, home to fire, ice and lightning **void mages** (they drift through rock) and the odd void archmage elite.
+  - At the bottom waits **the Void Archmage**. It casts fans of void-fire, rings of ice, lightning strikes, rolling lines of void spikes and blinks, and calls mages later in the fight.
+  - Beat it for **the void diamond**: a second achievement next to the God-Diamond on the character lineup, plus its own ending.
+- **Game icon**: your icon is at `Assets/DigDeep/Icon/MoinIcon.png`. To use it, go to **Edit → Project Settings → Player → Icon** and set it as the Default Icon.
+- **Test mode**: spawn buttons for every new creature and the shrines, **VOID KEY (BOTH PARTS)** and **ENTER THE VOID NOW**, and the Bone Slime and the Void Archmage in the boss list.
+
+### Vision, dragons and fixes (batch 58)
+- **Line of sight.** Underground, your light only reaches what you can actually see: open cells a ray can reach, plus the rock that borders them. Everything you've had in sight stays dimly lit (`SeenLight` in `Game.cs`). Gold, crystals, chests, lava and entity lights still glow through walls. Lantern oil, night eyes and the like still widen your light, and now also let a faint glow seep into the unexplored dark. Below the first few rows the darkness is the same everywhere.
+- **Longer biomes.** Biome starts are stretched 1.5x (`Biomes.Stretch`). Enemy stats scale by depth / Stretch, so difficulty per biome stays the same. Arena depths are `ArenaRoom.A0..A7` and `Final`.
+- **Dragon worms.** VIRIDIS, the jungle dragon, can take the jungle arena (1 in 3). NIHIL, the void dragon, can replace a void-changed boss once per void run (25%, saved in the run). The jungle arena has its normal backdrop again.
+- **Premium shops** are built of gilded brick and run by the old shopkeeper. There's no label any more. The regular keeper is 1.25x size.
+- **Supply crates** (wooden, red cross): break or open them for 1-2 consumables. Chests now only hold trinkets.
+- Boulders: their cracks look the same after every quarter turn and wherever they rest. Rolling or falling boulders flatten spikes.
+- Flamethrower under water: the flames boil the water away and still dig point-blank.
+- Fire with nothing left to burn and nothing under it falls as an ember.
+- Swimming up with flippers works by holding up as well as jump.
+- With levitate you can't ground slam.
+- Explosions from melee hits don't knock you back.
+- Grass and vines no longer float after the block under them is gone.
+- Elites have no ELITE label: you can tell them by their size and stronger aura.
+- The combo list is gone from the in-game HUD.
+- Hit flashes now also show on the slime, skeleton and turtle animation strips.
+
+### Shops, boss choices and a storm dragon (batch 59)
+- **Vision edges.** Rock behind the walls you can see fades out over two blocks (half, then a fifth), sampled per light texel, so the falloff is pixelated rather than a hard cut at a cell. What you remember gets a soft edge too.
+- **Shops** come in three tiers by depth: normal, then **premium** (gilded brick, the old keeper, a second shelf right above the first), then **legendary** (purple glow, mythics more likely).
+  - Shelves hold a modded weapon (more mods deeper; 20% are cursed and 30% cheaper), trinkets or a modifier, and a heal spot. Half the time the heal spot holds another trinket instead.
+  - Consumables are gone from shops, apart from the heal.
+  - Prices rise with depth and with tier.
+- **Shopkeepers** fall when the floor goes, and can be killed by blasts, bullets, swings, boulders, fire, lava and long falls. When one dies, its line disappears and its till spills. The line now sits above the sprite.
+- **Bosses** drop a choice of three rare trinkets, each with a 5% (luck-boosted) chance to be mythic. They float spread across the hall. Take ONE with interact; the others vanish. A dragon's heart counts as one of the three.
+- **VOLTAR, the storm dragon**, can take the Storm Caverns hall (instead of Captain Vask). **Ignis** moved to the Magma Core (1 in 3, alongside the Forge Golem and the Cinder Lord).
+- **The Boulder Troll** throws real boulders. They land, roll and stay, and it sends any boulder it bumps into bouncing away.
+- **Bows** are hold-to-draw, release-to-loose. Fire rate draws faster, and a full draw hits hardest.
+- **No mining stat.** Removed: the MINE stat, STEEL GRIP, AFTERSHOCK, PICKAXE +1, and the mining combos (Pick Frenzy, Master Smith, Molten Core, Steamroller, Seismic Slam). Altars and death altars only give rare or mythic things.
+- **YOU SEE ALL** (rare trinket): no darkness at all.
+- **Events and altars:**
+  - The gold event uses the golden chalice.
+  - The gold-doubling 50/50 is now the GAMBLER'S ALTAR, a poker chip on a plinth.
+  - Meditation just needs you to touch nothing.
+  - The floor under altars and shrines can't break.
+- **Options** has a CONTROLS tab with KEYBOARD and CONTROLLER sub-tabs.
+- **Loot and spawns:**
+  - Fewer chests.
+  - Rare and mythic loot ramps up more slowly.
+  - Foes keep to biomes that suit them.
+  - Enemy health scales a bit more steeply with depth.
+  - The bomb is a much bigger blast.
+- **Removed text:**
+  - The ending's "find the god-diamond with every digger" line.
+  - The pause menu's "swap to it" line.
+  - The world labels are spaced further apart.
+
+### Spears (batch 60)
+- There are four thrown spears, one per rarity: WOODEN SPEAR, IRON SPEAR, CRYSTAL PIKE and STAR LANCE (mythic, altars only). They break through 3, 4, 5 and 7 blocks, then lodge in the next thing they hit.
+- A spear lodges straight away in anything it can't break: unbreakable blocks, big ore, chests, crates and altar floors.
+- **Hitting foes.** A foe takes one hit and then wears the spear. Spears stuck in things never deal damage again.
+- **Dropping.** When the block a spear is in breaks, or the foe it's in dies, the spear drops. It is head-heavy, so it topples point-down like a pendulum and lines up with the air as it speeds up. On the way down it can hit one foe and lodge in it, or lodge in whatever block it lands on, but it never breaks blocks again.
+- **Ledges.** A spear lodged roughly sideways in a wall is a ledge, like a Terraria platform. You and foes can stand on it, and walk or jump through it from below. Hold down to drop through. See `Spear.Under` and `World.Ground` / `World.MoveY`.
+- At most 20 spears stay lodged; the oldest one crumbles away.
+- Modifiers that fit spears: TRIPLE, HIGH CALIBER, WALL BREAKER (+2 blocks) and FIRE.
+
+### Tidy-ups (batch 61)
+- The void key timer is gone from the HUD. The time limits themselves still apply.
+- Melee weapons smash boulders, both lodged and rolling, for 2x their digging power.
+- NIGHT EYES (and the owl digger) widen your light a little instead of lifting all the darkness. MAGNET pulls gold from 8+ blocks away.
+- Items are picked up with interact. AUTO PICK-UP in Options > Gameplay brings back walking over them.
+- **Shorter text.** Item descriptions are one short line, and "attacks" replaces "shots". A trinket's stat changes show under it, e.g. "ATTACKS GAIN A RANDOM EFFECT" / "LUCK +0.5".
+- **Combo hints.** The "? COMBO WITH ???" lines and the half-finished combo list are gone. A combo only shows when you have it, or on the item that would complete it, which pulses "COMPLETES <COMBO>!" (stronger while you hover it).
+- **Spears and other spears.** A spear lodging in a block it can't break doesn't burst into debris any more. A spear coming in almost level (within 12 degrees) lodges against a lodged spear and makes the ledge longer; it drops if that spear goes. Coming down any steeper, it snaps the lodged spear and carries on.
+
 ## Where to tune things
 
 | What | Where |

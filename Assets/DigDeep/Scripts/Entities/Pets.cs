@@ -20,6 +20,11 @@ namespace DigDeep
                 case "frost": return new PetFrost(p);
                 case "disc": return new PetDisc(p);
                 case "magpie": return new PetMagpie(p);
+                case "dog": return new PetDog(p);
+                case "slime": return new PetSlime(p);
+                case "skeleton": return new PetSkeleton(p);
+                case "dragon": return new PetDragon(p);
+                case "fox": return new PetFox(p);
             }
             return null;
         }

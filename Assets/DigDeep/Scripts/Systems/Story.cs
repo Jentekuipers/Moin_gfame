@@ -249,7 +249,8 @@ namespace DigDeep
             loomStart = 5f + EndText.Length / (TypeRate * 0.8f) + 2.5f;
         }
         public float EndT => endT;
-        string FirstText => variant == 2 ? TrueText : EndText;
+        const string VoidText = "THE VOID WAS SEALED BEHIND ITS DIAMOND. NOTHING WOULD EVER CREEP UP OUT OF THE DARK AGAIN.";
+        string FirstText => variant == 3 ? VoidText : variant == 2 ? TrueText : EndText;
 
         public void TickEnding(float dt)
         {
@@ -290,15 +291,14 @@ namespace DigDeep
             {
                 float k = Mathf.Max(1f, Mathf.Floor(H * 0.56f / pic.height));
                 float sz = pic.height * k;
+                var oldC = GUI.color;
+                if (variant == 3) GUI.color = new Color(0.62f, 0.5f, 0.85f);   // the void ending: the same land, under a violet dusk
                 GUI.DrawTexture(new Rect(Mathf.Round((W - sz) * 0.5f), Mathf.Round(H * 0.07f), sz, sz), pic);
+                GUI.color = oldC;
                 float textTop = H * 0.07f + sz + H * 0.06f;
                 if (loom)
                 {
                     DrawTyped(LoomText, typed2, textTop, S, 1f, false);
-                    int have = 0;
-                    foreach (var c in Chars.All) if (PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) == 1) have++;
-                    float a2 = Mathf.Clamp01((endT - loomStart - 3f) * 0.8f);
-                    PixelFont.Draw(W * 0.5f, textTop + 22f * S, "FIND THE GOD-DIAMOND WITH EVERY DIGGER   " + have + " / " + Chars.All.Count, Mathf.Max(1f, S - 1f), new Color(0.75f, 0.8f, 1f, a2), 1);
                 }
                 else DrawTyped(FirstText, typed, textTop, S, 1f, false);
             }

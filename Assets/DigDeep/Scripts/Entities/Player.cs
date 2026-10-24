@@ -365,7 +365,7 @@ namespace DigDeep
 
             if (snapT > 0f) { snapT -= dt; pos.x = Mathf.MoveTowards(pos.x, snapX, dt * 8f); }
             // GROUND SLAM: press down in the air
-            if (s.slam && !grounded && GameInput.Pressed(Btn.Down) && HighEnoughToSlam()) { StartPound(); return; }
+            if (s.slam && !s.levitate && !grounded && GameInput.Pressed(Btn.Down) && HighEnoughToSlam())   // (levitation and the slam fight over DOWN: levitation wins) { StartPound(); return; }
 
             Stomp(dt);
             MoveBody(dt, mx);
@@ -388,7 +388,8 @@ namespace DigDeep
 
         // ---------------- above the clouds: free, quick, responsive flight. JUMP is a short dash. You can't leave the screen.
         float skyDashT, skyDashCd;
-        public float ascentSpeed;   // the ascent: shooting straight up through the world
+        public float ascentSpeed;
+        public int voidShards;      // the void key: part 1 (the first boss within 3 minutes) and part 2 (the second within 6)   // the ascent: shooting straight up through the world
 
         void TickSky(float dt, float mx, bool up, bool down)
         {
@@ -479,7 +480,7 @@ namespace DigDeep
                 vel.y = U.Approach(vel.y, GameInput.Held(Btn.Jump) ? 1.2f : -3.5f, 12f * dt);
             }
             else if (swimBoost > 0f) { }
-            else if (GameInput.Held(Btn.Jump)) vel.y = s.flippers ? U.Approach(vel.y, 15f, 80f * dt) : U.Approach(vel.y, 5.5f, 30f * dt);
+            else if (GameInput.Held(Btn.Jump) || GameInput.Held(Btn.Up)) vel.y = s.flippers ? U.Approach(vel.y, 15f, 80f * dt) : U.Approach(vel.y, 5.5f, 30f * dt);   // swim up (jump or up)
             else if (down) vel.y = s.flippers ? U.Approach(vel.y, -12f, 70f * dt) : U.Approach(vel.y, -4f, 25f * dt);   // FLIPPERS dive fast too
             else if (vel.y < 0f) vel.y += 9f * dt;   // momentum carries you down a bit; buoyancy slowly wins
             else vel.y = U.Approach(vel.y, head ? 2.4f : 0f, 14f * dt);    // let go and you float up to the surface
@@ -580,6 +581,7 @@ namespace DigDeep
                 G.HitEnemies(p, Half + new Vector2(0.25f, 0.3f), Dmg(2f), Vector2.up * 7f);
                 if (Random.value < 0.6f) G.fx.Ghost(sr.sprite, go.transform.position, sr.flipX, new Color(1f, 0.85f, 0.4f, 0.6f));
             }
+            World.DropThrough = GameInput.Held(Btn.Down);   // hold down to drop through spear ledges
             if (w.MoveY(ref p, Half, vel.y * dt, out var hy))
             {
                 if (vel.y > 0f)
@@ -593,7 +595,8 @@ namespace DigDeep
                 else vel.y = 0f;
             }
             pos = p;
-            grounded = vel.y <= 0f && w.BoxSolid(pos + new Vector2(0, -0.04f), Half);
+            grounded = vel.y <= 0f && w.Ground(pos + new Vector2(0, -0.04f), Half);
+            World.DropThrough = false;
             if (!grounded && BoulderBody.All.Count > 0 && BoulderBody.StandOn(this, dt)) { grounded = true; if (vel.y < 0f) vel.y = 0f; }   // rolling boulders are solid on top
             if (grounded && !wasGrounded && vy < -17.5f)
             {
@@ -630,7 +633,7 @@ namespace DigDeep
             if (c.x == int.MinValue) return false;
             Block b = Wd.Get(c.x, c.y);
             var d = Tiles.Def(b);
-            if (!d.solid || d.unbreakable || d.explosive || b == Block.Chest || b == Block.Crate || BigOre.Is(b)) return false;
+            if (!d.solid || d.unbreakable || d.explosive || b == Block.Chest || b == Block.Crate || b == Block.Supply || BigOre.Is(b)) return false;
             if (s.bulldozer <= 0) return false;   // walking through blocks is BADGER CLAWS only
             if (d.soft || s.bulldozer >= 3) return true;
             return s.bulldozer > 0 && Wd.Hp(c.x, c.y) <= MinePower * s.bulldozer;
@@ -747,7 +750,7 @@ namespace DigDeep
                 for (int x = x0; x <= x1 && found < 80; x++)
                 {
                     Block b = Wd.Get(x, y);
-                    if (b == Block.Gold || b == Block.Gem || b == Block.Chest || b == Block.Crate || b == Block.Crystal || BigOre.Is(b))
+                    if (b == Block.Gold || b == Block.Gem || b == Block.Chest || b == Block.Crate || b == Block.Supply || b == Block.Crystal || BigOre.Is(b))
                     {
                         G.Spawn(new Glint(x, y, b, 15f));
                         found++;
@@ -909,7 +912,7 @@ namespace DigDeep
                     G.Popup(pos + Vector2.up, "+" + Stats.Heart + " HEALTH", new Color(1f, 0.5f, 0.5f));
                     break;
                 case It.Bomb:
-                    G.Spawn(new Thrown(pos + Vector2.up * 0.2f, throwV, Thrown.Type.Bomb, 2.6f));
+                    G.Spawn(new Thrown(pos + Vector2.up * 0.2f, throwV, Thrown.Type.Bomb, 4.2f));   // a proper bomb: a big blast
                     G.sfx.Play("swing", 0.6f);
                     break;
                 case It.Flare:
@@ -1001,7 +1004,7 @@ namespace DigDeep
             s.damage += st.dmg;
             s.swing += st.swing;
             s.speedMul += st.speed;
-            s.digPower = Mathf.Max(1, s.digPower + st.mining);
+            s.digPower = 1;
             s.jumpMul += st.jump;
             s.luck += st.luck;
         }

@@ -1,0 +1,715 @@
+fileFormatVersion: 2
+guid: 825613b80e30c6b49b553aa5c72f8af0
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -3825094346920453921
+    second: Skeleton_enemy_wake_up_spritesheet_0
+  - first:
+      213: 7631737483798934546
+    second: Skeleton_enemy_wake_up_spritesheet_1
+  - first:
+      213: -1085154135021563790
+    second: Skeleton_enemy_wake_up_spritesheet_2
+  - first:
+      213: -3074664511385503858
+    second: Skeleton_enemy_wake_up_spritesheet_3
+  - first:
+      213: -2473018708918034336
+    second: Skeleton_enemy_wake_up_spritesheet_4
+  - first:
+      213: -971121439605989723
+    second: Skeleton_enemy_wake_up_spritesheet_5
+  - first:
+      213: 8582997325813071400
+    second: Skeleton_enemy_wake_up_spritesheet_6
+  - first:
+      213: -2292134823480129046
+    second: Skeleton_enemy_wake_up_spritesheet_7
+  - first:
+      213: -1657204608459047646
+    second: Skeleton_enemy_wake_up_spritesheet_8
+  - first:
+      213: -3864856710039892565
+    second: Skeleton_enemy_wake_up_spritesheet_9
+  - first:
+      213: -1291918057328759582
+    second: Skeleton_enemy_wake_up_spritesheet_10
+  - first:
+      213: 7342219014782531142
+    second: Skeleton_enemy_wake_up_spritesheet_11
+  - first:
+      213: 551311566919535600
+    second: Skeleton_enemy_wake_up_spritesheet_12
+  - first:
+      213: 6443470492081067377
+    second: Skeleton_enemy_wake_up_spritesheet_13
+  - first:
+      213: -8544498093867231478
+    second: Skeleton_enemy_wake_up_spritesheet_14
+  - first:
+      213: -6943141920266741686
+    second: Skeleton_enemy_wake_up_spritesheet_15
+  - first:
+      213: -6525853189201832409
+    second: Skeleton_enemy_wake_up_spritesheet_16
+  - first:
+      213: -1095776456425818180
+    second: Skeleton_enemy_wake_up_spritesheet_17
+  - first:
+      213: 2657968243880646419
+    second: Skeleton_enemy_wake_up_spritesheet_18
+  - first:
+      213: 8117259952311975585
+    second: Skeleton_enemy_wake_up_spritesheet_19
+  - first:
+      213: -2302238451595004034
+    second: Skeleton_enemy_wake_up_spritesheet_20
+  - first:
+      213: -276707506081048455
+    second: Skeleton_enemy_wake_up_spritesheet_21
+  - first:
+      213: -3613657415895205001
+    second: Skeleton_enemy_wake_up_spritesheet_22
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_0
+      rect:
+        serializedVersion: 2
+        x: 9
+        y: 13
+        width: 12
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fd8937b25f88aeac0800000000000000
+      internalID: -3825094346920453921
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_1
+      rect:
+        serializedVersion: 2
+        x: 12
+        y: 8
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2147edc8ec069e960800000000000000
+      internalID: 7631737483798934546
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_2
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 11
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2705e774012c0f0f0800000000000000
+      internalID: -1085154135021563790
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_3
+      rect:
+        serializedVersion: 2
+        x: 41
+        y: 12
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e87fd5bcae89455d0800000000000000
+      internalID: -3074664511385503858
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_4
+      rect:
+        serializedVersion: 2
+        x: 44
+        y: 15
+        width: 9
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 060ab0c36921eadd0800000000000000
+      internalID: -2473018708918034336
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_5
+      rect:
+        serializedVersion: 2
+        x: 48
+        y: 10
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5aed4862232e582f0800000000000000
+      internalID: -971121439605989723
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_6
+      rect:
+        serializedVersion: 2
+        x: 73
+        y: 11
+        width: 12
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 82e3739d79eec1770800000000000000
+      internalID: 8582997325813071400
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_7
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 9
+        width: 7
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ae90a25b583b030e0800000000000000
+      internalID: -2292134823480129046
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_8
+      rect:
+        serializedVersion: 2
+        x: 105
+        y: 5
+        width: 9
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 22d78a8503d6009e0800000000000000
+      internalID: -1657204608459047646
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_9
+      rect:
+        serializedVersion: 2
+        x: 109
+        y: 15
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: bad89429c454d5ac0800000000000000
+      internalID: -3864856710039892565
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_10
+      rect:
+        serializedVersion: 2
+        x: 112
+        y: 8
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2eca10a2f5f221ee0800000000000000
+      internalID: -1291918057328759582
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_11
+      rect:
+        serializedVersion: 2
+        x: 137
+        y: 10
+        width: 12
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6463b3f0b4dc4e560800000000000000
+      internalID: 7342219014782531142
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_12
+      rect:
+        serializedVersion: 2
+        x: 139
+        y: 6
+        width: 13
+        height: 11
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0fb8dcaf2f6a6a700800000000000000
+      internalID: 551311566919535600
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_13
+      rect:
+        serializedVersion: 2
+        x: 168
+        y: 11
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1751439064ecb6950800000000000000
+      internalID: 6443470492081067377
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_14
+      rect:
+        serializedVersion: 2
+        x: 172
+        y: 8
+        width: 6
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a079a0b1148db6980800000000000000
+      internalID: -8544498093867231478
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_15
+      rect:
+        serializedVersion: 2
+        x: 173
+        y: 15
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a489069b53105af90800000000000000
+      internalID: -6943141920266741686
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_16
+      rect:
+        serializedVersion: 2
+        x: 177
+        y: 10
+        width: 7
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 726564199138f65a0800000000000000
+      internalID: -6525853189201832409
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_17
+      rect:
+        serializedVersion: 2
+        x: 200
+        y: 11
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cb7b0895e150bc0f0800000000000000
+      internalID: -1095776456425818180
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_18
+      rect:
+        serializedVersion: 2
+        x: 205
+        y: 10
+        width: 11
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 31756c8090003e420800000000000000
+      internalID: 2657968243880646419
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_19
+      rect:
+        serializedVersion: 2
+        x: 232
+        y: 11
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1ae3f076bec46a070800000000000000
+      internalID: 8117259952311975585
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_20
+      rect:
+        serializedVersion: 2
+        x: 237
+        y: 10
+        width: 11
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e773f68735ecc00e0800000000000000
+      internalID: -2302238451595004034
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_21
+      rect:
+        serializedVersion: 2
+        x: 44
+        y: 7
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 978da514dffe82cf0800000000000000
+      internalID: -276707506081048455
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Skeleton_enemy_wake_up_spritesheet_22
+      rect:
+        serializedVersion: 2
+        x: 76
+        y: 5
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 77b3c99e9b5b9ddc0800000000000000
+      internalID: -3613657415895205001
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Skeleton_enemy_wake_up_spritesheet_0: -3825094346920453921
+      Skeleton_enemy_wake_up_spritesheet_1: 7631737483798934546
+      Skeleton_enemy_wake_up_spritesheet_10: -1291918057328759582
+      Skeleton_enemy_wake_up_spritesheet_11: 7342219014782531142
+      Skeleton_enemy_wake_up_spritesheet_12: 551311566919535600
+      Skeleton_enemy_wake_up_spritesheet_13: 6443470492081067377
+      Skeleton_enemy_wake_up_spritesheet_14: -8544498093867231478
+      Skeleton_enemy_wake_up_spritesheet_15: -6943141920266741686
+      Skeleton_enemy_wake_up_spritesheet_16: -6525853189201832409
+      Skeleton_enemy_wake_up_spritesheet_17: -1095776456425818180
+      Skeleton_enemy_wake_up_spritesheet_18: 2657968243880646419
+      Skeleton_enemy_wake_up_spritesheet_19: 8117259952311975585
+      Skeleton_enemy_wake_up_spritesheet_2: -1085154135021563790
+      Skeleton_enemy_wake_up_spritesheet_20: -2302238451595004034
+      Skeleton_enemy_wake_up_spritesheet_21: -276707506081048455
+      Skeleton_enemy_wake_up_spritesheet_22: -3613657415895205001
+      Skeleton_enemy_wake_up_spritesheet_3: -3074664511385503858
+      Skeleton_enemy_wake_up_spritesheet_4: -2473018708918034336
+      Skeleton_enemy_wake_up_spritesheet_5: -971121439605989723
+      Skeleton_enemy_wake_up_spritesheet_6: 8582997325813071400
+      Skeleton_enemy_wake_up_spritesheet_7: -2292134823480129046
+      Skeleton_enemy_wake_up_spritesheet_8: -1657204608459047646
+      Skeleton_enemy_wake_up_spritesheet_9: -3864856710039892565
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

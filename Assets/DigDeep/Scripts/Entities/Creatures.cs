@@ -24,7 +24,7 @@ namespace DigDeep
             }
             if (Wd.MoveY(ref p, half, vel.y * dt, out _)) vel.y = 0f;
             pos = p;
-            onGround = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), half);
+            onGround = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             if (onGround && turnAtLedge && Mathf.Abs(vel.x) > 0.05f)
             {
                 int fx = Mathf.FloorToInt(pos.x + facing * (half.x + 0.1f));
@@ -300,7 +300,7 @@ namespace DigDeep
             if (Wd.MoveX(ref p, half, vel.x * dt, out _)) vel.x = 0f;
             if (Wd.MoveY(ref p, half, vel.y * dt, out _)) vel.y = 0f;
             pos = p;
-            onGround = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), half);
+            onGround = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             animT = puffT > 0f ? 0.17f : 0f;
             Draw(0f);
         }
@@ -517,7 +517,7 @@ namespace DigDeep
             bool hitY = Wd.MoveY(ref p, half, vel.y * dt, out _);
             pos = p;
             bool was = onGround;
-            onGround = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), half);
+            onGround = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             if (hitY) vel.y = 0f;
             if (onGround && !was) { G.sfx.Play("land", 0.6f, 0.8f); G.cam.Shake(0.1f); G.fx.Burst(pos + Vector2.down * half.y, 6, new Color(0.7f, 0.55f, 0.35f), 3f, 0.3f, 15f); }
             if (onGround)

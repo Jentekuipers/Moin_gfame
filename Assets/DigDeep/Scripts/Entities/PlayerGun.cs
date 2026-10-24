@@ -123,8 +123,10 @@ namespace DigDeep
 
         public float FireSlow => slowT > 0f && attack != null ? attack.slow : 0f;
         public float ChargeFrac01 => attack == null ? 0f : attack.type == WType.Rail ? Mathf.Clamp01(chargeT / attack.charge)
+            : attack.bow ? Mathf.Clamp01(chargeT / BowDraw(weapon))
             : ChargesShots ? Mathf.Clamp01(chargeT / ChargeShotTime(weapon)) : 0f;
-        bool ChargesShots => s.chargeShot && attack != null && attack.type == WType.Gun;
+        bool ChargesShots => s.chargeShot && attack != null && attack.type == WType.Gun && !attack.bow && !attack.spear;
+        float BowDraw(Weapon w) => Mathf.Max(0.2f, 0.75f * DelayMul(w) / SwingRate);
         static bool Automatic(AttackDef d) => d.delay < 0.13f && d.burst <= 1;
         // a charge takes a little while, less for fast-firing guns and a high fire rate
         float ChargeShotTime(Weapon w) => w == null ? 1f : Mathf.Max(0.25f, (0.5f + w.def.delay * DelayMul(w) * 0.8f) / SwingRate);
@@ -231,6 +233,31 @@ namespace DigDeep
                         fireCd = d.delay * DelayMul(w) / SwingRate;
                         TryEcho();
                     }
+                }
+                return;
+            }
+
+            if (d.bow)
+            {
+                // BOWS: hold to draw, let go to loose. Your fire rate draws the string faster.
+                float need = BowDraw(w);
+                if (held && fireCd <= 0f)
+                {
+                    float before = chargeT;
+                    chargeT = Mathf.Min(chargeT + dt, need);
+                    if (chargeT >= need && before < need) { G.sfx.Play("charge", 0.4f, 1.9f, 0f); G.fx.Ring(Muzzle, 0.5f, d.col); }
+                    slowT = 0.1f;
+                }
+                else if (!held && chargeT > 0f)
+                {
+                    float f = chargeT / need;
+                    chargeT = 0f;
+                    if (f < 0.15f) return;   // a twitch of the string: nothing
+                    lastShotT = 0f;
+                    nextShotMul *= Mathf.Lerp(0.3f, 1.35f, f);
+                    FireOnce(false);
+                    fireCd = 0.12f;
+                    TryEcho();
                 }
                 return;
             }
@@ -359,7 +386,8 @@ namespace DigDeep
                               + Random.Range(-1f, 1f) * (HeatWobble(w) + (wildBurst ? 6f : 0f));
                     Vector2 dir = U.Rot(aimDir, ang);
                     float spd = d.speed * (1f + Random.Range(-d.speedVar, d.speedVar));
-                    G.Spawn(new Bullet(this, w, origin, dir * spd, echo));
+                    if (d.spear) G.Spawn(new Spear(this, w, origin, dir * spd, Dmg(d.dmg) * nextShotMul * (nextShotCrit ? s.critMul : 1f)));
+                    else G.Spawn(new Bullet(this, w, origin, dir * spd, echo));
                 }
 
             bool hc = w.Has(Mod.HighCaliber);
@@ -446,24 +474,37 @@ namespace DigDeep
                     }
                 }
                 G.HitAltars(c0 + dir * reach * 0.6f, new Vector2(reach * 0.6f, reach * 0.6f), Src.Weapon);
+                Keeper.HitAt(c0 + dir * reach * 0.6f, new Vector2(reach * 0.6f, reach * 0.6f), dmg, c0);
                 if (d.deflect) DeflectAround(dir, reach + 0.45f, d.arc);
                 G.Spawn(new Slash(this, dir, d, echo, swingSide));
             }
             MeleeExtensions(aimDir, reach, d, dmg, echo, hitSet);
-
             bool broke = false, dmged = false, clank = false;
+            // loose (rolling or falling) boulders too
+            for (int bi = BoulderBody.All.Count - 1; bi >= 0; bi--)
+            {
+                var bb = BoulderBody.All[bi];
+                if (bb.dead) continue;
+                Vector2 bv = bb.pos - c0;
+                if (bv.magnitude > reach + 0.5f || (bv.magnitude > 0.9f && Vector2.Angle(aimDir, bv) > d.arc * 0.5f + 25f)) continue;
+                bb.Damage(Mathf.Max(2, power * 2));
+                if (!bb.dead) bb.Push(aimDir * 2f);
+                broke = true;
+            }
+
             Block soundBlock = Block.Air;
             foreach (var c in cells)
             {
                 Block b = Wd.Get(c.x, c.y);
                 if (b != Block.Air && b != Block.Lava && soundBlock == Block.Air) soundBlock = b;
-                var r = Wd.Damage(c.x, c.y, power, true, GoldMul);
+                // blades smash boulders apart (a couple of good swings)
+                var r = Wd.Damage(c.x, c.y, b == Block.Boulder ? Mathf.Max(2, power * 2) : power, true, GoldMul);
                 Vector2 cc = new Vector2(c.x + 0.5f, c.y + 0.5f);
                 if (r == World.Hit.Broke) { broke = true; G.fx.TileFlash(c); }
                 else if (r == World.Hit.Damaged) { dmged = true; G.fx.TileFlash(c); G.fx.Sparks(cc - aimDir * 0.45f, TileDraw.DebrisColor(b, Biomes.At(c.x, c.y))); }
                 else if (r == World.Hit.Unbreakable) { clank = true; G.fx.Sparks(cc - aimDir * 0.45f, new Color(1f, 0.9f, 0.6f)); }
             }
-            if (w.Has(Mod.Explosive) || s.shotExplode) G.Explode(c0 + aimDir * reach, 1.2f, dmg * 0.6f, s.blastProof || !w.Has(Mod.Explosive), true, true);
+            if (w.Has(Mod.Explosive) || s.shotExplode) G.Explode(c0 + aimDir * reach, 1.2f, dmg * 0.6f, s.blastProof || !w.Has(Mod.Explosive), true, true, true);
 
             float pitch = d.pitch * (echo ? 1.35f : 1f);
             G.sfx.Play(d.sfx, 0.55f, pitch, 0.1f);

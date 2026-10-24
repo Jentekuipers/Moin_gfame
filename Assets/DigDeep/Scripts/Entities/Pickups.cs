@@ -37,7 +37,7 @@ namespace DigDeep
             }
             else if (age > 0.3f && alive && d.magnitude < pl.s.magnet)
             {
-                vel = Vector2.MoveTowards(vel, d.normalized * 14f, 70f * dt);
+                vel = Vector2.MoveTowards(vel, d.normalized * (14f + d.magnitude * 1.5f), 70f * dt);   // far coins fly in faster
                 pos += vel * dt;
             }
             else
@@ -54,6 +54,7 @@ namespace DigDeep
             }
             if (age > 0.3f && alive && d.sqrMagnitude < 0.4f)
             {
+                if (value < 5 && Art.CoinPickup != null) G.Spawn(new FrameAnim(pos, Art.CoinPickup, 16f, false, 13));
                 pl.AddGold(value);
                 G.sfx.Play("coin", 0.4f, value >= 5 ? 1.15f : 1f, 0.08f);
                 G.fx.Burst(pos, 3, new Color(1f, 0.9f, 0.4f), 2f, 0.2f, 0f);
@@ -61,6 +62,12 @@ namespace DigDeep
                 return;
             }
             if (age > 45f) { Kill(); return; }
+            // small coins glint now and then
+            if (value < 5 && Art.CoinShine != null)
+            {
+                float ph = (age + pos.x * 0.37f) % 2.2f;
+                sr.sprite = Art.CoinShine[ph < 1.2f ? Mathf.Min(Art.CoinShine.Length - 1, (int)(ph / 1.2f * Art.CoinShine.Length)) : 0];
+            }
             Place();
         }
 
@@ -108,8 +115,9 @@ namespace DigDeep
             if (!nearL && G.MouseOver(pos, 0.6f)) G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, null, pl, true);
             if (nearL)
             {
-                bool needsUp = def.kind == Kind.Attack || def.kind == Kind.Special;
-                G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, needsUp ? "PRESS " + GameInput.Prompt(Btn.Interact) + " TO SWAP" : null, pl, G.MouseOver(pos, 0.6f));
+                bool needsUp = def.kind == Kind.Attack || def.kind == Kind.Special || !Settings.AutoPickup;
+                bool swap = def.kind == Kind.Attack || def.kind == Kind.Special;
+                G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, needsUp ? GameInput.Prompt(Btn.Interact) + (swap ? ": SWAP" : ": TAKE") : null, pl, G.MouseOver(pos, 0.6f));
                 if (noPick <= 0f && (!needsUp || GameInput.Take(Btn.Interact)))
                 {
                     if (pl.Grant(def)) { Kill(); return; }
@@ -124,6 +132,69 @@ namespace DigDeep
         }
 
         public override void AddLight(Lighting l) => l.Add(pos, rare ? 3.5f : 2.4f, rare ? 0.9f : 0.75f);
+    }
+
+    // A boss's reward: three things float in the air across the arena and you may take ONE (walk up, press interact).
+    // The other two vanish. Hover any of them to read what it does.
+    public class BossChoice : Entity
+    {
+        readonly Def def;
+        readonly System.Collections.Generic.List<BossChoice> group;
+        float bob, appear;
+        readonly ModGlow modGlow;
+        static readonly Vector2 H = new Vector2(0.45f, 0.55f);
+
+        public BossChoice(Vector2 p, Def d, System.Collections.Generic.List<BossChoice> group, float delay)
+        {
+            pos = p; def = d; this.group = group; appear = -delay;
+            group.Add(this);
+            G.player?.MarkSeen(d);
+            MakeGO("BossChoice", d.icon, 9);
+            if (d is ModDef) modGlow = ModGlow.Make(pos);
+            sr.enabled = false;
+        }
+
+        public static void Offer(Vector2 left, Vector2 right, Def[] defs, float avoidX = float.NaN)
+        {
+            var group = new System.Collections.Generic.List<BossChoice>();
+            for (int i = 0; i < defs.Length; i++)
+            {
+                if (defs[i] == null) continue;
+                float f = (i + 0.5f) / defs.Length;
+                var at = Vector2.Lerp(left, right, f);
+                if (!float.IsNaN(avoidX) && Mathf.Abs(at.x - avoidX) < 2.2f) at.x = avoidX + 2.5f;   // not over the hole in the floor
+                Game.I.Spawn(new BossChoice(at, defs[i], group, i * 0.25f));
+            }
+        }
+
+        public override bool AlwaysActive => true;
+
+        public override void Tick(float dt)
+        {
+            appear += dt;
+            if (appear < 0f) return;
+            if (!sr.enabled) { sr.enabled = true; G.fx.Ring(pos, 1.2f, DB.ColorOf(def)); G.sfx.Play("chest", 0.5f, 1.3f); }
+            bob += dt;
+            var pl = G.player;
+            bool near = pl.mode != Player.Mode.Dead && U.Overlap(pos, H + new Vector2(0.3f, 0.6f), pl.pos, Player.Half);
+            bool hov = G.MouseOver(pos, 0.6f);
+            if (near || hov) G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, near ? "PRESS " + GameInput.Prompt(Btn.Interact) + " TO TAKE (ONLY ONE)" : "TAKE ONE OF THREE", pl, hov);
+            if (near && GameInput.Take(Btn.Interact) && pl.Grant(def))
+            {
+                G.fx.Burst(pos, 24, DB.ColorOf(def), 6f, 0.6f, 5f);
+                G.sfx.Play("buy", 0.8f, 1.1f);
+                foreach (var o in group)
+                    if (o != this && !o.dead) { G.fx.Smoke(o.pos, 6, 0.6f); o.Kill(); }
+                Kill();
+                return;
+            }
+            if (Random.value < 0.25f) G.fx.Burst(pos + new Vector2(Random.Range(-0.3f, 0.3f), Random.Range(-0.2f, 0.4f)), 1, DB.ColorOf(def), 0.5f, 0.5f, -1f);
+            go.transform.position = new Vector3(U.Snap(pos.x), U.Snap(pos.y + Mathf.Sin(bob * 2.5f) * 0.12f), 0);
+            modGlow?.Tick(pos, sr);
+        }
+
+        public override void Kill() { base.Kill(); modGlow?.Kill(); }
+        public override void AddLight(Lighting l) { if (appear >= 0f) l.Add(pos, 3f, 0.85f); }
     }
 
     // A weapon lying on the ground (from a crate, an altar, or the one you just swapped out).

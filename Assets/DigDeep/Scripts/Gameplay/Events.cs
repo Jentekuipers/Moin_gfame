@@ -233,9 +233,9 @@ namespace DigDeep
             need = Mathf.Max(15, Mathf.RoundToInt((15f + depth * 0.15f) / 5f) * 5);
             pos = stand + new Vector2(0f, 0.45f);
             Half = new Vector2(0.45f, 0.45f);
-            MakeGO("GoldBucket", Art.Bucket, 6);
+            MakeGO("GoldChalice", Art.Chalice ?? Art.Bucket, 6);
             go.transform.position = new Vector3(stand.x, stand.y, 0);
-            fillGo = Extra("GoldFill", Art.Square, stand, 5, out fillSr);
+            fillGo = Extra("GoldFill", Art.Square, stand, 7, out fillSr);
             fillSr.color = new Color(1f, 0.8f, 0.2f);
             fillGo.SetActive(false);
         }
@@ -251,10 +251,10 @@ namespace DigDeep
                 if (Mathf.Abs(d.x) < 5.5f && d.y > -0.5f && d.y < 6.5f)
                 {
                     c.noMag = Mathf.Max(c.noMag, 0.15f);
-                    c.pullTo = stand + new Vector2(0f, Mathf.Abs(d.x) > 0.3f ? 1.1f : 0.4f);   // over the rim first, then down in
+                    c.pullTo = stand + new Vector2(0f, Mathf.Abs(d.x) > 0.3f ? 1.4f : 0.75f);   // over the rim first, then down in
                     c.pullT = 0.15f;
                 }
-                if (Mathf.Abs(d.x) < 0.34f && d.y > 0.1f && d.y < 0.72f)
+                if (Mathf.Abs(d.x) < 0.34f && d.y > 0.45f && d.y < 1f)
                 {
                     fill += c.value;
                     c.Kill();
@@ -266,16 +266,16 @@ namespace DigDeep
             // a glint of gold at the bottom once anything is in: it doesn't tell you how much more it wants
             float k = fill <= 0 ? 0f : fill >= need ? 1f : 0.15f;
             fillGo.SetActive(k > 0f);
-            // interior of the bucket sprite: ~8px wide, from 3px to 10px above its base
-            float hgt = 0.44f * k;
-            fillGo.transform.position = new Vector3(stand.x, stand.y + 0.19f + hgt * 0.5f, 0);
-            fillGo.transform.localScale = new Vector3(0.5f, Mathf.Max(0.01f, hgt), 1f);
+            // a heap of gold showing over the chalice's rim (a glint at first, brimming when it's full)
+            float hgt = 0.12f * k;
+            fillGo.transform.position = new Vector3(stand.x, stand.y + 0.8f + hgt * 0.5f, 0);
+            fillGo.transform.localScale = new Vector3(0.6f, Mathf.Max(0.0625f, hgt), 1f);
 
             if (!Active) return;
 
             if (fill >= need)
             {
-                G.hud.Banner("THE BUCKET OVERFLOWS", "YOUR OFFERING IS ACCEPTED", Gold);
+                G.hud.Banner("THE CHALICE OVERFLOWS", "YOUR OFFERING IS ACCEPTED", Gold);
                 Reward(stand + Vector2.up * 1.3f);
             }
         }
@@ -311,7 +311,7 @@ namespace DigDeep
         {
             if (!Active) { sr.color = Lit; return; }
             bool inRange = Mathf.Abs(P.pos.x - pos.x) < 2f && Mathf.Abs(P.pos.y - pos.y) < 1.5f && P.mode != Player.Mode.Dead;
-            if (inRange && P.stillT > 0f) t += dt; else t = 0f;
+            if (inRange && !GameInput.AnyHeld()) t += dt; else t = 0f;   // just: don't touch anything
 
             float k = Glow;
             sr.color = Color.Lerp(Stone, Lit, k);
