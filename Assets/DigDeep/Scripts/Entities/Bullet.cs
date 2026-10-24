@@ -61,9 +61,20 @@ namespace DigDeep
             col = echo ? new Color(0.8f, 0.6f, 1f) : crit ? new Color(1f, 0.55f, 0.45f) : d.col;
             main = Art.Bullets.TryGetValue(d.bullet, out var s) ? s : Art.Bullets["b_bullet"];
 
+            if (d.bow)
+            {
+                // an arrow: the harder the draw, the faster it flies and the deeper it digs; weak ones drop
+                float frac = Mathf.Clamp01(v.magnitude / Mathf.Max(1f, d.speed));
+                blockPierce = d.blockPierce + Mathf.RoundToInt(3f * frac);
+                grav = 22f * (1f - frac);
+                life = d.life / Mathf.Max(0.35f, frac);
+                arrow = true;
+            }
             ApplyPlayerEffects(p, w, d, echo || crit);
             Spawned();
         }
+
+        bool arrow;   // arrows lodge in whatever stops them (just for show)
 
         // ---------------------------------------------------------------- enemy shot
         public Bullet(Vector2 at, Vector2 v, Team team, float dmgVsEnemies, int dmgVsPlayer, string sprite, Color col, float size = 1f, float life = 3f)
@@ -407,7 +418,7 @@ namespace DigDeep
                 return false;
             }
             if (skip && SkipOff(prev, cx, cy)) return !dead;   // SKIPPING: off the floor like a stone off water
-            Wd.Impact(cx, cy, Mathf.Max(vel.magnitude, 10f));   // shots always set off TNT
+            Wd.Impact(cx, cy, 99f);   // shots always set off TNT
             if (b == Block.Ice && (flame || main == Art.Bullets["b_fire"]))
             {
                 // fire melts ice into steam
@@ -479,6 +490,7 @@ namespace DigDeep
                 return true;
             }
             OnImpact(prev, -vel.normalized, null);
+            if (arrow) StuckArrow.Lodge(prev + vel.normalized * 0.25f, vel, main, new Vector2Int(cx, cy));
             Kill();
             return false;
         }
@@ -562,6 +574,7 @@ namespace DigDeep
                 if (zaps) { pl.Shock(playerDmg); G.fx.Burst(pos, 8, col, 4f, 0.3f, 5f); Kill(); return true; }
                 if (!pl.Invulnerable)
                 {
+                    if (team == Team.Player) Player.Cause = "YOUR OWN SHOT";
                     pl.Hurt(team == Team.Player ? 50 : playerDmg, pos);
                     if (team != Team.Player && main == Art.Bullets["b_fire"]) pl.SetOnFire();   // fireballs set you alight
                     if (poison) pl.Poison(3f);                                                  // jungle seeds poison you

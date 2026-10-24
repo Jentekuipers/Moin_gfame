@@ -21,6 +21,7 @@ namespace DigDeep
         bool reloadEmpty;
         float reloadT, reloadDur, lastShotT;
         public float nextShotMul = 1f;
+        public float nextSpeedMul = 1f;   // a bow's arrow flies as fast as the string was drawn
         public bool nextShotCrit;
         // PRESSURE CHAMBER: hold fire to charge. chargedMul scales the next shot's size, damage and blast (up to 2.5x);
         // automatic guns let go a wild burst instead
@@ -255,6 +256,7 @@ namespace DigDeep
                     if (f < 0.15f) return;   // a twitch of the string: nothing
                     lastShotT = 0f;
                     nextShotMul *= Mathf.Lerp(0.3f, 1.35f, f);
+                    nextSpeedMul = Mathf.Clamp(f, 0.01f, 1f);   // 1%..100% of the arrow's speed
                     FireOnce(false);
                     fireCd = 0.12f;
                     TryEcho();
@@ -385,7 +387,7 @@ namespace DigDeep
                     float ang = t * 12f + fan + Random.Range(-d.spread * shaky - (shaky > 1f ? 4f : 0f), d.spread * shaky + (shaky > 1f ? 4f : 0f)) * 0.5f * s.spreadMul * wild
                               + Random.Range(-1f, 1f) * (HeatWobble(w) + (wildBurst ? 6f : 0f));
                     Vector2 dir = U.Rot(aimDir, ang);
-                    float spd = d.speed * (1f + Random.Range(-d.speedVar, d.speedVar));
+                    float spd = d.speed * (1f + Random.Range(-d.speedVar, d.speedVar)) * nextSpeedMul;
                     if (d.spear) G.Spawn(new Spear(this, w, origin, dir * spd, Dmg(d.dmg) * nextShotMul * (nextShotCrit ? s.critMul : 1f)));
                     else G.Spawn(new Bullet(this, w, origin, dir * spd, echo));
                 }
@@ -401,7 +403,7 @@ namespace DigDeep
             G.sfx.Play(d.sfx, 0.62f, d.pitch * (hc ? 0.72f : 1f) * (echo ? 1.3f : 1f), 0.09f);
             G.lighting.Flash(m, 2.6f, 0.06f);
             G.hud.WeaponKick();
-            nextShotMul = 1f; nextShotCrit = false;
+            nextShotMul = 1f; nextShotCrit = false; nextSpeedMul = 1f;
             // PHANTOM ARSENAL: now and then a ghostly copy of your gun drifts out and fires at the cursor
             if (s.ghostGun && !echo && GhostGun.Alive < 3 && Random.value < Lucky(d.delay < 0.12f ? 0.025f : 0.08f))
                 G.Spawn(new GhostGun(this, w, GunPivot + aimDir * 0.6f, aimDir));
@@ -774,6 +776,7 @@ namespace DigDeep
 
         public void TakeWeapon(Weapon w)
         {
+            if (w != null) Records.Mark("w", w.def.id);
             if (slots[cur] != null && slots[1 - cur] == null) cur = 1 - cur;
             else if (slots[cur] != null) G.Spawn(new WeaponPickup(pos + Vector2.up * 0.3f, slots[cur], 1.2f));
             slots[cur] = w;

@@ -132,7 +132,16 @@ namespace DigDeep
                 if (!Wd.Solid(cx, cy)) continue;
                 Block b = Wd.Get(cx, cy);
                 var def = Tiles.Def(b);
-                bool hard = def.unbreakable || BigOre.Is(b) || b == Block.Chest || b == Block.Crate || b == Block.Supply || Wd.Anchored(cx, cy);
+                bool hard = def.unbreakable || b == Block.Chest || b == Block.Crate || b == Block.Supply || Wd.Anchored(cx, cy);
+                if (mayBreak && blocksLeft > 0 && BigOre.Is(b))
+                {
+                    // big gold: it chips it (or smashes it); if it holds, the spear lodges in it
+                    var rb = Wd.Damage(cx, cy, Mathf.RoundToInt(dmg * 2f), true, owner != null ? owner.GoldMul : 1f);
+                    if (rb == World.Hit.Broke) { blocksLeft--; vel *= 0.85f; continue; }
+                    StickBlock(cx, cy, b);
+                    return;
+                }
+                if (BigOre.Is(b)) hard = true;
                 if (mayBreak && blocksLeft > 0 && !hard)
                 {
                     var r = Wd.Damage(cx, cy, 999, true, owner != null ? owner.GoldMul : 1f);
@@ -157,37 +166,54 @@ namespace DigDeep
             Settled();
         }
 
-        // Another lodged spear in the way. Coming in almost level, this one lodges against it and the two make one
+        // Another lodged spear in the way (the whole shaft is checked, not just the head, so a spear that starts
+        // right next to one still meets it). Coming in almost level, this one lodges against it and the two make one
         // longer ledge. Coming down at any steeper angle, it snaps the lodged spear. From below, it passes by.
         bool HitSpears(Vector2 tip)
         {
-            foreach (var o in All)
+            Vector2 tail = pos - Dir * (Len * 0.5f);
+            float slope = Mathf.Atan2(-vel.y, Mathf.Abs(vel.x)) * Mathf.Rad2Deg;   // > 0 coming down
+            bool level = st == St.Flying && Mathf.Abs(slope) <= 12f;
+            if (!level && slope <= 12f) return false;   // from below: through it, like a platform
+            for (int i = 0; i < All.Count; i++)
             {
-                if (o == this || o.dead || o.fade >= 0f || (o.st != St.InBlock && o.st != St.OnSpear)) continue;
+                var o = All[i];
+                if (o == this || o.dead || o.fade >= 0f || o == parent || (o.st != St.InBlock && o.st != St.OnSpear)) continue;
                 Vector2 a = o.pos - o.Dir * (Len * 0.5f), b = o.pos + o.Dir * (Len * 0.5f);
-                Vector2 ab = b - a;
-                float t = Mathf.Clamp01(Vector2.Dot(tip - a, ab) / ab.sqrMagnitude);
-                if ((tip - (a + ab * t)).sqrMagnitude > 0.15f * 0.15f) continue;
-                float slope = Mathf.Atan2(-vel.y, Mathf.Abs(vel.x)) * Mathf.Rad2Deg;   // > 0 coming down
-                if (st == St.Flying && Mathf.Abs(slope) <= 12f)
+                if (level)
                 {
-                    // level enough: lodge against it, at the same height, so the ledge just gets longer
+                    // the head meets it (with some slack up and down, so you can actually aim for one)
+                    Vector2 ab = b - a;
+                    float t = Mathf.Clamp01(Vector2.Dot(tip - a, ab) / ab.sqrMagnitude);
+                    Vector2 near = a + ab * t;
+                    if (Mathf.Abs(tip.x - near.x) > 0.2f || Mathf.Abs(tip.y - near.y) > 0.35f) continue;
                     st = St.OnSpear; parent = o;
                     ang = vel.x >= 0f ? 0f : 180f;
-                    pos = new Vector2(a.x + ab.x * t, o.pos.y) - Dir * (Len * 0.5f - 0.1f);
+                    pos = new Vector2(near.x, o.pos.y) - Dir * (Len * 0.5f - 0.1f);
                     vel = Vector2.zero; spin = 0f;
                     G.sfx.Play("hit", 0.4f, 1.5f);
                     Settled();
                     return true;
                 }
-                if (slope > 12f)
-                {
-                    o.Snap();   // from above: it breaks the one in the way and carries on
-                    vel *= 0.85f;
-                    return false;
-                }
+                if (SegDist(tail, tip, a, b) > 0.16f) continue;
+                o.Snap();   // from above: it breaks the one in the way and carries on
+                vel *= 0.85f;
+                return false;
             }
             return false;
+        }
+
+        static float SegDist(Vector2 p1, Vector2 p2, Vector2 q1, Vector2 q2)
+        {
+            if (Cross(p1, p2, q1) * Cross(p1, p2, q2) < 0f && Cross(q1, q2, p1) * Cross(q1, q2, p2) < 0f) return 0f;   // they cross
+            return Mathf.Min(Mathf.Min(PtSeg(p1, q1, q2), PtSeg(p2, q1, q2)), Mathf.Min(PtSeg(q1, p1, p2), PtSeg(q2, p1, p2)));
+        }
+        static float Cross(Vector2 a, Vector2 b, Vector2 c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        static float PtSeg(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(1e-5f, ab.sqrMagnitude));
+            return (p - (a + ab * t)).magnitude;
         }
 
         // snapped by a spear coming down on it
@@ -306,5 +332,50 @@ namespace DigDeep
             base.Kill();
             All.Remove(this);
         }
+    }
+
+    // An arrow lodged in a block: just battlefield clutter. It drops and fades when the block goes, and old ones
+    // fade away so they never pile up.
+    public class StuckArrow : Entity
+    {
+        static readonly List<StuckArrow> All = new List<StuckArrow>();
+        const int Max = 40;
+        readonly Vector2Int cell;
+        float t, vy, fade = -1f;
+        readonly float ang;
+
+        StuckArrow(Vector2 at, Vector2 dir, Sprite s, Vector2Int cell)
+        {
+            pos = at; this.cell = cell;
+            ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+            MakeGO("Arrow", s, 8);
+            go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
+            All.Add(this);
+            if (All.Count > Max) All[0].fade = 0f;
+        }
+
+        public static void Lodge(Vector2 at, Vector2 dir, Sprite s, Vector2Int cell)
+        {
+            if (s == null || dir.sqrMagnitude < 0.01f) return;
+            Game.I.Spawn(new StuckArrow(at, dir, s, cell));
+        }
+
+        public override void Tick(float dt)
+        {
+            t += dt;
+            if (fade < 0f && (t > 40f || !Wd.Solid(cell.x, cell.y))) fade = 0f;   // its block went (or it's been ages)
+            if (fade >= 0f)
+            {
+                fade += dt;
+                vy -= 25f * dt;
+                pos.y += vy * dt;
+                sr.color = new Color(1f, 1f, 1f, 1f - fade / 0.5f);
+                if (fade >= 0.5f) { Kill(); return; }
+            }
+            go.transform.position = new Vector3(pos.x, pos.y, 0f);
+        }
+
+        public override void Kill() { base.Kill(); All.Remove(this); }
+        public static void ClearAll() => All.Clear();
     }
 }

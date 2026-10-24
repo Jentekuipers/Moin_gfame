@@ -483,6 +483,7 @@ namespace DigDeep
                 Box(0, 0, Screen.width, Screen.height, new Color(0f, 0f, 0f, 0.6f * a));
                 float cy = Screen.height * 0.3f;
                 PixelFont.Draw(Screen.width * 0.5f, cy, "YOU DIED", S * 3f, new Color(1f, 0.3f, 0.3f, a), 1);
+                PixelFont.Draw(Screen.width * 0.5f, cy + 22f * S, "KILLED BY " + p.lastCause, sm, new Color(1f, 0.6f, 0.55f, a), 1);
                 PixelFont.Draw(Screen.width * 0.5f, cy + 30f * S, "DEPTH REACHED: -" + g.maxDepth, S, new Color(0.9f, 0.8f, 0.5f, a), 1);
                 PixelFont.Draw(Screen.width * 0.5f, cy + 41f * S, "GOLD: " + p.s.gold + "    KILLS: " + p.s.kills, S, new Color(1f, 0.85f, 0.3f, a), 1);
                 PixelFont.Draw(Screen.width * 0.5f, cy + 52f * S, "TRINKETS: " + p.skillOrder.Count + "    COMBOS: " + p.comboOrder.Count, S, new Color(0.75f, 0.55f, 1f, a), 1);

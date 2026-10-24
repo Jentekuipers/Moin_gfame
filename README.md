@@ -718,6 +718,34 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 - **Combo hints.** The "? COMBO WITH ???" lines and the half-finished combo list are gone. A combo only shows when you have it, or on the item that would complete it, which pulses "COMPLETES <COMBO>!" (stronger while you hover it).
 - **Spears and other spears.** A spear lodging in a block it can't break doesn't burst into debris any more. A spear coming in almost level (within 12 degrees) lodges against a lodged spear and makes the ledge longer; it drops if that spear goes. Coming down any steeper, it snaps the lodged spear and carries on.
 
+### Records, rocket jumps and arrows (batch 62)
+- **STATS** (title menu): runs, finished runs, void wins, deaths, kills, bosses beaten, gold, best depth, time played, and every cause of death with its count. `Systems/Records.cs` keeps them; test runs never count.
+- **UNLOCKS** (title menu), with found / total in each corner:
+  - CHARACTERS: which diggers have the god-diamond (and the void diamond).
+  - WEAPONS and SKILLS: icon grids, with unfound ones as dark shapes.
+  - BOSSES: names you've beaten. Unseen ones show as ???.
+- **Death screen** shows KILLED BY: the nearest foe or boss, or LAVA / SPIKES / FIRE / POISON / DROWNING / AN EXPLOSION / YOUR OWN BLAST / A BOULDER / FALLING SAND, and so on.
+- **Stomping** is for everyone. Landing on a foe from above bounces you off just before its body touches you, for 6 damage (+2 per STOMP BOOTS level). That one-shots most first-biome foes.
+- **Bug fix:** the ground-slam line had swallowed its own body in a comment. That made stomps only work while a slam was possible.
+- **Rocket jumps:**
+  - A blast under you throws you up hard, and jumping first adds to it.
+  - While you're blown upwards, letting go of jump doesn't cut the height.
+- **TNT** only goes off from a really hard knock (speed 20+), a shot, a blast or a slam. Things falling only set it off if they fall fast.
+- **Falling sand and spikes** only hurt you if they come down on top of you, not when you're standing on them.
+- **Bows:**
+  - Arrow speed is 1-100% of full, by how far you drew.
+  - Arrows dig deeper the faster they fly (+0-3 blocks).
+  - Weak arrows drop.
+  - Arrows lodge in the block that stops them, just as clutter (max 40). They fall away when that block goes.
+- **Spears:**
+  - Spear-on-spear checks the whole shaft, so snapping a lodged spear from above works. Merging (a level throw, within 12 degrees) has a generous vertical aim window.
+  - Spears chip big gold, or smash it and keep going; if it holds, they lodge in it.
+- **Weapons:**
+  - The pickaxe is for digging: tiny damage, very fast, MINE 4.
+  - The disc gun cuts 2 blocks in before it bounces.
+- **Boss rewards** wait on the hall's ledges. TROPHY CASE (common) makes bosses drop 4 items instead of 3.
+- **Rarity:** PROSPECTOR is rare, GILLS is common.
+
 ## Where to tune things
 
 | What | Where |

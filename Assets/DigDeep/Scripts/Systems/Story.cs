@@ -146,8 +146,9 @@ namespace DigDeep
 
         // ------------------------------------------------------------------ start screen
 
-        public const string Continue = "CONTINUE", NewRun = "NEW RUN", WatchIntro = "WATCH INTRO", Options = "OPTIONS", Credits = "CREDITS", Quit = "QUIT", Test = "TEST MODE";
-        static readonly string[] withSave = { Continue, NewRun, Test, Options, Credits, Quit }, noSave = { NewRun, Test, Options, Credits, Quit };
+        public const string Continue = "CONTINUE", NewRun = "NEW RUN", WatchIntro = "WATCH INTRO", Options = "OPTIONS", Credits = "CREDITS", Quit = "QUIT", Test = "TEST MODE",
+            Stats = "STATS", Unlocks = "UNLOCKS";
+        static readonly string[] withSave = { Continue, NewRun, Test, Unlocks, Stats, Options, Credits, Quit }, noSave = { NewRun, Test, Unlocks, Stats, Options, Credits, Quit };
         public static string[] TitleItems => SaveGame.Exists ? withSave : noSave;
 
         // where each menu line was drawn (GUI coordinates), for the mouse

@@ -336,7 +336,8 @@ namespace DigDeep
             a.kick = 0.05f; a.shake = 0.02f; a.slow = 0.2f; a.flame = true; a.sfx = "flame"; a.bullet = "b_flame"; a.col = orange; a.abuses = true;
 
             a = G("disc", "DISC GUN", "SAWBLADES BOUNCE OFF EVERYTHING", Rarity.Uncommon, 30, 160);
-            a.dmg = 2.15f; a.delay = 0.32f; a.speed = 22f; a.spread = 4f; a.bounces = 4; a.pierce = 3; a.life = 2f; a.knock = 3f; a.recoil = 0.8f;
+            a.dmg = 2.15f; a.delay = 0.32f; a.speed = 22f; a.spread = 4f; a.bounces = 4; a.pierce = 3; a.life = 2f; a.blockPierce = 2;   // it cuts a little way in before it bounces
+            a.knock = 3f; a.recoil = 0.8f;
             a.kick = 0.15f; a.shake = 0.05f; a.abuses = true; a.sfx = "disc"; a.bullet = "b_disc"; a.col = new Color(0.85f, 0.85f, 0.9f);
 
             // ---------------- guns: rare
@@ -361,8 +362,8 @@ namespace DigDeep
             a.sfx = "rail"; a.col = cyan; a.slow = 0.3f;
 
             // ---------------- melee
-            a = G("pickaxe", "PICKAXE", "THE OLD WAY. DIGS FAST", Rarity.Common, 0, 60);
-            a.type = WType.Melee; a.dmg = 0.92f; a.delay = 0.17f; a.reach = 1.25f; a.arc = 70f; a.mine = 3; a.knock = 5f; a.recoil = 0f; a.kick = 0.1f;
+            a = G("pickaxe", "PICKAXE", "FOR DIGGING, NOT FIGHTING. DIGS VERY FAST", Rarity.Common, 0, 60);
+            a.type = WType.Melee; a.dmg = 0.3f; a.delay = 0.12f; a.reach = 1.25f; a.arc = 70f; a.mine = 4; a.knock = 5f; a.recoil = 0f; a.kick = 0.1f;
             a.shake = 0.05f; a.sfx = "swing";
             DB.Pickaxe = a;
 

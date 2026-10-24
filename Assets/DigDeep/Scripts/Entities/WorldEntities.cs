@@ -61,8 +61,11 @@ namespace DigDeep
             var hb = new Vector2(0.45f, 0.45f);
             var pl = G.player;
             // falling spikes and sand hurt; chests and crates just land next to you
-            if (pl.mode != Player.Mode.Dead && (b == Block.Spikes || b == Block.Sand) && U.Overlap(pos, hb, pl.pos, Player.Half))
+            // only the bottom of it hurts: standing on (or beside) a block as it drops is fine
+            if (pl.mode != Player.Mode.Dead && (b == Block.Spikes || b == Block.Sand) && vy < -1f && pl.pos.y + Player.Half.y < pos.y + 0.1f
+                && Mathf.Abs(pl.pos.x - pos.x) < 0.45f + Player.Half.x - 0.15f && U.Overlap(pos, hb, pl.pos, Player.Half))
             {
+                Player.Cause = b == Block.Spikes ? "FALLING SPIKES" : "FALLING SAND";
                 pl.Hurt(b == Block.Spikes ? 60 : 50, pos + Vector2.up);
                 if (b == Block.Sand) pl.Extinguish();   // a load of sand smothers the flames
             }
@@ -76,7 +79,7 @@ namespace DigDeep
             Kill();
             int fell = startRow - land;
             G.OnHeavyLanded(x, land);   // boulders, sand, chests... anything that falls presses a plate
-            Wd.Impact(x, land - 1, 99f);   // anything falling on TNT sets it off
+            Wd.Impact(x, land - 1, -vy);   // something falling hard enough onto TNT sets it off
             Block at = Wd.Get(x, land);
             bool free = at == Block.Air || at == Block.Lava || at == Block.Spikes;
             if (b != Block.Boulder && b != Block.Sand) free = at == Block.Air;   // spikes, chests and crates need open air
@@ -473,7 +476,7 @@ namespace DigDeep
             if (fell < 0.6f) return;
             int cx = Mathf.FloorToInt(pos.x), cy = Mathf.FloorToInt(pos.y);
             G.OnHeavyLanded(cx, cy);
-            Wd.Impact(hy.x, hy.y, 99f);
+            Wd.Impact(hy.x, hy.y, fell * 4f);
             G.cam.Shake(Mathf.Min(0.35f, 0.08f + fell * 0.04f));
             G.sfx.Play("land", 0.7f, 0.6f);
             G.fx.Burst(pos - new Vector2(0f, H.y), 8, new Color(0.6f, 0.5f, 0.4f), 3f, 0.3f, 8f);
@@ -544,6 +547,7 @@ namespace DigDeep
                     {
                         // damage grows with the square of its speed: a 4-block drop does ~250, a quick roll a scratch
                         int dmg = Mathf.Max(10, Mathf.RoundToInt(closing * closing * 0.83f));
+                        Player.Cause = "A BOULDER";
                         pl.Hurt(dmg, pos);
                         vel *= 0.6f;
                     }

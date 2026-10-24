@@ -435,7 +435,7 @@ namespace DigDeep
         // Something slammed into (x, y). TNT goes off when hit or landed on hard enough.
         public void Impact(int x, int y, float speed)
         {
-            if (speed < 8f) return;
+            if (speed < 20f) return;   // TNT only goes off from a really hard knock (or a shot, a blast, a slam)
             if (Get(x, y) == Block.TNT) Break(x, y, false);
         }
 

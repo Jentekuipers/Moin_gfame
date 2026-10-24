@@ -438,7 +438,7 @@ namespace DigDeep
             EndCamo();
             G.Popup(pos + Vector2.up * 0.9f, "-" + d, c);
             G.sfx.Play("hurt", 0.3f, 1.4f);
-            if (s.hp <= 0) { s.hp = 1; invuln = 0f; grace = 0f; Hurt(1, pos); }
+            if (s.hp <= 0) { s.hp = 1; invuln = 0f; grace = 0f; Cause = Burning ? "FIRE" : poisonT > 0f ? "POISON" : null; Hurt(1, pos); }
         }
     }
 }

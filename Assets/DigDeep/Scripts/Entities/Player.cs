@@ -273,7 +273,7 @@ namespace DigDeep
                         G.Popup(pos + Vector2.up * 0.9f, "-" + d, new Color(0.5f, 0.8f, 1f));
                         G.sfx.Play("hurt", 0.4f, 1.3f);
                         G.hud.DamageFlash();
-                        if (s.hp <= 0) { s.hp = 1; Hurt(1, pos); }
+                        if (s.hp <= 0) { s.hp = 1; Cause = "DROWNING"; Hurt(1, pos); }
                     }
                 }
             }
@@ -312,6 +312,7 @@ namespace DigDeep
 
             float g = 58f;   // heavier and snappier, same jump height
             if (superT > 0f && vel.y > 0f) { }   // a super jump rides its full arc
+            else if (knockT > 0f && vel.y > 0f) { }   // blasted upwards: ride it (rocket jumps), whether or not you hold jump
             else if (vel.y < 0f) g *= 1.35f;
             else if (!GameInput.Held(Btn.Jump)) g *= 2.1f;
             else if (vel.y < 3f) g *= 0.6f;   // floaty apex
@@ -365,7 +366,8 @@ namespace DigDeep
 
             if (snapT > 0f) { snapT -= dt; pos.x = Mathf.MoveTowards(pos.x, snapX, dt * 8f); }
             // GROUND SLAM: press down in the air
-            if (s.slam && !s.levitate && !grounded && GameInput.Pressed(Btn.Down) && HighEnoughToSlam())   // (levitation and the slam fight over DOWN: levitation wins) { StartPound(); return; }
+            // (levitation and the slam fight over DOWN: levitation wins)
+            if (s.slam && !s.levitate && !grounded && GameInput.Pressed(Btn.Down) && HighEnoughToSlam()) { StartPound(); return; }
 
             Stomp(dt);
             MoveBody(dt, mx);
@@ -521,16 +523,19 @@ namespace DigDeep
             G.fx.Burst(pos - new Vector2(0, Half.y), 5, new Color(0.6f, 0.5f, 0.4f), 2.5f, 0.3f, 5f);
         }
 
+        // Everyone can stomp: land on a foe from above and you bounce off it, hurting it (STOMP BOOTS hit harder).
+        // It's checked a little ahead of your feet, so the bounce comes just before its body would touch (and hurt) you.
         void Stomp(float dt)
         {
-            if (s.stomp <= 0 || vel.y > -2f) return;
-            Vector2 next = pos + new Vector2(0f, vel.y * dt);
+            if (vel.y > -1f) return;
+            Vector2 next = pos + new Vector2(0f, vel.y * dt - 0.18f);
+            float feet = pos.y - Half.y;
             foreach (var e in G.ents)
             {
-                if (e.dead || !(e is Enemy en)) continue;
-                if (pos.y - Half.y < en.pos.y) continue;
+                if (e.dead || !(e is Enemy en) || en.Intangible || en.team == Team.Player) continue;
+                if (feet < en.pos.y + en.half.y - 0.3f) continue;   // only from above
                 if (!U.Overlap(next, Half, en.pos, en.half)) continue;
-                en.Hurt(Dmg(s.stomp) * s.meleeMul * s.kickMul, Vector2.down * 2f);
+                en.Hurt(Dmg(6f + s.stomp * 2f) * s.meleeMul * s.kickMul, Vector2.down * 2f);
                 vel.y = s.stompBounce;
                 grace = 0.25f;
                 airJumps = s.airJumps;
@@ -962,6 +967,7 @@ namespace DigDeep
                 case Kind.Skill:
                     {
                         var k = (SkillDef)d;
+                        Records.Mark("s", k.id);
                         if (SkillCount(k.id) >= k.cap)
                         {
                             AddGold(25);
@@ -1115,6 +1121,7 @@ namespace DigDeep
                     Block b = Wd.Get(x, y);
                     if (!s.lavaImmune && Wd.LiquidType(x, y) == Fluids.Lava && Wd.LiquidAmount(x, y) > Fluids.MinLevel * 1.6f && Wd.FluidAtPoint(new Vector2(Mathf.Clamp(pos.x, x, x + 0.99f), Mathf.Clamp(pos.y - Half.y + 0.05f, y, y + 0.99f))) == Fluids.Lava)
                     {
+                        Cause = "LAVA";
                         Hurt(HazardDmg, new Vector2(pos.x, y));
                         if (mode == Mode.Dead) return;
                         SetOnFire();   // lava sets you alight
@@ -1123,6 +1130,7 @@ namespace DigDeep
                     }
                     if (b == Block.Spikes && !s.spikeProof && pos.y - Half.y < y + 0.5f && vel.y <= 0.5f)
                     {
+                        Cause = "SPIKES";
                         Hurt(HazardDmg, new Vector2(pos.x, y));
                         if (mode == Mode.Dead) return;
                         vel.y = 10f;
@@ -1135,6 +1143,7 @@ namespace DigDeep
                 for (int x = x0; x <= x1; x++)
                     if (Wd.Get(x, fy) == Block.Magma)
                     {
+                        Cause = "MAGMA ROCK";
                         Hurt(HazardDmg, new Vector2(pos.x, fy));
                         if (mode == Mode.Dead) return;
                         vel.y = 9f;
@@ -1146,8 +1155,34 @@ namespace DigDeep
         int HazardDmg => Mathf.RoundToInt(50f + Depth * 0.15f);
 
         // dmg is in health points (a heart is 100)
+        // what hurt you last (for the death screen and the stats): callers can name it, otherwise it's worked out
+        public static string Cause;
+        public string lastCause = "THE DARK";
+
+        string WhatHurt(Vector2 from)
+        {
+            Enemy best = null; float bd = 3f * 3f;
+            foreach (var e in G.ents)
+            {
+                if (e.dead || !(e is Enemy en) || en.team == Team.Player) continue;
+                float d2 = (en.pos - from).sqrMagnitude;
+                if (d2 < bd) { bd = d2; best = en; }
+            }
+            if (best is Boss b && !string.IsNullOrEmpty(b.title)) return b.title;
+            if (best != null && best.go != null) return best.go.name.ToUpperInvariant();
+            if (G.boss != null && !G.boss.dead && !string.IsNullOrEmpty(G.boss.title)) return G.boss.title;
+            int fx = Mathf.FloorToInt(from.x), fy = Mathf.FloorToInt(from.y);
+            if (Wd.LiquidType(fx, fy) == Fluids.Lava) return "LAVA";
+            if (Wd.Get(fx, fy) == Block.Spikes) return "SPIKES";
+            if (Wd.Get(fx, fy) == Block.Magma) return "MAGMA ROCK";
+            if (Burning) return "FIRE";
+            return "SOMETHING IN THE DARK";
+        }
+
         public void Hurt(int dmg, Vector2 from)
         {
+            lastCause = Cause ?? WhatHurt(from);
+            Cause = null;
             if (mode == Mode.Parry) { Counter(from); return; }   // PARRY: whatever touches you gets countered
             if (mode == Mode.Dead || Invulnerable) return;
             if (TestMode.On && TestMode.God) { G.Popup(pos + Vector2.up, "GOD: " + dmg, new Color(0.6f, 1f, 0.6f)); return; }

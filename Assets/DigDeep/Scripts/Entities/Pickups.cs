@@ -154,6 +154,13 @@ namespace DigDeep
             sr.enabled = false;
         }
 
+        public static void Offer(System.Collections.Generic.List<Vector2> spots, Def[] defs)
+        {
+            var group = new System.Collections.Generic.List<BossChoice>();
+            for (int i = 0; i < defs.Length && i < spots.Count; i++)
+                if (defs[i] != null) Game.I.Spawn(new BossChoice(spots[i], defs[i], group, i * 0.25f));
+        }
+
         public static void Offer(Vector2 left, Vector2 right, Def[] defs, float avoidX = float.NaN)
         {
             var group = new System.Collections.Generic.List<BossChoice>();

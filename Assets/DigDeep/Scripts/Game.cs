@@ -17,7 +17,7 @@ namespace DigDeep
     public class Game : MonoBehaviour
     {
         public static Game I;
-        public enum State { Intro, Title, Select, Playing, Paused, Dead, Ending, Options, Credits }
+        public enum State { Intro, Title, Select, Playing, Paused, Dead, Ending, Options, Credits, Stats, Unlocks }
 
         public World world;
         public Fluids fluids;
@@ -131,6 +131,7 @@ namespace DigDeep
                 PlayerPrefs.Save();
             }
             PlayerPrefs.SetInt("digdeep_wins", PlayerPrefs.GetInt("digdeep_wins", 0) + 1);
+            Records.RunEnded(player, true, null, time);
             if (maxDepth > best) { best = maxDepth; PlayerPrefs.SetInt("digdeep_best", best); }
             PlayerPrefs.Save();
             // every digger has it now: the diamond lifts you up, above the clouds, to the gods
@@ -429,7 +430,7 @@ namespace DigDeep
             skyWhite = 0f; cloudFade = 0f; voidFade = 0f; voidDragonDone = save != null && save.voidDragon;
             Ascent.Active = null; Ascent.Cover = 0f;
             revealT = 0f;
-            BoulderBody.All.Clear(); Spear.All.Clear(); Keeper.All.Clear();
+            BoulderBody.All.Clear(); Spear.All.Clear(); Keeper.All.Clear(); StuckArrow.ClearAll();
             Fire.Reset();
             Electric.Reset();
             FriendlyWorm.Alive = 0; GhostGun.Alive = 0; Decoy.Active = null;
@@ -609,9 +610,9 @@ namespace DigDeep
                 return;
             }
             if (state == State.Options) { options.Tick(rdt); return; }
-            if (state == State.Credits)
+            if (state == State.Credits || state == State.Stats || state == State.Unlocks)
             {
-                if (GameInput.AnyPressed()) { state = State.Title; sfx.Play("swing", 0.5f, 1.2f); }
+                if (GameInput.AnyPressed() || GameInput.MouseClicked()) { state = State.Title; sfx.Play("swing", 0.5f, 1.2f); }
                 return;
             }
             if (state == State.Title)
@@ -638,6 +639,8 @@ namespace DigDeep
                     else if (pick == Story.Test) StartTestMode();
                     else if (pick == Story.Options) options.Show(State.Title);
                     else if (pick == Story.Credits) state = State.Credits;
+                    else if (pick == Story.Stats) state = State.Stats;
+                    else if (pick == Story.Unlocks) state = State.Unlocks;
                     else if (pick == Story.Quit) Application.Quit();
                     else GoIntro();
                 }
@@ -803,6 +806,8 @@ namespace DigDeep
             if (Event.current.type != EventType.Repaint) return;
             if (state == State.Intro) story.DrawIntro();
             else if (state == State.Credits) story.DrawCredits();
+            else if (state == State.Stats) { story.DrawTitle(this); RecordScreens.DrawStats(); }
+            else if (state == State.Unlocks) { story.DrawTitle(this); RecordScreens.DrawUnlocks(); }
             else if (state == State.Options)
             {
                 // the options sit on top of whatever they were opened from
@@ -1642,20 +1647,28 @@ namespace DigDeep
             if (byPlayer) PlayerBlastExtras(c, r, dmg);
             float pd = (player.pos - c).magnitude;
             if (!safe && !player.s.blastProof && player.mode != Player.Mode.Dead && pd < r + 0.3f)
+            {
+                Player.Cause = byPlayer ? "YOUR OWN BLAST" : "AN EXPLOSION";
                 player.Hurt(Mathf.RoundToInt(70f + maxDepth * 0.3f), c);
+            }
             // every blast throws the player away, even ones that can't hurt them (rocket jumps!)
             float reach = r * 1.7f + 0.5f;
             if (!noPush && player.mode != Player.Mode.Dead && pd < reach)   // (a blast from your own melee swing doesn't throw you)
             {
                 Vector2 dir = pd < 0.15f ? Vector2.up : (player.pos - c) / pd;
-                dir = (dir + Vector2.up * 0.35f).normalized;
-                float f = Mathf.Lerp(24f, 7f, pd / reach) * Mathf.Clamp(0.6f + r * 0.18f, 0.7f, 1.4f);
-                player.Launch(dir * f);
+                // a blast under you sends you up hard (rocket jumps): the closer under your feet, the more of it goes up
+                float under = Mathf.Clamp01(dir.y);
+                dir = (dir + Vector2.up * (0.35f + under * 0.6f)).normalized;
+                float f = Mathf.Lerp(27f, 8f, pd / reach) * Mathf.Clamp(0.6f + r * 0.18f, 0.7f, 1.4f);
+                Vector2 v = dir * f;
+                if (player.vel.y > 0f && v.y > 0f) v.y += player.vel.y * 0.6f;   // jump first, then blast: it adds up
+                player.Launch(v);
             }
         }
 
         public void OnPlayerDied()
         {
+            Records.RunEnded(player, false, player.lastCause, time);
             SaveGame.Delete();   // the run is over: nothing to continue
             music.Stop(2.5f);
             state = State.Dead;

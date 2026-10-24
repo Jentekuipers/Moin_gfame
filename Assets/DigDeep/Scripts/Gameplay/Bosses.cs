@@ -34,6 +34,7 @@ namespace DigDeep
 
         // 3-5 unbreakable one-block ledges to dodge onto. Bosses pass straight through them.
         readonly HashSet<long> plats = new HashSet<long>();
+        public readonly List<Vector2Int> Ledges = new List<Vector2Int>();   // (x, depth) of each ledge, left to right
 
         public ArenaRoom(int depth, int index)
         {
@@ -60,6 +61,7 @@ namespace DigDeep
                 bool lowNear = i > 0 && xs[i] - xs[i - 1] <= 5 && plats.Contains(Key(xs[i - 1], D - 2));
                 if (lowNear && r.Next(2) == 0) h = 4;
                 plats.Add(Key(xs[i], D - h));
+                Ledges.Add(new Vector2Int(xs[i], D - h));
             }
         }
 
@@ -182,7 +184,7 @@ namespace DigDeep
         {
             started = true;
             SetPerimeter(Block.Seal);
-            int kind;
+            int kind;   // (remembered in bossKind for the records)
             switch (room.D)
             {
                 case ArenaRoom.A0: kind = 0; break;
@@ -213,6 +215,7 @@ namespace DigDeep
             if (room.IsFinal && World.Void) kind = 17;              // the bottom of the void: the Void Archmage
             else if (World.Void && !G.voidDragonDone && rr.NextDouble() < 0.25) { kind = 19; G.voidDragonDone = true; }   // once a void run: the void dragon
             if (ForceKind >= 0) { kind = ForceKind; ForceKind = -1; }
+            bossKind = kind;
             switch (kind)
             {
                 case 4: boss = new OrninBoss(this, spawnAt, 720f * hpMul); break;
@@ -259,9 +262,19 @@ namespace DigDeep
             G.lighting.Flash(pos, 16f, 0.5f);
         }
 
+        int bossKind = -1;
+
         public void OnBossDefeated()
         {
             if (cleared) return;
+            bool allDown = true;
+            foreach (var b in bosses) if (!b.dead) allDown = false;
+            if (allDown && bossKind >= 0)
+            {
+                Records.Add("bosses");
+                if (bossKind == 11) { Records.Mark("b", "9"); Records.Mark("b", "10"); }   // the twin dragons count as both
+                else Records.Mark("b", bossKind.ToString());
+            }
             // two bosses: the fight goes on until both are down
             foreach (var b in bosses)
                 if (!b.dead) { G.boss = b; G.boss2 = null; G.hud.Banner("ONE DOWN", "THE OTHER FIGHTS ON", new Color(1f, 0.6f, 0.4f)); return; }
@@ -291,18 +304,32 @@ namespace DigDeep
             if (!World.Void) G.CheckVoidShard(room.index, c + Vector2.left * 2.5f);
             // the reward: a choice of three rare things floating across the hall (each has a tiny chance to be rarer).
             // A boss that carries something of its own (a dragon's heart) puts it among the three.
+            int count = 3 + G.player.s.bossExtra;   // TROPHY CASE: one more to choose from
             var picks = new System.Collections.Generic.List<Def>();
-            foreach (var b in bosses) { var dd = b.Drop; if (dd != null && picks.Count < 3) picks.Add(dd); }
+            foreach (var b in bosses) { var dd = b.Drop; if (dd != null && picks.Count < count) picks.Add(dd); }
             var rng = G.rng;
-            for (int tries = 0; picks.Count < 3 && tries < 12; tries++)
+            for (int tries = 0; picks.Count < count && tries < 16; tries++)
             {
                 var rar = rng.NextDouble() < G.player.Lucky(0.05f) ? Rarity.Relic : Rarity.Rare;
                 var d = DB.RollOfRarity(rar, G.player, rng, picks) ?? DB.RollOfRarity(Rarity.Rare, G.player, rng, picks) ?? DB.RollOfRarity(Rarity.Uncommon, G.player, rng, picks);
                 if (d != null) picks.Add(d);
             }
             G.sfx.Play("chest", 0.9f, 0.9f); G.fx.Burst(c, 40, new Color(1f, 0.85f, 0.3f), 9f, 0.9f, 4f); G.fx.Ring(c, 3f, new Color(1f, 0.85f, 0.3f));
-            float fy = FloorY + 1.7f;   // a little off the floor: reachable standing right under it
-            BossChoice.Offer(new Vector2(MinX + 1f, fy), new Vector2(MaxX - 1f, fy), picks.ToArray(), CenterX);
+            // each one waits on a ledge of the hall (spread across them); any left over float just off the floor
+            var spots = new System.Collections.Generic.List<Vector2>();
+            var ledges = room.Ledges;
+            for (int i = 0; i < picks.Count && i < ledges.Count; i++)
+            {
+                var l = ledges[ledges.Count <= picks.Count ? i : Mathf.RoundToInt(i * (ledges.Count - 1) / Mathf.Max(1f, picks.Count - 1))];
+                spots.Add(new Vector2(l.x + 0.5f, 1 - l.y + 0.75f));
+            }
+            for (int i = spots.Count; i < picks.Count; i++)
+            {
+                float x = Mathf.Lerp(MinX + 2f, MaxX - 2f, (i + 0.5f) / picks.Count);
+                if (Mathf.Abs(x - CenterX) < 2.2f) x = CenterX + 2.5f;   // not over the hole in the floor
+                spots.Add(new Vector2(x, FloorY + 1.7f));
+            }
+            BossChoice.Offer(spots, picks.ToArray());
             G.Spawn(new HealOrb(c + Vector2.right * 2f, 100));
             G.hud.Banner("VICTORY!", "THE FLOOR CRACKS OPEN", new Color(1f, 0.85f, 0.3f));
             G.music.PlayLevel(3f);

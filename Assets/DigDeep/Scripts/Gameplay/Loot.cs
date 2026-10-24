@@ -192,7 +192,7 @@ namespace DigDeep
             Tr("jerky", "MOLE JERKY", "", "rock", meat, Rarity.Common, 2, new St { hp = 25 }, p => p.s.hp = Mathf.Min(p.s.maxHp, p.s.hp + 25)).weight = 5;
             Tr("coffee", "MINER'S COFFEE", "", "potion", coffee, Rarity.Common, 1, new St { swing = 0.15f, speed = 0.1f }, null);
             Tr("lantern", "LANTERN OIL", "+30% LIGHT RADIUS", "potion", orange, Rarity.Common, 2, default, p => p.s.lightMul += 0.3f);
-            Tr("prospector", "PROSPECTOR", "+30% GOLD FROM ORE", "gem", gold, Rarity.Common, 1, new St { luck = 0.5f }, p => p.s.goldMul += 0.3f);
+            Tr("prospector", "PROSPECTOR", "+30% GOLD FROM ORE", "gem", gold, Rarity.Rare, 1, new St { luck = 0.5f }, p => p.s.goldMul += 0.3f);
             Tr("magnet", "MAGNET", "PULLS IN GOLD FROM FAR AWAY", "horseshoe", red, Rarity.Common, 1, default, p => p.s.magnet = Mathf.Max(p.s.magnet * 5f, 8f));
             Tr("thick", "THICK SKIN", "LONGER MERCY TIME AFTER HITS", "shield", brown, Rarity.Common, 1, new St { hp = 20 }, p => p.s.invulnBonus += 0.6f);
             Tr("lucky", "LUCKY COIN", "DUG BLOCKS SOMETIMES DROP GOLD", "coin", lime, Rarity.Common, 1, new St { luck = 1f }, p => p.s.luckyChance += 0.06f);
@@ -227,6 +227,7 @@ namespace DigDeep
             Tr("rage", "RAGE MUSHROOM", "", "mushroom", red, Rarity.Uncommon, 1, new St { dmg = 1f, swing = 0.1f, speed = -0.1f }, null);
 
             // rare (chests from depth 50, shops, altars)
+            Tr("trophy", "TROPHY CASE", "BOSSES DROP 4 ITEMS INSTEAD OF 3", "crown", gold, Rarity.Common, 1, default, p => p.s.bossExtra = Mathf.Max(p.s.bossExtra, 1)).weight = 5;
             Tr("seeall", "YOU SEE ALL", "NO MORE DARKNESS", "eye", gold, Rarity.Rare, 1, default, p => p.s.seeAll = true).weight = 3;
             Tr("blast", "BLAST PROOF", "IMMUNE TO EXPLOSIONS", "shield", red, Rarity.Rare, 1, default, p => p.s.blastProof = true);
             Tr("fangs", "VAMPIRE FANGS", "HEAL 30 HP EVERY 12 KILLS", "tooth", red, Rarity.Rare, 1, new St { dmg = 0.3f }, p => { if (p.s.vampire == 0) p.s.vampire = 12; }).weight = 1;
@@ -248,7 +249,7 @@ namespace DigDeep
 
             Own("nell", Tr("kindle", "KINDLING", "25% OF ATTACKS BURN", "flame", orange, Rarity.Rare, 1, default, p => p.s.fireChance += 0.25f));
             Own("ribb", Tr("toxin", "TOXIC SKIN", "25% OF ATTACKS POISON", "drop", lime, Rarity.Rare, 1, default, p => p.s.poisonChance += 0.25f));
-            Own("fin", Tr("gills", "GILLS", "BREATHE UNDER WATER FOREVER", "leaf", cyan, Rarity.Rare, 1, default, p => p.s.gills = true));
+            Own("fin", Tr("gills", "GILLS", "BREATHE UNDER WATER FOREVER", "leaf", cyan, Rarity.Common, 1, default, p => p.s.gills = true));
             Tr("flippers", "FLIPPERS", "SWIM FAST, LEAP OUT OF WATER", "boot", cyan, Rarity.Uncommon, 1, default, p => p.s.flippers = true);
             Own("vex", Tr("ambush", "AMBUSH", "HITS FROM BEHIND DEAL 1.5X DAMAGE", "eye", purple, Rarity.Rare, 1, default, p => p.s.backstab = true));
             Own("nyx", Tr("claws", "SHARP CLAWS", "+25% MELEE DAMAGE", "blade", purple, Rarity.Rare, 1, default, p => p.s.meleeMul += 0.25f));

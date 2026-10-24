@@ -77,7 +77,8 @@ namespace DigDeep
         public int stomp;
         public float stompBounce = 12f;
         public float critChance, critMul = 3f;
-        public bool seeAll;   // YOU SEE ALL: no darkness at all
+        public bool seeAll;
+        public int bossExtra;   // TROPHY CASE: bosses offer this many more   // YOU SEE ALL: no darkness at all
         public bool aftershock, coil, lavaImmune, pickFrenzy, clover, bombRestock, deathEngine;
         public int goldToothEvery;
         public int chainExplode;         // 0 off, 1 small, 2 big
