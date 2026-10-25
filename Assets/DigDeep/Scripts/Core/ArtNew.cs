@@ -36,6 +36,12 @@ namespace DigDeep
             Strips["skel_wake"] = Load("skel_wake", 8, true, false, "skel_wake");
             Strips["skel_punch"] = Load("skel_punch", 8, true, false, "skel_punch");
             Bones = Load("bones", 11, true, true);
+            // the Creator's hands (Jente's drawing): a hand, and the same hand side-on
+            Strips["creator_hand"] = Load("creator_hand", 1, true, true, "creatorhand");
+            Strips["creator_side"] = Load("creator_side", 1, true, true, "creatorside");
+            if (Strips["creator_hand"] != null) Enemy["creatorhand"] = Strips["creator_hand"];
+            if (Strips["creator_side"] != null) Enemy["creatorside"] = Strips["creator_side"];
+            if (!Enemy.ContainsKey("creatorhand")) { Enemy["creatorhand"] = Enemy["godhand"]; EnemyWhite["creatorhand"] = EnemyWhite["godhand"]; }
             Enemy["glider"] = Load("glider", 2, true, true, "glider");
             Enemy["wolf"] = Load("wolf", 2, true, false, "wolf");
             Enemy["rockmage"] = Load("rock_mage", 1, true, false, "rockmage");
@@ -106,6 +112,33 @@ namespace DigDeep
                 new Dictionary<char, Color32> { { 'G', U.C(236, 184, 60) }, { 'g', U.C(255, 240, 180) }, { 'H', U.C(140, 240, 255) }, { 'T', U.C(255, 255, 255) } }, true, true);
             var ap = new Dictionary<char, Color32> { { 'W', U.C(240, 236, 220) }, { 'B', U.C(120, 84, 52) }, { 'F', U.C(220, 70, 60) } };
             Bullets["b_arrow"] = Make(new[] { "F......W.", "FFBBBBBWW", "F......W." }, ap, true, true);
+        }
+
+        // a copy of a sprite, its colours pulled towards a tint (keeps the dark outline): weapon variants
+        public static Sprite Tinted(Sprite s, Color tint)
+        {
+            if (s == null) return null;
+            var r = s.textureRect;
+            int w = Mathf.RoundToInt(r.width), h = Mathf.RoundToInt(r.height);
+            Color32[] src;
+            try { src = s.texture.GetPixels32(); } catch { return s; }
+            int tw = s.texture.width;
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    var c = src[(Mathf.RoundToInt(r.y) + y) * tw + Mathf.RoundToInt(r.x) + x];
+                    float lum = (c.r * 0.3f + c.g * 0.59f + c.b * 0.11f) / 255f;
+                    if (c.a > 0 && lum > 0.22f)
+                    {
+                        var t = Color.Lerp((Color)c, tint * (0.45f + lum * 0.8f), 0.6f);
+                        c = new Color32((byte)(Mathf.Clamp01(t.r) * 255), (byte)(Mathf.Clamp01(t.g) * 255), (byte)(Mathf.Clamp01(t.b) * 255), c.a);
+                    }
+                    px[y * w + x] = c;
+                }
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            tex.SetPixels32(px); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(s.pivot.x / s.rect.width, s.pivot.y / s.rect.height), s.pixelsPerUnit, 0, SpriteMeshType.FullRect);
         }
 
         static Sprite One(string name, bool outline, bool center)

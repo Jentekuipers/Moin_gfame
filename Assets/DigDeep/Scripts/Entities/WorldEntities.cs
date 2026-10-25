@@ -574,6 +574,12 @@ namespace DigDeep
             {
                 if (e.dead || !(e is Enemy en) || en.Intangible || en == thrower || !U.Overlap(pos, H, en.pos, en.half)) continue;
                 float closing = Vector2.Dot(vel, (en.pos - pos).normalized);   // only what it's moving towards
+                if (!(en is Boss) && Speed > 1.2f)
+                {
+                    // a rolling boulder flattens anything that isn't a boss
+                    en.TakeShot(999999f, vel.normalized * 8f + Vector2.up * 3f);
+                    continue;
+                }
                 if (closing > 2.5f && hitCd <= 0f)
                 {
                     // a moving boulder flattens anything small; bosses just take a big hit

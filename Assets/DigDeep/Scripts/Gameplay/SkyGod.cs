@@ -22,6 +22,12 @@ namespace DigDeep
         enum Pose { Rest, Up, Spread, Point, ClapOpen, ClapShut, Down, SweepL, SweepR, Offer }
         enum S { Idle, Tele, Act }
         const int Starfall = 0, Halo = 1, Judgment = 2, Clap = 3, Tremor = 4, Sweep = 5, Spiral = 6;
+        // the second half of the fight: the god's void self, with moves of its own
+        const int Rift = 7, Vortex = 8, VoidRain = 9, Mirror = 10;
+        bool voidForm, transforming;
+        float transT;
+        Vector2 vortexAt;
+        static readonly Color VoidL = new Color(0.78f, 0.5f, 1f), VoidD = new Color(0.35f, 0.12f, 0.6f);
 
         Pose pose = Pose.Rest;
         int move = -1, lastMove = -1, left;
@@ -54,7 +60,7 @@ namespace DigDeep
             maxHp = hp = 16000f;
             scale = 1.35f;
             title = "THE GOD ABOVE THE CLOUDS";
-            subtitle = "ONLY THE HEAD CAN BE HURT";
+            subtitle = "";
             gold = 500;
             blood = Gold;
             sr.sortingOrder = 13;
@@ -121,6 +127,47 @@ namespace DigDeep
             BaseTick(dt);
             if (dead) return;
             t += dt; stateT -= dt;
+            if (!voidForm && !transforming && hp < maxHp * 0.5f)
+            {
+                // half way: the light cracks and the void underneath shows through
+                transforming = true; transT = 0f; intangible = true;
+                foreach (var e in G.ents) if (!e.dead && (e is BossShot || e is Hazard)) e.Kill();
+                G.sfx.Play("rumble", 1f, 0.35f);
+                G.cam.Shake(1f);
+            }
+            if (transforming)
+            {
+                transT += dt;
+                pose = Pose.Up;
+                float k = Mathf.Clamp01(transT / 3f);
+                G.cam.Shake(0.08f);
+                for (int n = 0; n < 3; n++)
+                    G.fx.Burst(pos + Random.insideUnitCircle * (6f - k * 5f), 1, Color.Lerp(Light, VoidL, k), 3f, 0.6f, 0f, 1.5f, false);
+                if (Random.value < 0.08f) { flash = 0.05f; G.sfx.Play("zap", 0.5f, 0.4f); }
+                tint = Color.Lerp(Color.white, new Color(0.55f, 0.35f, 0.8f), k);
+                for (int i = 0; i < 2; i++)
+                {
+                    arm[i, 0].color = Color.Lerp(Fold, new Color(0.1f, 0.03f, 0.18f), k);
+                    arm[i, 1].color = Color.Lerp(Cream, new Color(0.25f, 0.1f, 0.42f), k);
+                    arm[i, 2].color = Color.Lerp(BlueD, new Color(0.08f, 0.02f, 0.14f), k);
+                    arm[i, 3].color = Color.Lerp(Blue, new Color(0.45f, 0.22f, 0.8f), k);
+                }
+                if (robeSr != null) robeSr.color = Color.Lerp(Color.white, new Color(0.35f, 0.2f, 0.55f), k);
+                if (transT >= 3f)
+                {
+                    transforming = false; voidForm = true; intangible = false;
+                    G.hud.ScreenFlash(0.7f);
+                    G.fx.Ring(pos, 6f, VoidL);
+                    G.sfx.Play("explode", 1f, 0.5f);
+                    Go(S.Idle, 1f);
+                }
+                for (int i = 0; i < 2; i++) hand[i] = Vector2.Lerp(hand[i], HandTarget(i), 1f - Mathf.Exp(-dt * 4f));
+                DrawBoss(0f);
+                spin += dt * 120f * k;
+                go.transform.rotation = Quaternion.Euler(0f, 0f, spin);
+                DrawBody();
+                return;
+            }
             // the head drifts slowly over the robe
             Vector2 want = Center + new Vector2(Mathf.Sin(t * 0.35f) * 3.5f, 3.4f + Mathf.Sin(t * 0.8f) * 0.35f);
             pos = Vector2.Lerp(pos, want, 1f - Mathf.Exp(-dt * 2f));
@@ -169,6 +216,7 @@ namespace DigDeep
             var opts = new List<int> { Starfall, Halo, Judgment, Clap, Tremor };
             if (Phase2) opts.Add(Sweep);
             if (Phase3) { opts.Add(Spiral); opts.Add(Spiral); }
+            if (voidForm) { opts = new List<int> { Rift, Vortex, VoidRain, Mirror, Clap }; if (Phase3) opts.Add(Spiral); }
             opts.Remove(lastMove);
             move = opts[Random.Range(0, opts.Count)];
             lastMove = move;
@@ -182,6 +230,10 @@ namespace DigDeep
                 case Tremor: pose = Pose.Down; break;
                 case Sweep: sweepDir = P.pos.x < Center.x ? 1 : -1; pose = sweepDir > 0 ? Pose.SweepL : Pose.SweepR; tele += 0.4f; break;
                 case Spiral: pose = Pose.Offer; break;
+                case Rift: pose = Pose.Spread; break;
+                case Vortex: pose = Pose.Offer; vortexAt = new Vector2(Center.x + (P.pos.x < Center.x ? 1f : -1f) * Random.Range(4f, HalfW - 3f), Center.y + Random.Range(-HalfH + 3f, HalfH - 3f)); break;
+                case VoidRain: pose = Pose.Up; break;
+                case Mirror: pose = Pose.Spread; break;
             }
             G.sfx.Play("rumble", 0.5f, 1.4f);
             Go(S.Tele, tele);
@@ -198,6 +250,10 @@ namespace DigDeep
                 case Tremor: left = Phase3 ? 3 : 2; shotT = 0.15f; pose = Pose.Down; Go(S.Act, 9f); hand[0] += Vector2.up * 1.5f; hand[1] += Vector2.up * 1.5f; break;
                 case Sweep: pose = sweepDir > 0 ? Pose.SweepR : Pose.SweepL; shotT = 0f; Go(S.Act, 3.2f); break;
                 case Spiral: shotT = 0f; Go(S.Act, Phase3 ? 3.6f : 3f); G.sfx.Play("rumble", 0.9f, 0.6f); break;
+                case Rift: left = Phase3 ? 4 : 3; shotT = 0f; Go(S.Act, 9f); break;
+                case Vortex: shotT = 0f; Go(S.Act, Phase3 ? 4.2f : 3.6f); G.sfx.Play("rumble", 1f, 0.4f); break;
+                case VoidRain: left = Phase3 ? 40 : 30; shotT = 0f; Go(S.Act, 9f); break;
+                case Mirror: left = Phase3 ? 5 : 4; shotT = 0f; Go(S.Act, 9f); break;
             }
         }
 
@@ -297,6 +353,70 @@ namespace DigDeep
                     }
                     if (stateT <= 0f) Done(1.2f);
                     break;
+                case Rift:
+                    // the sky splits in columns of void; the next set falls between the last
+                    if (shotT <= 0f && left > 0)
+                    {
+                        shotT = 0.85f;
+                        float off = (left % 2) * 1.6f;
+                        for (float x = Center.x - HalfW + 0.8f + off; x < Center.x + HalfW; x += 3.2f)
+                            G.Spawn(new Hazard(new Vector2(x, Center.y), new Vector2(0.55f, HalfH + 1f), 0.7f, 0.3f, VoidL, Dmg));
+                        left--;
+                        G.sfx.Play("blip", 0.5f, 0.5f);
+                    }
+                    if (left <= 0 && shotT <= -0.5f) Done(1.2f);
+                    break;
+                case Vortex:
+                    {
+                        // a hole in the sky drags you in and spins out void
+                        Vector2 d = vortexAt - P.pos;
+                        if (d.magnitude > 0.5f) P.vel += d.normalized * Mathf.Clamp(28f / Mathf.Max(1.5f, d.magnitude), 1f, 9f) * dt * 6f;
+                        for (int n = 0; n < 3; n++)
+                        {
+                            float a = Random.value * 6.283f, r = Random.Range(0.5f, 3f);
+                            G.fx.Burst(vortexAt + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r, 1, n == 0 ? VoidD : VoidL, 1f, 0.4f, 0f, 1f, false);
+                        }
+                        if (shotT <= 0f)
+                        {
+                            shotT = Phase3 ? 0.1f : 0.14f;
+                            float a = t * 220f * Mathf.Deg2Rad;
+                            Fire(vortexAt, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 4f, VoidL);
+                        }
+                        if ((P.pos - vortexAt).magnitude < 0.9f) P.Hurt(Dmg, vortexAt);
+                        if (stateT <= 0f) Done(1.3f);
+                        break;
+                    }
+                case VoidRain:
+                    // black rain, slanting across the sky
+                    if (shotT <= 0f && left > 0)
+                    {
+                        left--; shotT = 0.07f;
+                        float x = Center.x + Random.Range(-HalfW, HalfW);
+                        Fire(new Vector2(x, Top), new Vector2(4f, -3f), VoidD, 9f, 0.25f, 0.4f);
+                    }
+                    if (left <= 0 && shotT <= -0.6f) Done(1.2f);
+                    break;
+                case Mirror:
+                    // shots step out of the edges of the sky, all aimed at you
+                    if (shotT <= 0f && left > 0)
+                    {
+                        left--; shotT = 0.75f;
+                        for (int k = 0; k < 6; k++)
+                        {
+                            Vector2 at;
+                            switch (k % 4)
+                            {
+                                case 0: at = new Vector2(Center.x - HalfW + 0.5f, Center.y + Random.Range(-HalfH, HalfH)); break;
+                                case 1: at = new Vector2(Center.x + HalfW - 0.5f, Center.y + Random.Range(-HalfH, HalfH)); break;
+                                case 2: at = new Vector2(Center.x + Random.Range(-HalfW, HalfW), Top); break;
+                                default: at = new Vector2(Center.x + Random.Range(-HalfW, HalfW), Center.y - HalfH + 0.5f); break;
+                            }
+                            Fire(at, (P.pos - at).normalized * 5.5f, VoidL, 0f, 0.45f);
+                        }
+                        G.sfx.Play("shoot", 0.6f, 0.5f);
+                    }
+                    if (left <= 0 && shotT <= -0.4f) Done(1.2f);
+                    break;
                 case Spiral:
                     if (shotT <= 0f)
                     {
@@ -317,6 +437,7 @@ namespace DigDeep
         // a ball of light: drawn bigger than it hits
         void Fire(Vector2 at, Vector2 v, Color c, float grav = 0f, float delay = 0f, float sc = 0.45f)
         {
+            if (voidForm) c = Color.Lerp(c, VoidL, 0.75f);
             var b = Shot(at, v, Art.Circle, c, grav, delay, sc);
             b.dmgOverride = Dmg;
             b.body = c;
@@ -349,7 +470,8 @@ namespace DigDeep
                 Vector2 dir = (hd - elbow).normalized;
                 handGo[i].transform.position = new Vector3(U.Snap(hd.x), U.Snap(hd.y), 0f);
                 handGo[i].transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f);
-                handSr[i].color = (S)state == S.Tele ? Color.Lerp(Color.white, Gold, 0.5f + 0.5f * Mathf.Sin(t * 20f)) : Color.white;
+                Color hc = voidForm || transforming ? Color.Lerp(Color.white, new Color(0.4f, 0.22f, 0.65f), voidForm ? 1f : Mathf.Clamp01(transT / 3f)) : Color.white;
+                handSr[i].color = (S)state == S.Tele ? Color.Lerp(hc, voidForm ? VoidL : Gold, 0.5f + 0.5f * Mathf.Sin(t * 20f)) : hc;
             }
         }
 

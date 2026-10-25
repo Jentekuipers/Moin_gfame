@@ -227,6 +227,8 @@ namespace DigDeep
             Tr("rage", "RAGE MUSHROOM", "", "mushroom", red, Rarity.Uncommon, 1, new St { dmg = 1f, swing = 0.1f, speed = -0.1f }, null);
 
             // rare (chests from depth 50, shops, altars)
+            Tr("venom", "VENOM GLAND", "POISON STACKS UP. 10% OF ATTACKS POISON", "drop", lime, Rarity.Rare, 1, default, p => { p.s.poisonStack = true; p.s.poisonChance += 0.1f; });
+            Tr("bellows", "BELLOWS", "BURNS DO DAMAGE 30% FASTER", "flame", orange, Rarity.Uncommon, 1, default, p => p.s.burnRate *= 1.3f);
             Tr("trophy", "TROPHY CASE", "BOSSES DROP 4 ITEMS INSTEAD OF 3", "crown", gold, Rarity.Common, 1, default, p => p.s.bossExtra = Mathf.Max(p.s.bossExtra, 1)).weight = 5;
             Tr("seeall", "YOU SEE ALL", "NO MORE DARKNESS", "eye", gold, Rarity.Rare, 1, default, p => p.s.seeAll = true).weight = 3;
             Tr("blast", "BLAST PROOF", "IMMUNE TO EXPLOSIONS", "shield", red, Rarity.Rare, 1, default, p => p.s.blastProof = true);
@@ -593,8 +595,21 @@ namespace DigDeep
         public static bool Completes(ComboDef c, Def d, Player p)
         {
             if (p == null || p.Combo(c.id) || c.IsTransform || System.Array.IndexOf(c.needs, d.id) < 0 || p.Owns(d.id)) return false;
+            if (!Records.Seen("c", c.id)) return false;   // a combo you've never made stays a secret
             foreach (var n in c.needs) if (n != d.id && !p.Owns(n)) return false;
             return true;
+        }
+
+        // do a and b go together in a combo you know about (one you have now, or have made before and could finish)?
+        public static bool KnownPartners(Def a, Def b, Player p)
+        {
+            if (a == null || b == null || a == b || p == null) return false;
+            foreach (var c in Combos)
+            {
+                if (c.IsTransform || System.Array.IndexOf(c.needs, a.id) < 0 || System.Array.IndexOf(c.needs, b.id) < 0) continue;
+                if (p.Combo(c.id) || Records.Seen("c", c.id)) return true;
+            }
+            return false;
         }
 
         public static ComboDef CompletesAny(Def d, Player p)

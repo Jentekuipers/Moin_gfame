@@ -245,7 +245,7 @@ namespace DigDeep
                     int bi = Biomes.Index(depth);
                     if (bi == Biomes.Magma && Mathf.PerlinNoise(x * 0.2f + o5, y * 0.2f) > 0.6f) return Block.Lava;   // the Magma Core: plenty
                     if (bi != Biomes.Magma && bi != Biomes.Jungle && bi != Biomes.Storm && depth > 40 && Mathf.PerlinNoise(x * 0.09f + o4, y * 0.09f + 3.1f) > 0.8f) return Block.Lava;   // rare pockets elsewhere
-                    float sp = depth < 22 ? 0f : Mathf.Min(0.015f + depth * 0.00018f, 0.09f);
+                    float sp = depth < 22 ? 0f : Mathf.Min(0.015f + depth * 0.00018f, 0.09f) * (World.Void ? 2.2f : 1f);   // the void bristles with spikes
                     if (r > 1f - sp) return Block.Spikes;
                 }
                 return Block.Air;
@@ -258,7 +258,7 @@ namespace DigDeep
                 if (r < gold) return Block.Gold;
                 float gem = depth < 45 ? 0f : Mathf.Min((depth - 45) * 0.00008f, 0.014f);
                 if (r < gold + gem) return Block.Gem;
-                float tnt = depth < 18 ? 0f : Mathf.Min(0.003f + depth * 0.00002f, 0.011f);
+                float tnt = depth < 18 ? 0f : Mathf.Min(0.003f + depth * 0.00002f, 0.011f) * (World.Void ? 2f : 1f);
                 if (r < gold + gem + tnt) return Block.TNT;
                 // buried treasure only where something solid holds it up (never in a cave ceiling)
                 if (r > 0.9982f && depth > 5 && RawSolid(x, y - 1)) return Block.Chest;

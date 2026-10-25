@@ -242,6 +242,21 @@ namespace DigDeep
         public override void Tick(float dt)
         {
             age += dt; life -= dt; spareT -= dt;
+            if (VoidStage.Active && team == Team.Player)
+            {
+                // the void's last hall: bouncing shots bounce off the screen's edges, everything else just leaves
+                if (!VoidStage.Inside(pos))
+                {
+                    if (bounces > 0)
+                    {
+                        bounces--;
+                        if (pos.x < VoidStage.Min.x || pos.x > VoidStage.Max.x) vel.x = -vel.x;
+                        if (pos.y < VoidStage.Min.y || pos.y > VoidStage.Max.y) vel.y = -vel.y;
+                        pos = new Vector2(Mathf.Clamp(pos.x, VoidStage.Min.x, VoidStage.Max.x), Mathf.Clamp(pos.y, VoidStage.Min.y, VoidStage.Max.y));
+                    }
+                    else if (!VoidStage.InsideMargin(pos, 3f)) { Kill(); return; }   // gone into space: no blast, nothing
+                }
+            }
             if (first)
             {
                 first = false;
@@ -411,12 +426,7 @@ namespace DigDeep
                 Kill();
                 return false;
             }
-            if (b == Block.Bedrock)
-            {
-                // the void swallows every shot (bombs still go off against it)
-                if (radius > 0f || (lob && team == Team.Player)) { pos = prev; Explode(prev); } else { G.fx.Burst(prev, 4, col, 3f, 0.15f, 0f); Kill(); }
-                return false;
-            }
+            // (the void's walls are just unbreakable: shots bounce off them, arrows and spears stick in them)
             if (skip && SkipOff(prev, cx, cy)) return !dead;   // SKIPPING: off the floor like a stone off water
             Wd.Impact(cx, cy, 99f);   // shots always set off TNT
             if (b == Block.Ice && (flame || main == Art.Bullets["b_fire"]))
@@ -474,7 +484,7 @@ namespace DigDeep
             int maxPierce = Mathf.Max(blockPierce, wallBreaker ? 2 : 0);
             if (r == World.Hit.Broke && tilePierce < maxPierce) { tilePierce++; return true; }
             // high-calibre rounds punch straight through blocks they don't break
-            if (r == World.Hit.Damaged && blockPierce > 0 && tilePierce < blockPierce)
+            if (r == World.Hit.Damaged && blockPierce > 0 && tilePierce < blockPierce && !arrow)   // (an arrow stops at the first block it can't break)
             {
                 tilePierce++;
                 lastTile = new Vector2Int(cx, cy);
@@ -483,6 +493,7 @@ namespace DigDeep
             if (bounces > 0 && !flame)
             {
                 bounces--;
+                if (w != null && w.def.id == "disc") OnImpact(prev, -vel.normalized, null);   // the disc's tricks (splits, ghosts...) go off on every bounce
                 Reflect(prev, cx, cy);
                 pos = prev;
                 hurtsOwner = selfHurt;
@@ -490,7 +501,7 @@ namespace DigDeep
                 return true;
             }
             OnImpact(prev, -vel.normalized, null);
-            if (arrow) StuckArrow.Lodge(prev + vel.normalized * 0.25f, vel, main, new Vector2Int(cx, cy));
+            if (arrow) StuckArrow.Lodge(prev + vel.normalized * 0.2f, vel, main, new Vector2Int(cx, cy));
             Kill();
             return false;
         }
@@ -708,7 +719,9 @@ namespace DigDeep
             if (scaleMul > 1f) Life = 0.18f;
             pos = p.pos;
             MakeGO("Slash", Art.SlashArc, scaleMul > 1f ? 21 : 22);
-            c = tint ?? (echo ? new Color(0.8f, 0.6f, 1f) : d.col);
+            // the swoosh wears the colour of your newest attack element, and sheds a few sparks of each one you have
+            fx = tint == null ? p.AttackFx(p.weapon) : null;
+            c = tint ?? (echo ? new Color(0.8f, 0.6f, 1f) : fx != null && fx.Count > 0 ? fx[fx.Count - 1] : d.col);
             sr.color = c;
             sr.flipY = side < 0;
             go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
@@ -716,11 +729,27 @@ namespace DigDeep
             go.transform.localScale = new Vector3(sc, sc * Mathf.Clamp(d.arc / 110f, 0.7f, 1.5f), 1f);
         }
 
+        readonly System.Collections.Generic.List<Color> fx;
+        float fxAcc;
+
         public override void Tick(float dt)
         {
             t += dt;
             if (t >= Life) { Kill(); return; }
             pos = p.pos + new Vector2(0f, 0.04f);
+            if (fx != null && fx.Count > 0)
+            {
+                // about 12 sparks per swing in all, shared out between the elements
+                fxAcc += dt / Life * 12f;
+                while (fxAcc >= 1f)
+                {
+                    fxAcc -= 1f;
+                    var fc = fx[Random.Range(0, fx.Count)];
+                    float reach = d.reach * p.s.meleeReach * Player.MeleeReachMul * scaleMul;
+                    Vector2 at = pos + U.Rot(dir, Random.Range(-d.arc * 0.5f, d.arc * 0.5f)) * Random.Range(0.5f, 1f) * reach;
+                    G.fx.Burst(at, 1, fc, 2.5f, 0.35f, fc == new Color(1f, 0.55f, 0.2f) ? -4f : 2f);
+                }
+            }
             float k = t / Life;
             var cc = c; cc.a = 1f - k * k;
             sr.color = cc;

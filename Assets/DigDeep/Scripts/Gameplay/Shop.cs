@@ -162,6 +162,8 @@ namespace DigDeep
         }
 
         readonly ModGlow modGlow;
+        static Pedestal hoverNow, hoverLast;
+        static int hoverFrame;
 
         public override void Tick(float dt)
         {
@@ -178,10 +180,15 @@ namespace DigDeep
             G.hud.Label(pos + Vector2.up * 0.75f, price + "G", pl.s.gold >= price ? (premium ? new Color(1f, 0.95f, 0.55f) : new Color(1f, 0.85f, 0.3f)) : new Color(0.7f, 0.4f, 0.35f));
             if (pl.mode == Player.Mode.Dead) return;
             bool near = Mathf.Abs(pl.pos.x - pos.x) < 0.8f && Mathf.Abs(pl.pos.y - (baseY + Player.Half.y)) < 1.2f;
-            if (!near && G.MouseOver(pos, 0.7f)) Describe("WALK UP, PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, true);
+            // the one under the mouse gets the say: the one you stand at keeps quiet while you hover another
+            if (Time.frameCount != hoverFrame) { hoverFrame = Time.frameCount; hoverLast = hoverNow; hoverNow = null; }
+            bool hov = G.MouseOver(pos, 0.7f);
+            if (hov) hoverNow = this;
+            bool otherHovered = hoverLast != null && hoverLast != this && !hoverLast.dead && !hoverLast.sold;
+            if (!near && hov) Describe("WALK UP, PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, true);
             if (near)
             {
-                Describe("PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, G.MouseOver(pos, 0.7f));
+                if (!otherHovered) Describe("PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, hov);
                 if (GameInput.Take(Btn.Interact))
                 {
                     if (pl.s.gold < price)

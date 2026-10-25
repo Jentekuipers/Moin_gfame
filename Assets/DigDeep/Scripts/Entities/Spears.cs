@@ -62,6 +62,7 @@ namespace DigDeep
         public override void Tick(float dt)
         {
             life += dt;
+            if (VoidStage.Active && !VoidStage.InsideMargin(pos, 3f)) { Kill(); return; }   // thrown out into the void
             if (fade >= 0f)
             {
                 fade += dt;
@@ -357,7 +358,21 @@ namespace DigDeep
         public static void Lodge(Vector2 at, Vector2 dir, Sprite s, Vector2Int cell)
         {
             if (s == null || dir.sqrMagnitude < 0.01f) return;
-            Game.I.Spawn(new StuckArrow(at, dir, s, cell));
+            // set it exactly where the flight line enters that block, head a little way in
+            Vector2 d = dir.normalized;
+            Vector2 from = at - d * 1.5f;
+            float tIn = 0f, tOut = 3f;
+            for (int ax = 0; ax < 2; ax++)
+            {
+                float o = ax == 0 ? from.x : from.y, v = ax == 0 ? d.x : d.y;
+                float lo = ax == 0 ? cell.x : cell.y, hi = lo + 1f;
+                if (Mathf.Abs(v) < 1e-5f) { if (o < lo || o > hi) return; continue; }
+                float t1 = (lo - o) / v, t2 = (hi - o) / v;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                tIn = Mathf.Max(tIn, t1); tOut = Mathf.Min(tOut, t2);
+            }
+            Vector2 entry = tIn <= tOut ? from + d * tIn : at;
+            Game.I.Spawn(new StuckArrow(entry - d * 0.08f, dir, s, cell));
         }
 
         public override void Tick(float dt)

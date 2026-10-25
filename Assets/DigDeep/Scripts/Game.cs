@@ -61,8 +61,10 @@ namespace DigDeep
             Application.targetFrameRate = 120;
             QualitySettings.antiAliasing = 0;   // crisp pixels: no smoothing
             Art.Init();
+            SpriteSheet.ApplyArt();    // your own art from StreamingAssets/SpriteSheet, if any
             DB.Init();
             Chars.Init();
+            SpriteSheet.ApplyDefs();
             sfx = new Sfx(gameObject);
             music = new Music(gameObject);
             Settings.Load();   // volumes, screen, accessibility and key bindings
@@ -206,8 +208,12 @@ namespace DigDeep
         public void RequestVoid() { pendingVoid = true; voidFade = 1f; }
 
         // the Void Archmage falls: the void diamond
+        // a boss falling just after you die still counts (half a second of grace); later, nothing is won
+        public bool CanClaim => player == null || player.mode != Player.Mode.Dead || deadT <= 0.5f;
+
         public void OnVoidDefeated(Vector2 at)
         {
+            if (!CanClaim) { boss = null; boss2 = null; VoidStage.End(); return; }
             boss = null; boss2 = null;
             hud.Banner("THE VOID IS SEALED", "THE VOID DIAMOND IS YOURS", new Color(0.8f, 0.5f, 1f));
             music.Stop(3f);
@@ -295,6 +301,7 @@ namespace DigDeep
         public void OnGodDefeated()
         {
             boss = null;
+            if (!CanClaim) return;
             if (!TestMode.On)   // a test win doesn't count
             {
                 if (player != null) PlayerPrefs.SetInt("digdeep_godwon_" + player.character.id, 1);
@@ -389,6 +396,28 @@ namespace DigDeep
             hud.Banner("THE GOD-DIAMOND", "AS IF EVERY DIGGER HAD ONE. TOUCH IT", new Color(0.6f, 0.9f, 1f));
         }
 
+        // TEST MODE: the way into the void. Ornin's hall, Ornin already beaten, the whole void key in your pocket and
+        // the black portal just opened beside you: step in for a void run.
+        public void TestVoidRoute()
+        {
+            if (World.SkyMode || Ascent.Flying || World.Void) { hud.Banner("NOT FROM HERE", "START A NEW TEST RUN", new Color(1f, 0.5f, 0.4f)); return; }
+            TestMode.PretendAllDiamonds = false;
+            float ax0 = (Gen.W - ArenaRoom.AW) / 2;
+            float floorY = 1 - ArenaRoom.Final;
+            var portalAt = new Vector2(ax0 + 5f, floorY + 2f);
+            player.pos = new Vector2(portalAt.x + 3f, floorY + Player.Half.y + 0.05f);
+            player.vel = Vector2.zero;
+            player.voidShards = 3;
+            cam.Snap(player.pos);
+            world.Stream(cam.pos.y, cam.halfH);
+            if (toAdd.Count > 0) { ents.AddRange(toAdd); toAdd.Clear(); }
+            foreach (var e in ents)
+                if (!e.dead && e is BossArena ba && !ba.Started) ba.MarkCleared();   // every hall (Ornin's too) counts as beaten
+            if (diamond != null && !diamond.Unlocked) diamond.Unlock();
+            Spawn(new VoidPortal(portalAt));
+            TestMode.Open = false; TestMode.Setup = false;
+        }
+
         // TEST MODE: drop into the next unused boss arena and fight the chosen boss there
         public void TestFightBoss(int kind)
         {
@@ -430,6 +459,7 @@ namespace DigDeep
             skyWhite = 0f; cloudFade = 0f; voidFade = 0f; voidDragonDone = save != null && save.voidDragon;
             Ascent.Active = null; Ascent.Cover = 0f;
             revealT = 0f;
+            VoidStage.End();
             BoulderBody.All.Clear(); Spear.All.Clear(); Keeper.All.Clear(); StuckArrow.ClearAll();
             Fire.Reset();
             Electric.Reset();
@@ -763,6 +793,7 @@ namespace DigDeep
             // the camera leans a little towards where you aim
             Vector2 look = Vector2.ClampMagnitude((aim - player.pos) * 0.22f, 3.2f);
             if (World.SkyMode) cam.Tick(dt, SkyGod.Center, Vector2.zero);   // above the clouds the view holds still
+            else if (VoidStage.CamLock) cam.Tick(dt, VoidStage.Center, Vector2.zero);   // the last hall of the void: the screen is the arena
             else
             {
                 // shooting up through the world the view leads ahead of you, or you'd leave it behind
@@ -880,12 +911,30 @@ namespace DigDeep
                 lighting.Add(player.pos, 3f, 0.6f);
             if (masked)
             {
-                int sx0 = Mathf.Max(0, Mathf.FloorToInt(cam.pos.x - cam.halfW - 2)), sx1 = Mathf.Min(World.W - 1, Mathf.CeilToInt(cam.pos.x + cam.halfW + 2));
-                int sy0 = Mathf.FloorToInt(cam.pos.y - cam.halfH - 2), sy1 = Mathf.CeilToInt(cam.pos.y + cam.halfH + 2);
-                for (int sy = sy0; sy <= sy1; sy++)
-                    for (int sx = sx0; sx <= sx1; sx++)
-                        if (world.Seen(sx, sy)) lighting.FloorCell(sx, sy, SeenLight);
-                        else if (world.Seen(sx - 1, sy) || world.Seen(sx + 1, sy) || world.Seen(sx, sy - 1) || world.Seen(sx, sy + 1)) lighting.FloorCell(sx, sy, SeenLight * 0.45f);   // a soft edge to what you remember
+                // what you remember: a soft, blurred glow over the cells you've seen (no hard square edges)
+                int sx0 = Mathf.FloorToInt(cam.pos.x - cam.halfW - 3), sx1 = Mathf.CeilToInt(cam.pos.x + cam.halfW + 3);
+                int sy0 = Mathf.FloorToInt(cam.pos.y - cam.halfH - 3), sy1 = Mathf.CeilToInt(cam.pos.y + cam.halfH + 3);
+                int gw = sx1 - sx0 + 1, gh = sy1 - sy0 + 1;
+                if (seenGrid.Length < gw * gh) { seenGrid = new float[gw * gh]; seenTmp = new float[gw * gh]; }
+                for (int sy = 0; sy < gh; sy++)
+                    for (int sx = 0; sx < gw; sx++) seenTmp[sy * gw + sx] = world.Seen(sx0 + sx, sy0 + sy) ? SeenLight : 0f;
+                for (int sy = 0; sy < gh; sy++)
+                    for (int sx = 0; sx < gw; sx++)
+                    {
+                        // a 3x3 blur, weighted to the middle
+                        float sum = 0f, wsum = 0f;
+                        for (int oy = -1; oy <= 1; oy++)
+                            for (int ox = -1; ox <= 1; ox++)
+                            {
+                                int qx = sx + ox, qy = sy + oy;
+                                if (qx < 0 || qy < 0 || qx >= gw || qy >= gh) continue;
+                                float wgt = ox == 0 && oy == 0 ? 4f : (ox == 0 || oy == 0) ? 2f : 1f;
+                                sum += seenTmp[qy * gw + qx] * wgt; wsum += wgt;
+                            }
+                        float own = seenTmp[sy * gw + sx];
+                        seenGrid[sy * gw + sx] = Mathf.Max(own * 0.85f, sum / Mathf.Max(1f, wsum));
+                    }
+                lighting.AddField(seenGrid, sx0, sy0, gw, gh);
             }
 
             foreach (var e in ents)
@@ -923,13 +972,14 @@ namespace DigDeep
                 revealT -= dt;
                 lighting.AddRect(revealC - revealH, revealC + revealH, RevealFade);
             }
-            lighting.End(dt, (World.SkyMode || player.s.seeAll ? 0f : Darkness(cam.pos.y)) * player.s.darkMul * (1f - Settings.Brightness * 0.6f));   // BRIGHTNESS option
+            lighting.End(dt, (World.SkyMode || player.s.seeAll || VoidStage.Active ? 0f : Darkness(cam.pos.y)) * player.s.darkMul * (1f - Settings.Brightness * 0.6f));   // BRIGHTNESS option
             fluids.Render(cam.pos, cam.halfW, cam.halfH, time);
         }
 
         // ------------------------------------------------------------ line of sight
 
         const float SeenLight = 0.4f;   // how bright remembered cells stay
+        float[] seenGrid = new float[1], seenTmp = new float[1];
         bool[] vis = new bool[1], visSolid = new bool[1];
         float[] visF = new float[1];
         int visX0, visY0, visN;
@@ -1052,6 +1102,7 @@ namespace DigDeep
                     Block b = c.t[ly * World.W + x];
                     // the first stretch below the camp is busier than it used to be
                     float pr = Mathf.Min(0.013f + depth * 0.00007f, 0.03f);
+                    if (World.Void) pr *= 2f;   // the void is crawling
                     float roll = (float)r.NextDouble();
                     byte liquid = c.lt[ly * World.W + x];
                     bool storm = Biomes.Index(depth) == Biomes.Storm;

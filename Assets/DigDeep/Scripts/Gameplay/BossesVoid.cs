@@ -151,13 +151,145 @@ namespace DigDeep
         Vector2 home;
         static readonly Color Fire = new Color(1f, 0.45f, 0.2f), Ice = new Color(0.6f, 0.9f, 1f), Void = new Color(0.65f, 0.35f, 1f);
 
+        // first it wipes the hall away: a pulsing wave out of the middle, until there's nothing but black
+        float introT = 1f, waveR, waveMax;
+        bool evaporating;
+        float evapT;
+        Creator creator;
+
+        float SMinX => VoidStage.Active ? VoidStage.Min.x + 1f : arena.MinX;
+        float SMaxX => VoidStage.Active ? VoidStage.Max.x - 1f : arena.MaxX;
+        float SFloor => VoidStage.Active ? VoidStage.Min.y : arena.FloorY;
+
         public VoidLord(BossArena a, float hp)
         {
             SetupBoss("THE VOID ARCHMAGE", "WHAT WAITS UNDER EVERYTHING", "vmage_elite", hp, 2f, new Vector2(1f, 2.4f), a,
-                new Vector2(a.CenterX, a.FloorY + 4.6f));
+                new Vector2(a.CenterX, a.FloorY + ArenaRoom.IH * 0.5f));
             blood = Void;
             home = pos;
+            intangible = true;
+            VoidStage.CamLock = true; VoidStage.Center = pos;   // the view holds on the hall from here on
+            waveMax = Mathf.Sqrt(G.cam.halfW * G.cam.halfW + G.cam.halfH * G.cam.halfH) + 1.5f;
             Go(S.Float, 2f);
+        }
+
+        float waitT = 2.2f;   // it gathers itself before the wave
+        GameObject waveGo;
+
+        void Intro(float dt)
+        {
+            float hw = G.cam.halfW, hh = G.cam.halfH;
+            Vector2 c = VoidStage.Center;
+            if (waitT > 0f)
+            {
+                // the dark pulls in towards it... then
+                waitT -= dt;
+                for (int n = 0; n < 3; n++)
+                {
+                    Vector2 o = Random.insideUnitCircle.normalized * Random.Range(3f, 9f);
+                    G.fx.Burst(c + o * (waitT / 2.2f), 1, Void, 0.6f, 0.5f, 0f, 1.2f, false);
+                }
+                G.cam.Shake(0.05f + (2.2f - waitT) * 0.05f);
+                if (waitT <= 0f)
+                {
+                    G.sfx.Play("explode", 1f, 0.4f);
+                    G.sfx.Play("rumble", 1f, 0.35f);
+                    G.cam.Shake(0.8f);
+                    flash = 0.1f;
+                    waveGo = new GameObject("VoidWave");
+                    waveGo.transform.SetParent(G.runRoot, false);
+                    var wr = Art.AddSR(waveGo, Art.Ring, 27);
+                    wr.color = new Color(0.75f, 0.45f, 1f, 0.9f);
+                }
+                return;
+            }
+            // one wave of destruction, rolling out from the middle
+            float prev = waveR;
+            waveR += dt * waveMax / 1.6f;
+            if (waveGo != null)
+            {
+                waveGo.transform.position = new Vector3(c.x, c.y, 0f);
+                waveGo.transform.localScale = Vector3.one * waveR * 2f;
+            }
+            int x0 = Mathf.FloorToInt(c.x - hw) - 5, x1 = Mathf.CeilToInt(c.x + hw) + 5;
+            int y0 = Mathf.FloorToInt(c.y - hh) - 5, y1 = Mathf.CeilToInt(c.y + hh) + 5;
+            float reach = waveR >= waveMax ? 999f : waveR;
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                {
+                    float d = (new Vector2(x + 0.5f, y + 0.5f) - c).magnitude;
+                    if (d > reach || d <= prev - 0.01f) continue;
+                    var cc = new Vector2(x + 0.5f, y + 0.5f);
+                    Block b = Wd.Get(x, y);
+                    if (b != Block.Air)
+                    {
+                        // each block pops up and away
+                        if (Mathf.Abs(cc.x - c.x) < hw + 1f && Mathf.Abs(cc.y - c.y) < hh + 1f) G.Spawn(new Popper(cc, Art.TileSprite(b, Biomes.At(x, y)), 1f));
+                        Wd.Set(x, y, Block.Air);
+                    }
+                    if (Wd.LiquidType(x, y) != Fluids.None)
+                    {
+                        // liquids boil off on the spot: a puff of steam that rises off the top of the screen
+                        Wd.SetLiquid(x, y, Fluids.None, 0f);
+                        G.fx.Burst(cc, 2, new Color(0.85f, 0.85f, 0.9f, 0.6f), 1.5f, 1.4f, -6f, 1.5f, false);
+                    }
+                }
+            // everything it reaches pops: a jump to 1.5x, then gone
+            foreach (var e in G.ents)
+            {
+                if (e.dead || e == this || e is BossArena || e is Player || e is Popper) continue;
+                if ((e.pos - c).magnitude > reach) continue;
+                if (e.sr != null && e.go != null) G.Spawn(new Popper(e.pos, e.sr.sprite, e.go.transform.localScale.x, e.sr.flipX, e.go.transform.rotation));
+                e.Kill();
+            }
+            if (waveR >= waveMax)
+            {
+                VoidStage.Begin(c, hw, hh);
+                intangible = false;
+                introT = 0f;
+                home = c + Vector2.up * 2f;
+                if (waveGo != null) Object.Destroy(waveGo);
+            }
+        }
+
+        public override void Die()
+        {
+            if (dead) return;
+            if (!evaporating)
+            {
+                // it isn't over: it howls and boils away... and something reaches in for it
+                evaporating = true;
+                hp = 1f; intangible = true; evapT = 0f;
+                G.boss = null;
+                G.sfx.Play("death", 1f, 0.35f);
+                G.sfx.Play("rumble", 1f, 0.4f);
+                foreach (var e in G.ents) if (!e.dead && (e is BossShot || e is VoidMage || e is Hazard)) e.Kill();
+                return;
+            }
+        }
+
+        void Evaporate(float dt)
+        {
+            evapT += dt;
+            float k = Mathf.Clamp01(evapT / 2.8f);
+            G.cam.Shake(0.15f * (1f - k));
+            if (Random.value < 0.9f) G.fx.Burst(pos + new Vector2(Random.Range(-1f, 1f), Random.Range(-2f, 2f)) * (1f - k * 0.6f), 2, Void, 2f, 0.8f, -6f, 1.5f, false);
+            if (((int)(evapT * 6f)) % 3 == 0 && Random.value < 0.1f) G.sfx.Play("death", 0.4f, 0.3f + k * 0.3f);   // the howl breaks up
+            go.transform.localScale = new Vector3(scale * (1f - k * 0.7f), scale * (1f + k * 0.4f), 1f);
+            sr.color = new Color(tint.r, tint.g, tint.b, 1f - k * 0.85f);
+            if (creator == null && evapT > 0.9f)
+            {
+                creator = new Creator(arena, maxHp * 1.25f, pos, this);
+                G.Spawn(creator);
+                arena.AddBoss(creator);
+            }
+        }
+
+        // the Creator's hands clapped shut on it
+        public void Vanish()
+        {
+            G.fx.Burst(pos, 50, Void, 8f, 0.8f, 0f, 2f);
+            Kill();
         }
 
         void Go(S s, float time) { state = (int)s; stateT = time; }
@@ -166,6 +298,8 @@ namespace DigDeep
         {
             BaseTick(dt);
             if (dead) return;
+            if (evaporating) { Evaporate(dt); return; }
+            if (introT > 0f) { t += dt; Intro(dt); DrawBoss(0f); return; }
             t += dt; stateT -= dt;
             // it floats over the hall, bobbing, never touching the floor
             Vector2 bob = home + new Vector2(Mathf.Sin(t * 0.7f) * 4f, Mathf.Sin(t * 1.6f) * 0.4f);
@@ -219,7 +353,8 @@ namespace DigDeep
                     if (shotT <= 0f && left > 0)
                     {
                         left--; shotT = Phase2 ? 0.4f : 0.55f;
-                        G.Spawn(new BeamStrike(arena, P.pos + Vector2.right * P.vel.x * 0.2f, true, 0.7f));
+                        float bx = P.pos.x + P.vel.x * 0.2f;
+                        G.Spawn(new Hazard(new Vector2(bx, VoidStage.Center.y), new Vector2(0.6f, G.cam.halfH + 1f), 0.7f, 0.3f, Void, ContactDmg(arena.Depth)));
                         G.sfx.Play("zap", 0.5f, 0.6f);
                     }
                     if (left <= 0 && shotT <= -0.8f) Go(S.Float, 1.3f);
@@ -229,8 +364,8 @@ namespace DigDeep
                     {
                         shotT = 0.12f;
                         bool fromLeft = (cycle / 5) % 2 == 0;
-                        float x = fromLeft ? arena.MinX + 1f + left * 2f : arena.MaxX - 1f - left * 2f;
-                        G.Spawn(new VoidSpike(new Vector2(Mathf.Floor(x) + 0.5f, arena.FloorY), false, ContactDmg(arena.Depth), 0.5f));
+                        float x = fromLeft ? SMinX + 1f + left * 2f : SMaxX - 1f - left * 2f;
+                        G.Spawn(new VoidSpike(new Vector2(Mathf.Floor(x) + 0.5f, SFloor), false, ContactDmg(arena.Depth), 0.5f));
                         left++;
                     }
                     if (stateT <= 0f) Go(S.Float, 1.2f);
@@ -240,7 +375,7 @@ namespace DigDeep
                     if (stateT <= 0f)
                     {
                         G.fx.Burst(pos, 30, Void, 7f, 0.5f, 0f);
-                        home = new Vector2(Random.Range(arena.MinX + 3f, arena.MaxX - 3f), arena.FloorY + Random.Range(4f, 6f));
+                        home = new Vector2(Random.Range(SMinX + 3f, SMaxX - 3f), SFloor + Random.Range(4f, 6f));
                         pos = home;
                         int n = Phase2 ? 20 : 14;
                         for (int i = 0; i < n; i++)
@@ -260,7 +395,7 @@ namespace DigDeep
                             int mages = 0;
                             foreach (var e in G.ents) if (!e.dead && e is VoidMage) mages++;
                             for (int i = 0; i < 2 && mages + i < 3; i++)
-                                G.Spawn(new VoidMage(Mathf.FloorToInt(i == 0 ? arena.MinX + 3f : arena.MaxX - 3f), Mathf.FloorToInt(arena.FloorY + 3f), arena.Depth,
+                                G.Spawn(new VoidMage(Mathf.FloorToInt(i == 0 ? SMinX + 3f : SMaxX - 3f), Mathf.FloorToInt(SFloor + 3f), arena.Depth,
                                     i == 0 ? VoidMage.Kind.Fire : VoidMage.Kind.Ice));
                             G.sfx.Play("rumble", 0.8f, 0.8f);
                         }

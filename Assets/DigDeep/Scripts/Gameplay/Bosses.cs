@@ -67,6 +67,14 @@ namespace DigDeep
 
         static long Key(int x, int d) => ((long)x << 32) ^ (uint)d;
 
+        // is this cell inside one of the boss halls (walls included)?
+        public static bool Inside(int x, int depth)
+        {
+            foreach (var c in Gen.Carves)
+                if (c is ArenaRoom r && x >= r.ax0 && x < r.ax0 + AW && depth >= r.D - IH - 1 && depth <= r.D + 1) return true;
+            return false;
+        }
+
         public override int AnchorDepth => D - 1;
 
         public override int TileAt(int x, int d)
@@ -98,6 +106,7 @@ namespace DigDeep
         bool started, cleared;
         Boss boss;
         readonly List<Boss> bosses = new List<Boss>();
+        public void AddBoss(Boss b) { if (!bosses.Contains(b)) bosses.Add(b); }
         public bool Started => started;
         public bool Active => started && !cleared;
         public static int ForceKind = -1;   // TEST MODE: the next arena fights this boss (see BossKinds)
@@ -196,7 +205,7 @@ namespace DigDeep
                 case ArenaRoom.A6: kind = 7; break;
                 default: kind = 3; break;
             }
-            float hpMul = 2f * (0.8f + room.D / Biomes.Stretch / 400f);   // twice as tough as before, and tougher the deeper the arena
+            float hpMul = 2f * (0.8f + (room.D + Enemy.VoidDeeper) / Biomes.Stretch / 400f);   // twice as tough as before, and tougher the deeper the arena
             var spawnAt = new Vector2(CenterX + (G.player.pos.x < CenterX ? 7f : -7f), FloorY);
             if (room.IsFinal) kind = 4;
             // the dragon worms: the water dragon may rule the crystal depths, the fire dragon the storm caverns;
@@ -267,20 +276,20 @@ namespace DigDeep
         public void OnBossDefeated()
         {
             if (cleared) return;
-            bool allDown = true;
-            foreach (var b in bosses) if (!b.dead) allDown = false;
-            if (allDown && bossKind >= 0)
+            // two bosses: the fight goes on until both are down
+            foreach (var b in bosses)
+                if (!b.dead) { G.boss = b; G.boss2 = null; if (G.CanClaim) G.hud.Banner("ONE DOWN", "THE OTHER FIGHTS ON", new Color(1f, 0.6f, 0.4f)); return; }
+            cleared = true;
+            if (G.boss == boss) G.boss = null;
+            G.boss2 = null;
+            // dead already (for more than a moment)? the boss falls, but nothing is won and nothing is said
+            if (!G.CanClaim) { SetPerimeter(Block.Brick); G.boss = null; return; }
+            if (bossKind >= 0)
             {
                 Records.Add("bosses");
                 if (bossKind == 11) { Records.Mark("b", "9"); Records.Mark("b", "10"); }   // the twin dragons count as both
                 else Records.Mark("b", bossKind.ToString());
             }
-            // two bosses: the fight goes on until both are down
-            foreach (var b in bosses)
-                if (!b.dead) { G.boss = b; G.boss2 = null; G.hud.Banner("ONE DOWN", "THE OTHER FIGHTS ON", new Color(1f, 0.6f, 0.4f)); return; }
-            cleared = true;
-            if (G.boss == boss) G.boss = null;
-            G.boss2 = null;
             SetPerimeter(Block.Brick);
             if (room.IsFinal && World.Void)
             {
@@ -388,6 +397,7 @@ namespace DigDeep
             life -= dt;
             vel.y -= grav * dt;
             pos += vel * dt;
+            if (VoidStage.Active) VoidStage.Wrap(ref pos);   // the void's edges meet: out one side, in the other
             spin += dt * 400f;
             go.transform.rotation = Quaternion.Euler(0, 0, spin);
             if (life <= 0f || Wd.Solid(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y)))

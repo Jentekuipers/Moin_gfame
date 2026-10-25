@@ -746,6 +746,90 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 - **Boss rewards** wait on the hall's ledges. TROPHY CASE (common) makes bosses drop 4 items instead of 3.
 - **Rarity:** PROSPECTOR is rare, GILLS is common.
 
+### Sprite sheet, void test, secret combos (batch 64)
+- **Sprite sheet.** Export with MOIN > Export Sprite Sheet (in play mode), or the TEST MODE cheat EXPORT SPRITE SHEET. It writes `Assets/StreamingAssets/SpriteSheet/`:
+  - `sheet_original.png` (every sprite with 1 px gaps)
+  - `index.txt` (name x y w h)
+  - `sprites/<name>.png` (one file per sprite)
+- **Using your own art.** Save an edited copy as `sheet.png` (same size and layout), and/or drop single sprites of any size into `overrides/<name>.png`. They load on the next start; delete them to go back. Covered:
+  - all Art sprites and strips (foes' hit-flash frames are rebuilt from your art)
+  - item and weapon icons (`icon_<id>`)
+  - the diggers (`digger_<id>_<frame>`)
+  - Not covered: tiles, which are painted per pixel. See `Core/SpriteSheet.cs`.
+- **TEST MODE > THE VOID (FROM ORNIN'S HALL):** Ornin's hall with Ornin beaten, the whole void key, and the black portal open right next to you.
+- **Combos are secret until you've made them once** (remembered across runs):
+  - Only then does an item that would complete one say COMPLETES <COMBO>!.
+  - Combos you have show by name in the item's tooltip.
+  - Hovering a trinket (in the HUD, the pause menu, a shop or on the ground) makes the trinkets it combos with pulse and pop out.
+
+### Arrows, disc, swooshes (batch 65)
+- **Arrows:**
+  - They lodge in the void's walls too.
+  - They stop at the first block they can't break, instead of passing through it.
+  - They sit exactly where their flight line enters the block.
+- **Disc gun:** every bounce sets off its shot tricks (SPLASH splits, cloud burst, spectral ghosts...), and the disc keeps going.
+- **Melee swooshes** take the colour of your newest attack element: fire, poison, frost, blasts, sparks, homing or wild. The order is trinkets (oldest to newest), then the weapon's modifiers.
+  - They also shed about 12 sparks per swing, shared between all your elements, so more elements don't mean more particles.
+  - See `Player.AttackFx`.
+
+### Shop focus, softer memory, void walls (batch 66)
+- **Shops:** while you hover another shelf item, the one you're standing at stops showing its info.
+- **Label fix:** labels no longer cut at a decimal point ("DAMAGE +0.5" showed as "+0").
+- **Stomping** needs STOMP BOOTS again.
+- **Fire and poison** hurt ordinary foes 1.6x as much (bosses unchanged).
+- **The void's walls** are only unbreakable now. Shots bounce off them, and arrows and spears stick in them; the ascent still smashes through.
+- **What you remember** glows through a blurred, smoothly sampled field, so there are no hard square edges. It's still banded into the same pixel steps.
+- **Gold** that falls into lava melts away.
+
+### The Creator, the void god, venom (batch 67)
+- **Poison** bites straight away, then every 0.4 s (each bite flashes).
+  - **VENOM GLAND** (rare): poison stacks. Every poisoned hit adds 60% of that attack's poison, up to 8x, and 10% of attacks poison.
+  - **BELLOWS** (uncommon): burns tick 30% faster.
+- **New weapons**, each with a built-in modifier that doesn't take a slot (`AttackDef.innate`). Their icons are recoloured copies of the base weapon's.
+  - Rare: THUNDERBUSS (chain lightning), VENOM SPITTER (poison), CRYO CANNON (frost).
+  - Mythic, altars only: COMET (fire, huge blasts), HYDRA (9 homing, piercing heads), SINGULARITY (exploding critting beams).
+- **Void runs:**
+  - Depth carries on from the bottom (`Enemy.VoidDeeper` = 645), and foes, bosses and the depth meter scale with it.
+  - You start in an empty black cave, where the portal closes behind you.
+  - Biomes are jumbled in 14-row bands, with twice the foes, spikes and TNT.
+- **The God, second half:** at half health it turns into its void self, untouchable for 3 seconds. Then it has new moves:
+  - RIFT: columns of void.
+  - VORTEX: a hole that drags you in and spirals out shots.
+  - VOID RAIN.
+  - MIRROR: shots from every edge.
+  - Clap.
+  - (No more "only the head can be hurt" text.)
+- **The Void Archmage:**
+  - It opens untouchable, wiping the hall with a pulsing wave from its middle until the screen is black. The screen edges then become walls, and its shots wrap from side to side (`VoidStage`).
+  - Beaten, it howls and boils away. Two hands (Jente's drawing, mirrored for the left) clap shut on it, and THE CREATOR gets its health bar.
+- **THE CREATOR** (`Gameplay/Creator.cs`). Either hand can be hit. It:
+  - slams (both hands at once below half health)
+  - sweeps the floor
+  - fires finger-gun volleys
+  - claps
+  - scribbles any creature of the deep into being
+  - sketches guns that turn and fire at you
+- **Lava** boils to steam next to void blocks, arena seals and inside boss halls.
+- **Title screen:** the best depth / curse-broken line is gone (it's on the STATS screen).
+
+### Void finale polish (batch 68)
+- **Tentacles** only hold you up while you hold JUMP. Ground slam doesn't work with them.
+- **The Archmage's wave:**
+  - It comes after a 2 s gathering, as one wave.
+  - Everything it touches (blocks, foes, pickups, spears...) pops to 1.5x size, then shrinks to nothing (`Popper`).
+  - Liquids boil off instantly as steam that rises away.
+- **The void's last hall:**
+  - You fly freely, as above the clouds.
+  - There are no walls: the screen is the edge.
+  - Bouncing shots bounce off it. Every other attack (shots, spears, arrows) carries on and vanishes 3 blocks past it, with no effect.
+  - Anything that drifts out there is removed (`VoidStage.Sweep`).
+- **The Creator's hands** are bigger and the right way round. When they clap the Archmage away, the void turns white for the rest of the run, and the Creator's ink, shots, hands and sketched guns turn dark so they stay visible. It only draws flying creatures now, since there's no floor.
+- **Death grace:** a boss falling more than 0.5 s after you die gives no banner, no unlocks, no records (`Game.CanClaim`).
+- **Pickups:** only one thing on the ground shows its info and can be taken at a time: the one under the mouse, else the nearest one you stand at (`PickFocus`).
+- **Rolling boulders** flatten any non-boss foe.
+- **EXPLOSIVE** now says it hurts you too, except on melee weapons, and melee blasts no longer hurt you.
+- **Curse info:** the "lifts after N more kills" line is highlighted.
+
 ## Where to tune things
 
 | What | Where |

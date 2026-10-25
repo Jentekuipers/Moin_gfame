@@ -207,7 +207,7 @@ namespace DigDeep
                             GameInput.Held(Btn.Item) || GameInput.Held(Btn.Jump);
 
             // above the clouds everyone flies the same way, whatever they carry
-            bool flying = World.SkyMode || Ascent.Flying;
+            bool flying = World.SkyMode || Ascent.Flying || VoidStage.CamLock;   // (and in the void's last hall)
             if (flying && mode != Mode.Normal && mode != Mode.Parry && mode != Mode.Dead) mode = Mode.Normal;
             switch (mode)
             {
@@ -301,7 +301,8 @@ namespace DigDeep
             superT -= dt;
             // LEVITATION: in the air (or pressing up on the ground) you float wherever you hold
             // (the octopus's TENTACLES do the same while one of them grips a wall)
-            bool lift = (s.levitate || TentacleGrip) && knockT <= 0f && (!grounded || (up && !down));
+            // (the tentacles only hold you up while you hold JUMP: just falling past a wall doesn't catch you)
+            bool lift = (s.levitate || (TentacleGrip && GameInput.Held(Btn.Jump))) && knockT <= 0f && (!grounded || (up && !down));
             if (lift) { climbing = false; Levitate(dt, mx, up, down); }
             else
             {
@@ -367,7 +368,7 @@ namespace DigDeep
             if (snapT > 0f) { snapT -= dt; pos.x = Mathf.MoveTowards(pos.x, snapX, dt * 8f); }
             // GROUND SLAM: press down in the air
             // (levitation and the slam fight over DOWN: levitation wins)
-            if (s.slam && !s.levitate && !grounded && GameInput.Pressed(Btn.Down) && HighEnoughToSlam()) { StartPound(); return; }
+            if (s.slam && !s.levitate && !s.tentacles && !grounded && GameInput.Pressed(Btn.Down) && HighEnoughToSlam()) { StartPound(); return; }
 
             Stomp(dt);
             MoveBody(dt, mx);
@@ -426,7 +427,8 @@ namespace DigDeep
                 float top = 9.5f * Mathf.Clamp(Speed, 0.8f, 1.4f);
                 vel = Vector2.MoveTowards(vel, want * top, (want.sqrMagnitude > 0.01f ? 110f : 70f) * dt);
             }
-            if (!World.SkyMode)
+            bool free = World.SkyMode || VoidStage.CamLock;   // above the clouds and in the void's last hall nothing stops you but the screen
+            if (!free)
             {
                 // still down in the world (before the ascent): fly, but walls are walls
                 Vector2 pp = pos;
@@ -437,7 +439,7 @@ namespace DigDeep
             else pos += vel * dt;
             // above the clouds the edges of the screen are the edges of the world
             var cam = G.cam;
-            if (World.SkyMode)
+            if (free)
             {
                 float x0 = cam.pos.x - cam.halfW + Half.x + 0.1f, x1 = cam.pos.x + cam.halfW - Half.x - 0.1f;
                 float y0 = cam.pos.y - cam.halfH + Half.y + 0.1f, y1 = cam.pos.y + cam.halfH - Half.y - 0.6f;
@@ -523,11 +525,11 @@ namespace DigDeep
             G.fx.Burst(pos - new Vector2(0, Half.y), 5, new Color(0.6f, 0.5f, 0.4f), 2.5f, 0.3f, 5f);
         }
 
-        // Everyone can stomp: land on a foe from above and you bounce off it, hurting it (STOMP BOOTS hit harder).
+        // STOMP: land on a foe from above and you bounce off it, hurting it (STOMP BOOTS; more levels hit harder).
         // It's checked a little ahead of your feet, so the bounce comes just before its body would touch (and hurt) you.
         void Stomp(float dt)
         {
-            if (vel.y > -1f) return;
+            if (s.stomp <= 0 || vel.y > -1f) return;   // only with STOMP BOOTS (and the like)
             Vector2 next = pos + new Vector2(0f, vel.y * dt - 0.18f);
             float feet = pos.y - Half.y;
             foreach (var e in G.ents)
@@ -1024,6 +1026,7 @@ namespace DigDeep
                 else foreach (var n in c.needs) if (!HasSkill(n)) { ok = false; break; }
                 if (ok && !combos.Contains(c.id))
                 {
+                    Records.Mark("c", c.id);   // found: from now on its pieces hint at it
                     combos.Add(c.id);
                     comboOrder.Add(c);
                     var cc = DB.ColorOfCombo(c);

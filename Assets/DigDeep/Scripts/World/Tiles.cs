@@ -128,6 +128,9 @@ namespace DigDeep
 
         public static int Index(int depth)
         {
+            // the void: every biome at once, jumbled in bands (only its own kingdom at the bottom stays put)
+            if (World.Void && depth >= 20 && depth < All[Kingdom].start)
+                return (int)(U.Hash(depth / 14, Gen.Seed, 913) % (uint)Kingdom);
             int i = 0;
             for (int k = 0; k < All.Length; k++) if (depth >= All[k].start) i = k;
             return i;

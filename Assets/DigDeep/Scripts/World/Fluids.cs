@@ -120,6 +120,8 @@ namespace DigDeep
             }
             else
             {
+                // the void and the boss halls won't have lava: it boils away into steam on contact
+                if (VoidTouch(x, y) || ArenaRoom.Inside(x, -y)) { Clear(me); AddGas(me, Mathf.Max(0.3f, a)); return; }
                 // lava touching water (or ice) cools into rock and boils the water into steam
                 if (React(x, y, me, x + 1, y) || React(x, y, me, x - 1, y) || React(x, y, me, x, y + 1) || React(x, y, me, x, y - 1)) return;
             }
@@ -249,6 +251,16 @@ namespace DigDeep
                 a -= flow;
                 me.c.liq[me.i] = a;
             }
+        }
+
+        bool VoidTouch(int x, int y)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                Block b = w.Get(x + (i == 0 ? 1 : i == 1 ? -1 : 0), y + (i == 2 ? 1 : i == 3 ? -1 : 0));
+                if (b == Block.Bedrock || b == Block.DarkMatter || b == Block.Seal) return true;
+            }
+            return false;
         }
 
         static void Clear(C k)

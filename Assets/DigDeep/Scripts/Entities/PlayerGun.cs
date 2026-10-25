@@ -506,7 +506,7 @@ namespace DigDeep
                 else if (r == World.Hit.Damaged) { dmged = true; G.fx.TileFlash(c); G.fx.Sparks(cc - aimDir * 0.45f, TileDraw.DebrisColor(b, Biomes.At(c.x, c.y))); }
                 else if (r == World.Hit.Unbreakable) { clank = true; G.fx.Sparks(cc - aimDir * 0.45f, new Color(1f, 0.9f, 0.6f)); }
             }
-            if (w.Has(Mod.Explosive) || s.shotExplode) G.Explode(c0 + aimDir * reach, 1.2f, dmg * 0.6f, s.blastProof || !w.Has(Mod.Explosive), true, true, true);
+            if (w.Has(Mod.Explosive) || s.shotExplode) G.Explode(c0 + aimDir * reach, 1.2f, dmg * 0.6f, true, true, true, true);   // a blade's blasts never hurt its swinger
 
             float pitch = d.pitch * (echo ? 1.35f : 1f);
             G.sfx.Play(d.sfx, 0.55f, pitch, 0.1f);
@@ -537,6 +537,39 @@ namespace DigDeep
             new Vector2(Mathf.Clamp(p.x, en.pos.x - en.half.x, en.pos.x + en.half.x), Mathf.Clamp(p.y, en.pos.y - en.half.y, en.pos.y + en.half.y));
 
         // shot items that set things alight, poison or freeze work on melee hits too
+        // The element colours your attacks carry (fire, poison, frost, blasts, sparks, homing, wild), in the order you
+        // got them: trinkets first (oldest to newest), then the weapon's own modifiers. Melee swooshes wear the last one
+        // and shed particles of all of them.
+        static readonly Color FxFire = new Color(1f, 0.55f, 0.2f), FxPoison = new Color(0.55f, 1f, 0.35f), FxFrost = new Color(0.6f, 0.9f, 1f),
+            FxBlast = new Color(1f, 0.78f, 0.35f), FxSpark = new Color(1f, 1f, 0.5f), FxHome = new Color(0.5f, 0.75f, 1f), FxWild = new Color(1f, 0.5f, 0.85f);
+        public List<Color> AttackFx(Weapon w)
+        {
+            var l = new List<Color>();
+            void Add(Color c) { l.Remove(c); l.Add(c); }   // the most recent counts as last
+            foreach (var k in skillOrder)
+                switch (k.id)
+                {
+                    case "kindle": case "dragon": case "heart_ignis": Add(FxFire); break;
+                    case "toxin": case "viper": Add(FxPoison); break;
+                    case "frostheart": case "heart_unda": Add(FxFrost); break;
+                    case "cap": case "chain": Add(FxBlast); break;
+                    case "seeker": Add(FxHome); break;
+                    case "wildcard": Add(FxWild); break;
+                }
+            if (w != null)
+                foreach (var m in w.mods)
+                    switch (m)
+                    {
+                        case Mod.Fire: Add(FxFire); break;
+                        case Mod.Poison: Add(FxPoison); break;
+                        case Mod.Frost: Add(FxFrost); break;
+                        case Mod.Explosive: Add(FxBlast); break;
+                        case Mod.Chain: Add(FxSpark); break;
+                        case Mod.Homing: Add(FxHome); break;
+                    }
+            return l;
+        }
+
         void MeleeStatus(Enemy en)
         {
             if (en == null || en.dead) return;

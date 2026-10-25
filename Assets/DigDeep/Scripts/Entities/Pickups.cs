@@ -24,6 +24,15 @@ namespace DigDeep
         {
             age += dt;
             noMag -= dt;
+            // gold that lands in lava melts away
+            if (Wd.FluidAtPoint(pos) == Fluids.Lava && pullT <= 0f)
+            {
+                G.fx.Burst(pos, 5, new Color(1f, 0.75f, 0.2f), 2.5f, 0.4f, -4f);
+                G.fx.Smoke(pos, 2, 0.5f);
+                G.sfx.Play("fizz", 0.25f, 1.5f);
+                Kill();
+                return;
+            }
             var pl = G.player;
             Vector2 d = pl.pos - pos;
             bool alive = pl.mode != Player.Mode.Dead && noMag <= 0f;
@@ -112,7 +121,11 @@ namespace DigDeep
 
             var pl = G.player;
             bool nearL = pl.mode != Player.Mode.Dead && U.Overlap(pos, new Vector2(0.45f, 0.55f), pl.pos, Player.Half);
-            if (!nearL && G.MouseOver(pos, 0.6f)) G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, null, pl, true);
+            bool hovL = G.MouseOver(pos, 0.6f);
+            PickFocus.Offer(this, hovL, nearL, (pl.pos - pos).magnitude);
+            bool mineL = PickFocus.Is(this);
+            if (!mineL) nearL = false;
+            if (!nearL && hovL && mineL) G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, null, pl, true);
             if (nearL)
             {
                 bool needsUp = def.kind == Kind.Attack || def.kind == Kind.Special || !Settings.AutoPickup;
@@ -204,6 +217,32 @@ namespace DigDeep
         public override void AddLight(Lighting l) { if (appear >= 0f) l.Add(pos, 3f, 0.85f); }
     }
 
+    // Of everything lying on the ground, one thing at a time shows its info and can be taken: the one under the
+    // mouse, or else the nearest one you're standing at (decided from last frame's offers).
+    public static class PickFocus
+    {
+        static int frame = -1;
+        static Entity bestNow, best;
+        static float bestScore = float.MaxValue;
+
+        static void Roll()
+        {
+            if (Time.frameCount == frame) return;
+            frame = Time.frameCount;
+            best = bestNow; bestNow = null; bestScore = float.MaxValue;
+        }
+
+        public static void Offer(Entity e, bool hovered, bool near, float dist)
+        {
+            Roll();
+            if (!hovered && !near) return;
+            float sc = hovered ? -1000f + dist : dist;
+            if (sc < bestScore) { bestScore = sc; bestNow = e; }
+        }
+
+        public static bool Is(Entity e) { Roll(); return best == e; }
+    }
+
     // A weapon lying on the ground (from a crate, an altar, or the one you just swapped out).
     public class WeaponPickup : Entity
     {
@@ -253,7 +292,11 @@ namespace DigDeep
 
             var pl = G.player;
             bool nearW = pl.mode != Player.Mode.Dead && U.Overlap(pos, new Vector2(0.5f, 0.6f), pl.pos, Player.Half);
-            if (!nearW && G.MouseOver(pos, 0.6f)) G.hud.WeaponLabel(pos + Vector2.up * 0.9f, w, null, pl, true);
+            bool hovW = G.MouseOver(pos, 0.6f);
+            PickFocus.Offer(this, hovW, nearW, (pl.pos - pos).magnitude);
+            bool mine = PickFocus.Is(this);   // only one thing on the ground talks (and can be taken) at a time
+            if (!mine) nearW = false;
+            if (!nearW && hovW && mine) G.hud.WeaponLabel(pos + Vector2.up * 0.9f, w, null, pl, true);
             if (nearW)
             {
                 bool free = pl.slots[0] == null || pl.slots[1] == null;

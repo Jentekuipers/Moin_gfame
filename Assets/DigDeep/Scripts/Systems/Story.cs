@@ -190,10 +190,7 @@ namespace DigDeep
                 else PixelFont.Draw(x, y, label, size, new Color(0.8f, 0.8f, 0.85f));
             }
 
-            float sm = Mathf.Max(1f, S - 1f);
-            int wins = PlayerPrefs.GetInt("digdeep_wins", 0);
-            if (g.best > 0)
-                PixelFont.Draw(x, H - S * 14f, "BEST DEPTH -" + g.best + (wins > 0 ? "   CURSE BROKEN " + wins + "X" : ""), sm, new Color(0.95f, 0.8f, 0.5f));
+            // (best depth and wins live on the STATS screen)
         }
 
         // the menu line under the mouse (-1: none)

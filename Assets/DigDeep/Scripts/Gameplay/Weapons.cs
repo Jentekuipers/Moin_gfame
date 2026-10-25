@@ -32,6 +32,8 @@ namespace DigDeep
         public float radius;                      // explodes on impact with this radius
         public float grav, accel;                 // lobbed grenades / accelerating rockets
         public bool lob, flame, homing, selfHurt, abuses, deflect, doubleGold;
+        public Mod[] innate;   // built-in modifiers (they don't take a modifier slot)
+        public AttackDef CloneDef() => (AttackDef)MemberwiseClone();
         public bool spear;   // thrown spears: they punch through blockPierce blocks, then lodge (see Spears.cs)
         public bool bow;   // hold to draw, let go to loose: a full draw hits hardest (fire rate draws faster)
         public float charge;                      // seconds to fully charge (railgun)
@@ -66,7 +68,7 @@ namespace DigDeep
 
         public Weapon(AttackDef d) { def = d; }
 
-        public bool Has(Mod m) => mods.Contains(m);
+        public bool Has(Mod m) => mods.Contains(m) || (def.innate != null && System.Array.IndexOf(def.innate, m) >= 0);
         public bool CanAdd(Mod m) => mods.Count < Mods.Max && !Has(m) && Mods.Fits(def, m);
 
         public string ModLine
@@ -107,7 +109,7 @@ namespace DigDeep
             "HUGE DAMAGE, MUCH SLOWER FIRE RATE",
             "KILL THE MARKED FOE FOR A BUFF",
             "HIT THE WEAK SPOT FOR A BIG CRIT",
-            "SHOTS EXPLODE. CAN HURT YOU!",
+            "ATTACKS EXPLODE. HURTS YOU TOO (EXCEPT MELEE WEAPONS)",
             "SHOTS SMASH THROUGH ROCK",
             "HITS FREEZE FOES SOLID FOR 1.5S",
             "HITS JUMP ON TO THE NEAREST FOE",
@@ -462,6 +464,42 @@ namespace DigDeep
             H("laserpistol", 0.075f, 0.85f);
             H("plasma", 0.22f, 0.5f);
             H("railgun", 0.55f, 0.45f);
+            Variants();
+        }
+
+        // Weapons made from others (same handling and reload), each with its own trick built in. Rare ones only come
+        // out of rare crates and shelves, mythic ones only from mythic finds and altars.
+        static void Variants()
+        {
+            AttackDef V(string baseId, string id, string name, string desc, Rarity r, int minDepth, int price, Color tint, params Mod[] innate)
+            {
+                if (!DB.ById.TryGetValue(baseId, out var bd) || !(bd is AttackDef b)) return null;
+                var a = b.CloneDef();
+                a.id = id; a.name = name; a.desc = desc; a.rarity = r; a.minDepth = minDepth; a.price = price;
+                a.weight = r == Rarity.Rare ? 3 : 1;
+                a.altarOnly = r == Rarity.Relic;
+                a.innate = innate;
+                a.icon = Art.Tinted(b.icon, tint);
+                a.col = Color.Lerp(b.col, tint, 0.6f);
+                DB.AddAttack(a);
+                return a;
+            }
+            Color cyan = new Color(0.4f, 0.95f, 1f), lime = new Color(0.55f, 1f, 0.35f), yellow = new Color(1f, 0.95f, 0.4f);
+            Color orange = new Color(1f, 0.55f, 0.2f), violet = new Color(0.75f, 0.45f, 1f), gold = new Color(1f, 0.85f, 0.3f);
+            // rare
+            var t = V("shotgun", "thunderbuss", "THUNDERBUSS", "PELLETS ARC LIGHTNING TO NEARBY FOES", Rarity.Rare, 50, 240, yellow, Mod.Chain);
+            if (t != null) t.dmg *= 1.1f;
+            t = V("smg", "venomspitter", "VENOM SPITTER", "A HOSE OF POISON DARTS", Rarity.Rare, 45, 230, lime, Mod.Poison);
+            if (t != null) t.dmg *= 1.25f;
+            t = V("plasma", "cryocannon", "CRYO CANNON", "BIG FREEZING ORBS", Rarity.Rare, 60, 250, cyan, Mod.Frost);
+            if (t != null) t.flame = false;
+            // mythic
+            t = V("rocket", "comet", "COMET", "MYTHIC. BURNING ROCKETS WITH HUGE BLASTS", Rarity.Relic, 0, 340, orange, Mod.Fire);
+            if (t != null) { t.radius *= 1.5f; t.dmg *= 1.3f; }
+            t = V("shotgun", "hydra", "HYDRA", "MYTHIC. NINE HOMING HEADS", Rarity.Relic, 0, 340, violet, Mod.Homing, Mod.Pierce);
+            if (t != null) { t.count = 9; t.dmg *= 1.15f; }
+            t = V("laserpistol", "singularity", "SINGULARITY", "MYTHIC. PIERCING BEAMS THAT BURST ON EVERYTHING", Rarity.Relic, 0, 340, gold, Mod.Explosive, Mod.Crit);
+            if (t != null) t.dmg *= 1.4f;
         }
 
         public static string Stats(AttackDef a)

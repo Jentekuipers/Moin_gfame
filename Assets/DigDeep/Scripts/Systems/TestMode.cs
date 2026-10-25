@@ -214,8 +214,18 @@ namespace DigDeep
                     if (hov && click) { g.sfx.Play("rumble", 0.8f); g.TestGodRoute(); return; }
                 }
                 {
-                    // or just play: a normal run with everything you picked
+                    // the void run: Ornin's hall, Ornin beaten, the black portal just opened
                     int i = BossArena.BossKinds.Length + 1;
+                    float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
+                    var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
+                    bool hov = r.Contains(mouse);
+                    Box(r.x, r.y, r.width, r.height, new Color(0.7f, 0.4f, 1f, hov ? 0.5f : 0.25f));
+                    PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, "THE VOID (FROM ORNIN'S HALL)", FitSize(sm, "THE VOID (FROM ORNIN'S HALL)", r.width - 6f * S), Color.white);
+                    if (hov && click) { g.sfx.Play("rumble", 0.8f); g.TestVoidRoute(); return; }
+                }
+                {
+                    // or just play: a normal run with everything you picked
+                    int i = BossArena.BossKinds.Length + 2;
                     float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
                     var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
                     bool hov = r.Contains(mouse);
@@ -230,6 +240,7 @@ namespace DigDeep
                 var cheats = new List<(string, System.Action)>
                 {
                     ("GOD MODE: " + (God ? "ON" : "OFF"), () => God = !God),
+                    ("EXPORT SPRITE SHEET", () => { SpriteSheet.Export(); g.hud.Banner("SPRITES EXPORTED", "ASSETS/STREAMINGASSETS/SPRITESHEET", new Color(0.6f, 1f, 0.6f)); }),
                     ("DAMAGE NUMBERS: " + (Numbers ? "ON" : "OFF"), () => Numbers = !Numbers),
                     ("SPAWN TRAINING DUMMY", () => g.Spawn(new TrainingDummy(p.pos + new Vector2(p.facing * 3f, 0.5f)))),
                     ("+1000 GOLD", () => { p.AddGold(1000); picks.Add((3, null, 0)); }),

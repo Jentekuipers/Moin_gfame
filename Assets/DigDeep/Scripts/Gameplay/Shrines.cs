@@ -50,6 +50,30 @@ namespace DigDeep
     }
 
     // The black portal beside the God-Diamond (only with the whole void key). Step in to go down into the void world.
+    // Where a void run begins: the portal you came through, spinning down and closing behind you.
+    public class VoidExit : Entity
+    {
+        float t;
+        public override bool AlwaysActive => true;
+        public VoidExit(Vector2 at)
+        {
+            pos = at;
+            MakeGO("VoidExit", Art.Portal, 8);
+            go.transform.localScale = Vector3.one * 1.2f;
+        }
+        public override void Tick(float dt)
+        {
+            t += dt;
+            float k = t < 1.8f ? 1.2f : Mathf.Max(0f, 1.2f - (t - 1.8f) * 0.8f);
+            go.transform.localScale = new Vector3(k, k, 1f);
+            go.transform.rotation = Quaternion.Euler(0f, 0f, t * 90f);
+            if (Random.value < 0.6f) G.fx.Burst(pos + Random.insideUnitCircle * k, 1, new Color(0.7f, 0.4f, 1f), 1.5f, 0.5f, 0f);
+            if (k <= 0f) { G.fx.Burst(pos, 20, new Color(0.6f, 0.3f, 1f), 5f, 0.5f, 0f); Kill(); return; }
+            Place();
+        }
+        public override void AddLight(Lighting l) => l.Add(pos, 4f * Mathf.Clamp01(1.5f - t * 0.3f), 0.8f);
+    }
+
     public class VoidPortal : Entity
     {
         float t, grow;

@@ -24,6 +24,12 @@ namespace DigDeep
             floorAt = floor;
             this.lineup = lineup;
             CampProp.All.Clear();
+            if (World.Void && !lineup)
+            {
+                // a void run: no camp, nobody waiting. Just a black cave and the portal that spat you out
+                G.Spawn(new VoidExit(new Vector2(Gen.CampCx - 5.5f, floor.y + 1.6f)));
+                return;
+            }
 
             // tents at the cave's ends
             Piece(new CampProp("TentLeft", Art.TentA, new Vector2(floor.x - 9f, floor.y), 3, 14f, new Color(0.75f, 0.6f, 0.4f))).gold = 1;

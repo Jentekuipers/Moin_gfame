@@ -107,6 +107,28 @@ namespace DigDeep
             }
         }
 
+        // a brightness field over cells (sampled smoothly between cell centres): remembered places glow softly
+        public void AddField(float[] f, int fx0, int fy0, int fw, int fh)
+        {
+            if (lum == null) return;
+            for (int y = 0; y < th; y++)
+            {
+                float wy = origin.y + (y + 0.5f) / RES - fy0 - 0.5f;
+                int cy = Mathf.FloorToInt(wy); float ty = wy - cy;
+                if (cy < 0 || cy + 1 >= fh) continue;
+                int row = y * tw;
+                for (int x = 0; x < tw; x++)
+                {
+                    float wx = origin.x + (x + 0.5f) / RES - fx0 - 0.5f;
+                    int cx = Mathf.FloorToInt(wx); float tx = wx - cx;
+                    if (cx < 0 || cx + 1 >= fw) continue;
+                    int k = cy * fw + cx;
+                    float v = Mathf.Lerp(Mathf.Lerp(f[k], f[k + 1], tx), Mathf.Lerp(f[k + fw], f[k + fw + 1], tx), ty);
+                    if (v > lum[row + x]) lum[row + x] = v;
+                }
+            }
+        }
+
         // every texel of one cell at least this bright (remembered cells)
         public void FloorCell(int cx, int cy, float v)
         {

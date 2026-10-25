@@ -82,7 +82,8 @@ namespace DigDeep
         {
             this.depth = depth;
             if (GenSpawning && depth > 20 && Random.value < 0.012f) elitePending = true;
-            maxHp = hp = Mathf.Max(1f, Mathf.Round(baseHp * (1f + depth / Biomes.Stretch / 85f) * 2f) / 2f);   // tougher the deeper it lives
+            int dd = depth + VoidDeeper;   // in the void you've gone deeper still, not back up
+            maxHp = hp = Mathf.Max(1f, Mathf.Round(baseHp * (1f + dd / Biomes.Stretch / 85f) * 2f) / 2f);   // tougher the deeper it lives
             dmg = ContactDmg(depth);
             frames = Art.Enemy[key];
             whites = Art.EnemyWhite[key];
@@ -114,8 +115,26 @@ namespace DigDeep
 
         public void Poison(float t, float dps)
         {
+            bool fresh = poisonT <= 0f;
             poisonT = Mathf.Max(poisonT, t * G.player.s.dotDur);   // WITCH'S BREW: longer poison and burning
-            poisonDps = Mathf.Max(poisonDps, dps);
+            // VENOM GLAND: every poisoned hit stacks more on (each stack is a share of that one attack's damage)
+            if (G.player.s.poisonStack && !fresh) poisonDps = Mathf.Min(poisonDps + dps * 0.6f, dps * 8f);
+            else poisonDps = Mathf.Max(fresh ? 0f : poisonDps, dps);
+            if (fresh) poisonTick = 0f;   // it bites straight away
+        }
+
+        float poisonTick;
+        // poison hurts in little bites (each one flashes), starting the moment it lands
+        void PoisonTick(float dt)
+        {
+            poisonT -= dt;
+            poisonTick -= dt;
+            if (poisonTick > 0f) return;
+            poisonTick = 0.4f;
+            float d = poisonDps * 0.4f * G.player.s.dotMul * (this is Boss ? 1f : 1.6f);
+            hp -= d;
+            flash = Mathf.Max(flash, 0.04f);
+            if (Random.value < 0.6f) G.fx.Burst(pos, 3, new Color(0.5f, 1f, 0.3f), 1.5f, 0.4f, 5f);
         }
 
         public void Freeze(float t)
@@ -252,8 +271,7 @@ namespace DigDeep
             vel = Vector2.zero;
             if (poisonT > 0f)
             {
-                poisonT -= dt;
-                hp -= poisonDps * dt;
+                PoisonTick(dt);
                 if (hp <= 0f) { Die(); return; }
             }
             if (sr != null)
@@ -276,8 +294,7 @@ namespace DigDeep
             vel = Vector2.zero;
             if (poisonT > 0f)
             {
-                poisonT -= dt;
-                hp -= poisonDps * dt;
+                PoisonTick(dt);
                 if (hp <= 0f) { Die(); return; }
             }
             if (sr != null)
@@ -443,10 +460,12 @@ namespace DigDeep
             return true;
         }
 
-        protected float EnemyShotDamage => 2f * (1f + depth / Biomes.Stretch / 110f);
+        protected float EnemyShotDamage => 2f * (1f + (depth + VoidDeeper) / Biomes.Stretch / 110f);
 
         // What a touch (or a normal enemy bullet) does to you, in health points. A heart is 100.
-        public static int ContactDmg(int depth) => Mathf.RoundToInt(60f + Mathf.Max(0, depth) / Biomes.Stretch * 0.25f);
+        public static int ContactDmg(int depth) => Mathf.RoundToInt(60f + Mathf.Max(0, depth + VoidDeeper) / Biomes.Stretch * 0.25f);
+        // the void lies under the whole world: there, depth carries on from the bottom
+        public static int VoidDeeper => World.Void ? ArenaRoom.Final : 0;
 
         // ---------------------------------------------------------------- tick helpers
 
@@ -480,8 +499,8 @@ namespace DigDeep
             burnTick -= dt;
             if (burnTick <= 0f)
             {
-                burnTick = 0.33f;
-                float dps = (1.5f + Mathf.Max(0, depth) * 0.012f) * (Plant ? 3f : 1f) * G.player.s.dotMul;
+                burnTick = 0.33f / Mathf.Max(0.2f, G.player.s.burnRate);   // BELLOWS: burns tick faster
+                float dps = (1.5f + Mathf.Max(0, depth) * 0.012f) * (Plant ? 3f : 1f) * G.player.s.dotMul * (this is Boss ? 1f : 1.6f);   // burns hurt ordinary foes more
                 TakeShot(dps * 0.33f, Vector2.zero);
                 if (dead) return;
             }
@@ -505,8 +524,7 @@ namespace DigDeep
             if (elite) EliteTick(dt);
             if (poisonT > 0f)
             {
-                poisonT -= dt;
-                hp -= poisonDps * dt * G.player.s.dotMul;
+                PoisonTick(dt);
                 if (Random.value < 0.15f) G.fx.Burst(pos, 1, new Color(0.5f, 1f, 0.3f), 1f, 0.5f, 5f);
                 if (hp <= 0f) { Die(); return; }
             }

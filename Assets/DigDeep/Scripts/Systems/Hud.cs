@@ -49,7 +49,14 @@ namespace DigDeep
         {
             if (string.IsNullOrEmpty(s)) return s;
             string r = s;
-            int cut = r.IndexOfAny(new[] { '.', ';', '(' });
+            // cut at the end of the first sentence (a '.' between digits is a decimal point, not the end: "+0.5")
+            int cut = -1;
+            for (int i = 0; i < r.Length; i++)
+            {
+                char ch = r[i];
+                if (ch == ';' || ch == '(') { cut = i; break; }
+                if (ch == '.' && !(i > 0 && i + 1 < r.Length && char.IsDigit(r[i - 1]) && char.IsDigit(r[i + 1]))) { cut = i; break; }
+            }
             if (cut > 8) r = r.Substring(0, cut).TrimEnd(' ', ',', ':');
             if (r.Length <= max) return r;
             int sp = r.LastIndexOf(' ', max - 2);
@@ -103,8 +110,22 @@ namespace DigDeep
             foreach (var l in lines) if (!string.IsNullOrEmpty(l.Item1)) tipLines.Add(l);
         }
 
+        // the thing being hovered: its combo partners light up among your trinkets (drawn next frame)
+        Def focusDef, focusNext;
+
+        void ComboPop(Def k, Player p, float x, float y, float sz, float S)
+        {
+            if (focusDef == null || !DB.KnownPartners(focusDef, k, p)) return;
+            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 9f);
+            var c = Color.Lerp(DB.ComboColor, Color.white, pulse * 0.6f);
+            float g = S * (1f + pulse);
+            Box(x - g, y - g, sz + 2f * g, S, c); Box(x - g, y + sz + g - S, sz + 2f * g, S, c);
+            Box(x - g, y - g, S, sz + 2f * g, c); Box(x + sz + g - S, y - g, S, sz + 2f * g, c);
+        }
+
         void TipDef(Def d, Player p)
         {
+            focusNext = d;
             var lines = new List<(string, Color)>();
             if (!string.IsNullOrEmpty(d.desc)) lines.Add((d.desc, TipGrey));
             string extra = DB.Extra(d);
@@ -124,11 +145,11 @@ namespace DigDeep
             foreach (var c in DB.Combos)
             {
                 if (c.IsTransform || System.Array.IndexOf(c.needs, d.id) < 0) continue;
-                if (p.Combo(c.id)) lines.Add(("COMBO " + c.name + ": " + c.desc, DB.ComboColor));
+                if (p.Combo(c.id)) lines.Add((c.name + ": " + c.desc, DB.ComboColor));
                 else if (DB.Completes(c, d, p))
                 {
-                    float k = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f);
-                    lines.Add(("COMPLETES COMBO " + c.name + "!", Color.Lerp(DB.ComboColor, Color.white, k)));
+                    float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f);
+                    lines.Add(("COMPLETES COMBO " + c.name + "!", Color.Lerp(DB.ComboColor, Color.white, pulse)));
                     lines.Add((c.desc, DB.ComboColor));
                 }
             }
@@ -166,7 +187,7 @@ namespace DigDeep
             if (w.curse != Curse.None)
             {
                 lines.Add((Curses.Name(w.curse) + ": " + Curses.Desc[(int)w.curse], Curses.Col(w.curse)));
-                lines.Add(("LIFTS AFTER " + (Curses.KillsToLift - w.curseKills) + " MORE KILLS", Curses.Col(w.curse)));
+                lines.Add(("LIFTS AFTER " + (Curses.KillsToLift - w.curseKills) + " MORE KILLS", new Color(1f, 0.95f, 0.45f)));   // what you can do about it stands out
             }
             if (current) lines.Add(("IN HAND", new Color(0.6f, 0.6f, 0.6f)));
             Tip(w.def.name, w.Color, lines.ToArray());
@@ -370,7 +391,7 @@ namespace DigDeep
             if (World.SkyMode) PixelFont.Draw(Screen.width * 0.5f, pad, "ABOVE THE CLOUDS", S, new Color(1f, 0.85f, 0.4f), 1);
             else
             {
-                PixelFont.Draw(Screen.width * 0.5f, pad, "DEPTH: -" + p.Depth, S, new Color(0.85f, 0.7f, 0.35f), 1);
+                PixelFont.Draw(Screen.width * 0.5f, pad, "DEPTH: -" + (p.Depth + Enemy.VoidDeeper), S, new Color(0.85f, 0.7f, 0.35f), 1);
                 var bio = Biomes.Cur[Biomes.Index(p.Depth)];
                 PixelFont.Draw(Screen.width * 0.5f, pad + 10f * S, bio.name, sm, (Color)bio.rim, 1);
             }
@@ -471,6 +492,7 @@ namespace DigDeep
                 DrawTooltip(S, sm);
             }
             hoverDef = null; hoverWeapon = null;
+            focusDef = focusNext; focusNext = null;
             if (whiteFlash > 0f) Box(0, 0, Screen.width, Screen.height, new Color(1f, 1f, 1f, Mathf.Clamp01(whiteFlash)));
 
             // ----- pause / game over
@@ -534,7 +556,10 @@ namespace DigDeep
                 float x = right - cols * (sz + gap) + gap + col * (sz + gap);   // oldest top-left, newest bottom-right
                 float y = top + row * (sz + gap);
                 Box(x - S * 0.5f, y - S * 0.5f, sz + S, sz + S, new Color(0f, 0f, 0f, 0.45f));
-                Icon(k.icon, x, y, sz, Color.white);
+                bool pop = focusDef != null && DB.KnownPartners(focusDef, k, p);
+                float ps = pop ? sz * 0.25f * (0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 9f)) : 0f;   // partners pop out
+                Icon(k.icon, x - ps * 0.5f, y - ps * 0.5f, sz + ps, Color.white);
+                ComboPop(k, p, x, y, sz, S * 0.5f);
                 int cnt = p.SkillCount(k.id);
                 if (Hover(x, y, sz, sz)) { TipDef(k, p); if (cnt > 1) tipLines.Insert(0, ("x" + cnt, Color.white)); }
                 if (cnt > 1) PixelFont.Draw(x + sz, y + sz - 6f * sm, cnt.ToString(), sm, Color.white, 2);
@@ -662,7 +687,10 @@ namespace DigDeep
                 int li = i - pausePage * perPage;
                 float cx = x + (li % cols) * cell, cy = y + (li / cols) * cell;
                 Box(cx, cy, isz, isz, new Color(1f, 1f, 1f, 0.06f));
-                Icon(k.icon, cx + 1f * S, cy + 1f * S, isz - 2f * S, Color.white);
+                bool pop = focusDef != null && DB.KnownPartners(focusDef, k, p);
+                float ps = pop ? isz * 0.25f * (0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 9f)) : 0f;
+                Icon(k.icon, cx + 1f * S - ps * 0.5f, cy + 1f * S - ps * 0.5f, isz - 2f * S + ps, Color.white);
+                ComboPop(k, p, cx, cy, isz, S * 0.5f);
                 Box(cx, cy + isz - S, isz, S, DB.RarityColor(k.rarity));
                 int cnt = p.SkillCount(k.id);
                 if (cnt > 1) PixelFont.Draw(cx + isz, cy + isz - 6f * sm, cnt.ToString(), sm, Color.white, 2);
