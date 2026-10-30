@@ -5,7 +5,7 @@ namespace DigDeep
     public enum Block : byte
     {
         Air, Dirt, Sand, Stone, HardStone, Obsidian, Bedrock, Gold, Gem, Chest,
-        Boulder, TNT, Crystal, Volatile, Lava, Spikes, Brick, Magma, Seal, DarkMatter, BigGold2, BigGold4, BigGold6, Crate, Water, Ice, Plate, Wood, GildBrick, Supply, COUNT
+        Boulder, TNT, Crystal, Volatile, Lava, Spikes, Brick, Magma, Seal, DarkMatter, BigGold2, BigGold4, BigGold6, Crate, Water, Ice, Plate, Wood, GildBrick, Supply, Glass, Steel, COUNT
     }
 
     public class TileDef
@@ -49,8 +49,10 @@ namespace DigDeep
             D[(int)Block.Crate] = new TileDef { name = "WEAPON CRATE", hp = 2, light = 2.4f, lightI = 0.65f, burnable = true };
             D[(int)Block.Wood] = new TileDef { name = "DWARVEN WOOD", hp = 2, burnable = true };
             D[(int)Block.Water] = new TileDef { name = "WATER", solid = false, hp = 0 };   // generation marker only: becomes fluid
-            D[(int)Block.Plate] = new TileDef { name = "SHOP PLATE", hp = 999, unbreakable = true };
+            D[(int)Block.Plate] = new TileDef { name = "LEDGE", solid = false, hp = 999, unbreakable = true };   // one-way: land on it from above, everything else passes through
             D[(int)Block.Ice] = new TileDef { name = "ICE", hp = 2, light = 0.6f, lightI = 0.2f };
+            D[(int)Block.Glass] = new TileDef { name = "GLASS", hp = 1 };
+            D[(int)Block.Steel] = new TileDef { name = "STEEL", hp = 12 };   // riveted metal: acid can't touch it (the acid buckets)   // sand melted by heat: see-through, shatters at a touch
             D[(int)Block.DarkMatter] = new TileDef { name = "DARK MATTER", hp = 999, unbreakable = true };
             D[(int)Block.Seal] = new TileDef { name = "ARENA SEAL", hp = 999, unbreakable = true, light = 1.1f, lightI = 0.4f };
         }

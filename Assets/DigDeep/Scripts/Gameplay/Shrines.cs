@@ -223,7 +223,7 @@ namespace DigDeep
             if (g < 10) { G.Popup(P.pos + Vector2.up, "NOT ENOUGH GOLD", new Color(1f, 0.5f, 0.4f)); return; }
             P.s.gold -= g;
             G.sfx.Play("coin", 0.8f, 0.7f);
-            if (G.rng.NextDouble() < 0.5)
+            if (Chance.Roll("gamble", 0.5f))
             {
                 G.SpawnGold(pos + Vector2.up * 1.2f, g * 2);
                 G.sfx.Play("chest", 0.9f, 1.2f);
@@ -250,10 +250,20 @@ namespace DigDeep
         protected override string What => "LAND ON IT HARD: GROUND POUND, OR A LONG FALL";
         protected override Color Col => new Color(1f, 0.45f, 0.4f);
 
+        Sprite[] anim;
         public override void Tick(float dt)
         {
             t += dt; hitCd -= dt;
             if (used) { sr.color = new Color(0.6f, 0.5f, 0.5f); return; }
+            // it breathes in its sleep (if it has frames for that)
+            if (anim == null)
+            {
+                var ex = SpriteSheet.Frames("dragonstatue");
+                var l = new System.Collections.Generic.List<Sprite> { Art.DragonStatue };
+                if (ex != null) l.AddRange(ex);
+                anim = l.ToArray();
+            }
+            if (anim.Length > 1) sr.sprite = anim[((int)(t * 2.5f)) % anim.Length];
             if (Near(5f)) { G.hud.Label(pos + Vector2.up * 2.8f, Title, Col); G.hud.Label(pos + Vector2.up * 2.3f, What + "   " + cracks + "/3", new Color(0.9f, 0.9f, 0.9f)); }
             // a hard landing on its back
             var p = P;

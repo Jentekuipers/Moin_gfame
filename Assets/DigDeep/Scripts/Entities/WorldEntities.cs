@@ -2,14 +2,14 @@ using UnityEngine;
 
 namespace DigDeep
 {
-    // Sand, spikes, chests and crates: wobble, then drop. (Boulders hand over to BoulderBody.)
+    // Sand, spikes, chests, crates and TNT: wobble, then drop. (Boulders hand over to BoulderBody.) TNT that drops 3+ blocks goes off.
     public class Faller : Entity
     {
         readonly Block b;
         readonly int x;
         readonly int y;
         float wobble, vy;
-        bool falling;
+        bool falling, wasWet;
         int startRow, hp;
 
         public override bool AlwaysActive => true;
@@ -35,7 +35,7 @@ namespace DigDeep
                 wobble -= dt;
                 if (Random.value < 0.35f) G.fx.Burst(new Vector2(pos.x + Random.Range(-0.4f, 0.4f), pos.y - 0.5f), 1, new Color(0.6f, 0.5f, 0.4f), 1f, 0.4f, 12f);
                 if (wobble > 0f) return;
-                if (Wd.Get(x, y) != b || Wd.Solid(x, y - 1)) { Wd.ClearPending(x, y); Kill(); return; }
+                if (Wd.Get(x, y) != b || Wd.Solid(x, y - 1) || Wd.Get(x, y - 1) == Block.Plate) { Wd.ClearPending(x, y); Kill(); return; }   // (an arena ledge holds it too)
                 Wd.ClearPending(x, y);
                 if (b == Block.Boulder)
                 {
@@ -53,10 +53,16 @@ namespace DigDeep
                 return;
             }
             vy = Mathf.Max(vy - 38f * dt, -15f);
+            // into water: a splash, and TNT that drops into water only counts its fall from where it leaves it
+            bool inWater = Wd.FluidAtPoint(pos) == Fluids.Water;
+            if (inWater && !wasWet) Fluids.Impact(pos, 1.1f, new Vector2(0f, vy));
+            if (inWater) startRow = Mathf.FloorToInt(pos.y - 0.5f);
+            wasWet = inWater;
             if (b != Block.Boulder) vy = Fluids.Sink(pos, vy, dt);   // boulders plunge straight through
             pos.y += vy * dt;
             int row = Mathf.FloorToInt(pos.y - 0.5f);
-            if (Wd.Solid(x, row)) { Land(row + 1); return; }
+            if (Wd.ImpactGlass(x, row, -vy, 5f)) { vy *= 0.6f; }   // falls through glass, smashing it
+            else if (Wd.Solid(x, row)) { Land(row + 1); return; }
 
             var hb = new Vector2(0.45f, 0.45f);
             var pl = G.player;
@@ -66,7 +72,7 @@ namespace DigDeep
                 && Mathf.Abs(pl.pos.x - pos.x) < 0.45f + Player.Half.x - 0.15f && U.Overlap(pos, hb, pl.pos, Player.Half))
             {
                 Player.Cause = b == Block.Spikes ? "FALLING SPIKES" : "FALLING SAND";
-                pl.Hurt(b == Block.Spikes ? 60 : 50, pos + Vector2.up);
+                pl.Hurt(b == Block.Spikes ? 60 : 20, pos + Vector2.up);   // (sand stings; it doesn't crush)
                 if (b == Block.Sand) pl.Extinguish();   // a load of sand smothers the flames
             }
             foreach (var e in G.ents)
@@ -91,6 +97,11 @@ namespace DigDeep
                 G.sfx.Play("break", 0.8f);
                 G.cam.Shake(0.22f);
             }
+            else if (b == Block.TNT && fell >= 3)
+            {
+                Wd.Set(x, land, b);
+                Wd.Break(x, land, false);   // the drop sets it off
+            }
             else
             {
                 if (b == Block.Crate) Wd.SetCrateRarity(x, land, crate);   // a crate keeps its colour when it falls
@@ -98,6 +109,62 @@ namespace DigDeep
                 if (hp > 0 && b != Block.Sand) Wd.SetHp(x, land, hp);
                 G.sfx.Play("land", 0.6f, b == Block.Sand ? 1.4f : 0.8f);
             }
+        }
+    }
+
+    // A kicked crate of TNT: it flies nose first (tumbling a little), and goes off when it slams into something.
+    // Dropped gently (or into water) it settles back down as a block.
+    public class TntBody : Entity
+    {
+        Vector2 vel;
+        float spin, age;
+        static readonly Vector2 H = new Vector2(0.4f, 0.4f);
+        public override bool AlwaysActive => true;
+
+        public TntBody(int x, int y, Vector2 v)
+        {
+            pos = new Vector2(x + 0.5f, y + 0.5f);
+            vel = v;
+            MakeGO("TntBody", Art.TileSprite(Block.TNT, Biomes.At(x, y)), 7);
+            spin = Random.Range(-1f, 1f) * 25f;
+            Place();
+        }
+
+        void Boom() { Kill(); G.Explode(pos, 3.1f, 7, false, false); }
+
+        public override void Tick(float dt)
+        {
+            age += dt;
+            bool wet = Wd.FluidAtPoint(pos) == Fluids.Water;
+            vel.y = Mathf.Max(vel.y - (wet ? 14f : 34f) * dt, wet ? -4f : -20f);
+            if (wet) vel *= 1f - Mathf.Min(0.8f, 3f * dt);
+            float sp = vel.magnitude;
+            Vector2 p = pos;
+            bool hitX = Wd.MoveX(ref p, H, vel.x * dt, out _);
+            bool hitY = Wd.MoveY(ref p, H, vel.y * dt, out _);
+            pos = p;
+            // slamming into something hard sets it off
+            if ((hitX || hitY) && sp > 9f && !wet) { Boom(); return; }
+            foreach (var e in G.ents)
+                if (!e.dead && e is Enemy en && !en.Intangible && en.team != Team.Player && age > 0.05f && U.Overlap(pos, H, en.pos, en.half)) { Boom(); return; }
+            if (hitX) vel.x *= -0.3f;
+            if (hitY) { vel.y = 0f; vel.x *= 0.6f; }
+            // at rest: a block of TNT again
+            bool ground = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), H);
+            if (ground && sp < 1.2f && age > 0.3f)
+            {
+                int cx = Mathf.FloorToInt(pos.x), cy = Mathf.FloorToInt(pos.y);
+                Kill();
+                if (Wd.Get(cx, cy) == Block.Air) { Wd.Set(cx, cy, Block.TNT); G.sfx.Play("land", 0.5f, 0.9f); }
+                else G.Explode(pos, 3.1f, 7, false, false);
+                return;
+            }
+            // nose first: it turns to face where it's flying, wobbling a bit
+            float want = sp > 1f ? Mathf.Atan2(vel.y, vel.x) * Mathf.Rad2Deg - 90f + Mathf.Sin(age * 14f) * spin : 0f;
+            go.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.MoveTowardsAngle(go.transform.eulerAngles.z, want, 720f * dt));
+            if (Random.value < 0.4f) G.fx.Burst(pos - vel.normalized * 0.4f, 1, new Color(1f, 0.7f, 0.3f), 1f, 0.3f, 0f);
+            Place();
+            go.transform.rotation = Quaternion.Euler(0f, 0f, go.transform.eulerAngles.z);
         }
     }
 
@@ -348,7 +415,7 @@ namespace DigDeep
         int hp;
         float topY, restT, ang, hitCd;
         float pushHeld, pushedT;   // momentum: the longer you lean on it, the faster it rolls (up to a cap)
-        bool grounded;
+        bool grounded, wasWet = true;
 
         public override bool AlwaysActive => true;
         public float Speed => vel.magnitude;
@@ -410,29 +477,49 @@ namespace DigDeep
             pushedT -= dt;
             if (pushedT <= 0f) pushHeld = 0f;
             bool wet = Wd.FluidAtPoint(pos) == Fluids.Water;
+            if (wet && !wasWet && age > 0.1f) Fluids.Impact(pos, 1.2f + Mathf.Min(Speed, 16f) * 0.08f, vel);   // a boulder hitting the water: the faster, the bigger the splash
+            wasWet = wet;
+            if (wet) Fluids.Stir(pos, vel, 0.55f);
             vel.y = Mathf.Max(vel.y - (wet ? 20f : 38f) * dt, wet ? -6f : -18f);
             // heavy: it grinds to a halt on flat ground, but not while someone keeps shoving it
             if (pushedT <= 0f) vel.x = Mathf.MoveTowards(vel.x, 0f, (grounded ? 7f : wet ? 2.5f : 0.5f) * dt);
             Vector2 p = pos;
             if (Wd.MoveX(ref p, H, vel.x * dt, out var hx))
             {
-                if (Mathf.Abs(vel.x) > 7f)
+                float sp = Mathf.Abs(vel.x);
+                int hdir = vel.x > 0f ? 1 : -1;
+                if (hx.x != int.MinValue && Wd.ImpactGlass(hx.x, hx.y, sp, 2f)) vel.x *= 0.7f;   // it rolls right through glass
+                else if (hx.x != int.MinValue && sp > 0.5f && Wd.Get(hx.x, hx.y) == Block.Boulder && !Wd.Solid(hx.x + hdir, hx.y))
                 {
-                    G.cam.Shake(0.12f);
-                    G.sfx.Material(Block.Boulder, false, 1f);
-                    Wd.Impact(hx.x, hx.y, Mathf.Abs(vel.x));   // smash into TNT and it goes off
+                    // it rolls into a resting boulder: that one's knocked loose and they share the push (heavy: neither flies)
+                    Wd.PushBoulder(hx.x, hx.y, new Vector2(vel.x * 0.5f, 0f));
+                    vel.x *= 0.5f;
+                    pos = p;
+                    if (sp > 3f) { G.cam.Shake(Mathf.Min(0.2f, sp * 0.02f)); G.sfx.Material(Block.Boulder, false, 0.8f); }
                 }
-                vel.x *= -0.25f;
+                else
+                {
+                    if (sp > 7f)
+                    {
+                        G.cam.Shake(0.12f);
+                        G.sfx.Material(Block.Boulder, false, 1f);
+                        Wd.Impact(hx.x, hx.y, sp);   // smash into TNT and it goes off
+                    }
+                    // a hard-kicked boulder ploughs on through the wall: the faster, the more it smashes (and each block slows it)
+                    if (sp > 6f && SmashThrough(hx, sp)) { vel.x *= 0.78f; pos = p; }
+                    else vel.x *= -0.25f;
+                }
             }
             float vy = vel.y;
             bool hitY = Wd.MoveY(ref p, H, vel.y * dt, out var hy);
             pos = p;
             if (hitY)
             {
-                if (vy < 0f) { Landed(topY - pos.y, hy); if (dead) return; }
+                if (vy < 0f) { Landed(topY - pos.y, hy); if (dead) return; topY = pos.y; }   // (landed: the next fall counts from here)
                 vel.y = 0f;
             }
-            grounded = Wd.BoxSolid(pos + new Vector2(0f, -0.05f), H);
+            grounded = Wd.Ground(pos + new Vector2(0f, -0.05f), H);   // arena ledges and spear ledges hold it up too
+            if (BumpBoulders(dt)) grounded = true;
             if (grounded || vel.y > 0f) topY = pos.y;
 
             // a boulder rolling or dropping over fire smothers it
@@ -458,6 +545,10 @@ namespace DigDeep
             go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
             Collide();
             if (dead) return;
+            // a moving boulder snaps any spear it rolls or drops onto
+            if (Speed > 1f && Spear.All.Count > 0)
+                for (int i = Spear.All.Count - 1; i >= 0; i--)
+                    if (i < Spear.All.Count && Spear.All[i].Touches(pos, H + new Vector2(0.05f, 0.05f))) Spear.All[i].Snap();
 
             // stopped: slide onto the grid and become a block again
             if (grounded && pushedT <= 0f && Mathf.Abs(vel.x) < 0.6f && Mathf.Abs(vel.y) < 0.1f)
@@ -471,14 +562,35 @@ namespace DigDeep
             else restT = 0f;
         }
 
+        bool SmashThrough(Vector2Int hit, float sp)
+        {
+            int dir = vel.x > 0f ? 1 : -1;
+            int power = Mathf.RoundToInt(sp * 0.9f);
+            bool any = false;
+            int y0 = Mathf.FloorToInt(pos.y - H.y + 0.01f), y1 = Mathf.FloorToInt(pos.y + H.y - 0.01f);
+            for (int y = y0; y <= y1; y++)
+            {
+                var b = Wd.Get(hit.x, y);
+                if (!Wd.Solid(hit.x, y)) continue;
+                if (Tiles.Def(b).unbreakable || Wd.Anchored(hit.x, y) || b == Block.Chest || b == Block.Crate || b == Block.Supply) return false;
+                var r = Wd.Damage(hit.x, y, power, false);
+                if (r == World.Hit.Unbreakable || r == World.Hit.Damaged) return false;
+                any = true;
+            }
+            if (any) { G.cam.Shake(0.18f); G.sfx.Play("break", 0.6f, 0.8f); G.fx.Burst(new Vector2(hit.x + 0.5f, pos.y), 10, new Color(0.6f, 0.5f, 0.4f), 6f, 0.4f, 10f); }
+            return any && !dead;
+        }
+
         void Landed(float fell, Vector2Int hy)
         {
+            if (hy.x != int.MinValue && Wd.ImpactGlass(hy.x, hy.y, fell * 6f, 3f)) { G.cam.Shake(0.1f); return; }   // drops onto glass and smashes it
             if (fell < 0.6f) return;
             int cx = Mathf.FloorToInt(pos.x), cy = Mathf.FloorToInt(pos.y);
             G.OnHeavyLanded(cx, cy);
             Wd.Impact(hy.x, hy.y, fell * 4f);
             G.cam.Shake(Mathf.Min(0.35f, 0.08f + fell * 0.04f));
-            G.sfx.Play("land", 0.7f, 0.6f);
+            if (Wd.FluidAtPoint(pos) == Fluids.Water) G.sfx.PlayAt(pos, "boulder_wet", 0.8f, 1f, 0.08f, 16f);   // a deep, muffled thud on the bottom
+            else G.sfx.Play("land", 0.7f, 0.6f);
             G.fx.Burst(pos - new Vector2(0f, H.y), 8, new Color(0.6f, 0.5f, 0.4f), 3f, 0.3f, 8f);
             // falling never breaks it: its health stays exactly as it was
         }
@@ -496,7 +608,7 @@ namespace DigDeep
             pushHeld += dt;
             pushedT = 0.12f;
             restT = 0f;
-            float t = PushTarget(pushHeld) * Mathf.Clamp(G.player.Speed, 0.7f, 1.4f);
+            float t = PushTarget(pushHeld) * Mathf.Clamp(G.player.Speed, 0.7f, 1.4f) / Mathf.Sqrt(Chain(dir));   // two in a row: heavier going
             if (vel.x * dir < t) vel.x = Mathf.MoveTowards(vel.x, dir * t, 6f * dt);
             if (Random.value < 0.1f) G.fx.Burst(pos - new Vector2(0f, H.y), 1, new Color(0.6f, 0.5f, 0.4f), 1.5f, 0.3f, 6f);
         }
@@ -520,6 +632,71 @@ namespace DigDeep
                 return true;
             }
             return false;
+        }
+
+        // loose boulders against each other: side by side they shove each other along (sharing their speed, like two heavy
+        // stones: a hard knock jolts, a slow one just pushes), and one landing on another rests on top of it
+        bool BumpBoulders(float dt)
+        {
+            bool onOne = false;
+            foreach (var o in All)
+            {
+                if (o == this || o.dead) continue;
+                Vector2 d = o.pos - pos;
+                float ox = 2f * H.x - Mathf.Abs(d.x), oy = 2f * H.y - Mathf.Abs(d.y);
+                if (ox <= 0f || oy <= 0f) continue;
+                if (ox < oy)
+                {
+                    float sd = d.x >= 0f ? 1f : -1f;
+                    // pull apart (each half way, or all of it where one is against a wall)
+                    var a = pos - new Vector2(sd * ox * 0.5f, 0f);
+                    var b = o.pos + new Vector2(sd * ox * 0.5f, 0f);
+                    bool aOk = !Wd.BoxSolid(a, H), bOk = !Wd.BoxSolid(b, H);
+                    if (aOk && bOk) { pos = a; o.pos = b; }
+                    else if (aOk) pos -= new Vector2(sd * ox, 0f);
+                    else if (bOk) o.pos += new Vector2(sd * ox, 0f);
+                    float closing = (vel.x - o.vel.x) * sd;
+                    if (closing > 0f)
+                    {
+                        float m = (vel.x + o.vel.x) * 0.5f, bounce = closing * 0.15f;
+                        vel.x = m - sd * bounce * 0.5f;
+                        o.vel.x = m + sd * bounce * 0.5f;
+                        o.restT = 0f;
+                        o.pushedT = Mathf.Max(o.pushedT, pushedT);
+                        if (closing > 3f && bumpCd <= 0f)
+                        {
+                            bumpCd = 0.25f;
+                            G.cam.Shake(Mathf.Min(0.2f, closing * 0.025f));
+                            G.sfx.Material(Block.Boulder, false, 0.8f);
+                            G.fx.Burst((pos + o.pos) * 0.5f, 5, new Color(0.6f, 0.5f, 0.4f), 3f, 0.3f, 10f);
+                        }
+                    }
+                }
+                else if (d.y < 0f)
+                {
+                    // it's resting on the other one
+                    var np = new Vector2(pos.x, o.pos.y + 2f * H.y);
+                    if (!Wd.BoxSolid(np, H)) { pos = np; if (vel.y < o.vel.y) vel.y = o.vel.y; topY = pos.y; onOne = true; }
+                }
+            }
+            return onOne;
+        }
+
+        // how many boulders in a row you're pushing, counting this one (each makes the shove slower)
+        public int Chain(int dir)
+        {
+            int n = 1;
+            Vector2 at = pos;
+            for (int k = 0; k < 4; k++)
+            {
+                at += new Vector2(dir * 1f, 0f);
+                int cx = Mathf.FloorToInt(at.x), cy = Mathf.FloorToInt(at.y);
+                bool any = Wd.Get(cx, cy) == Block.Boulder;
+                if (!any) foreach (var o in All) if (!o.dead && o != this && Mathf.Abs(o.pos.x - at.x) < 0.3f && Mathf.Abs(o.pos.y - at.y) < 0.5f) { any = true; break; }
+                if (!any) break;
+                n++;
+            }
+            return n;
         }
 
         // the loose boulder (if any) right where a player is leaning
@@ -572,7 +749,7 @@ namespace DigDeep
             }
             foreach (var e in G.ents)
             {
-                if (e.dead || !(e is Enemy en) || en.Intangible || en == thrower || !U.Overlap(pos, H, en.pos, en.half)) continue;
+                if (e.dead || !(e is Enemy en) || en.Intangible || en == thrower || en is BoulderTroll || !U.Overlap(pos, H, en.pos, en.half)) continue;   // the troll's own rocks never hurt it
                 float closing = Vector2.Dot(vel, (en.pos - pos).normalized);   // only what it's moving towards
                 if (!(en is Boss) && Speed > 1.2f)
                 {
@@ -597,6 +774,8 @@ namespace DigDeep
         {
             int cx = Mathf.FloorToInt(pos.x), cy = Mathf.FloorToInt(pos.y);
             if (Wd.Solid(cx, cy)) { Shatter(); return; }
+            // resting on a spear (not a real floor): it stays a body, lying there, instead of becoming a block that drops again
+            if (!Wd.Solid(cx, cy - 1) && Wd.Get(cx, cy - 1) != Block.Plate) { restT = 0f; return; }
             // never turn back into a block on top of someone: wait until the cell is clear
             Vector2 cell = new Vector2(cx + 0.5f, cy + 0.5f), ch = new Vector2(0.5f, 0.5f);
             var pl = G.player;

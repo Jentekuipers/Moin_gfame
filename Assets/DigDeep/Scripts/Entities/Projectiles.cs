@@ -85,7 +85,7 @@ namespace DigDeep
             MakeGO(key, Art.Icons[key], 16);
             go.transform.localScale = Vector3.one * (type == Type.Mega ? 1.2f : 0.8f);
             fuse = type == Type.Dynamite ? 1.3f : 1.6f;
-            life = 35f;
+            life = type == Type.Flare ? 60f : 35f;
             if (type != Type.Flare) G.sfx.Play("fuse", 0.4f);
         }
 
@@ -139,7 +139,7 @@ namespace DigDeep
 
         public override void AddLight(Lighting l)
         {
-            if (type == Type.Flare) l.Add(pos, 6.5f + Mathf.Sin(Time.time * 13f) * 0.25f, 1f);
+            if (type == Type.Flare) { l.Add(pos, 12f + Mathf.Sin(Time.time * 13f) * 0.35f, 1f); if (!stuck) l.Add(pos, 4f, 1f); }
             else l.Add(pos, 1.3f, 0.5f);
         }
     }

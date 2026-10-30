@@ -35,7 +35,7 @@ namespace DigDeep
         {
             if (whiteGo == null) return;
             whiteGo.transform.position = new Vector3(cam.pos.x, cam.pos.y, 0f);
-            whiteGo.transform.localScale = new Vector3(cam.halfW * 2f + 4f, cam.halfH * 2f + 4f, 1f);
+            whiteGo.transform.localScale = new Vector3(cam.halfW * 3.6f + 16f, cam.halfH * 3.6f + 16f, 1f);   // well past every edge, shake and all
         }
 
         // a little way past the screen's edge: anything of yours out there simply leaves into space
@@ -67,7 +67,7 @@ namespace DigDeep
     // things into the world: any creature of the deep, or a sketched gun that turns on you.
     public class Creator : Boss
     {
-        enum S { Enter, Idle, Tele, Act, Rest }
+        enum S { Enter, Back, Idle, Tele, Act, Rest, Dying }
         enum A { Slam, Sweep, Point, Clap, DrawFoe, DrawGun, DoubleSlam }
         A act;
         readonly CreatorHand left;
@@ -80,6 +80,7 @@ namespace DigDeep
         // ink is white on the black void, and near-black once the void has turned white
         static Color Ink => VoidStage.White ? new Color(0.1f, 0.06f, 0.14f) : InkW;
         static readonly Vector2 HandHalf = new Vector2(1.8f, 1.1f);
+        public static readonly Color HitRed = new Color(1f, 0.2f, 0.2f);
         public bool LethalLeft;
         VoidLord lord;
 
@@ -102,8 +103,9 @@ namespace DigDeep
 
         void Go(S s, float time) { state = (int)s; stateT = time; }
 
-        Vector2 RHome => new Vector2(VoidStage.Center.x + 7f, VoidStage.Center.y + 3.5f + Mathf.Sin(t * 1.3f) * 0.4f);
-        Vector2 LHome => new Vector2(VoidStage.Center.x - 7f, VoidStage.Center.y + 3.5f + Mathf.Sin(t * 1.3f + 2f) * 0.4f);
+        // each hand rests on its own side, a little off the middle
+        Vector2 RHome => new Vector2(VoidStage.Center.x + 6.5f, VoidStage.Center.y + 1.5f + Mathf.Sin(t * 1.3f) * 0.4f);
+        Vector2 LHome => new Vector2(VoidStage.Center.x - 6.5f, VoidStage.Center.y + 1.5f + Mathf.Sin(t * 1.3f + 2f) * 0.4f);
 
         public override void Tick(float dt)
         {
@@ -136,8 +138,17 @@ namespace DigDeep
                         G.hud.Banner(title, "", Ink);
                         G.music.PlayBoss();
                     }
-                    if (stateT <= 0f) { intangible = false; Go(S.Idle, 1.2f); }
+                    if (stateT <= 0f) Go(S.Back, 2.6f);
                     break;
+                case S.Back:
+                    // it slowly draws its hands back to either side; only then can it be hurt
+                    goal = RHome; lgoal = LHome;
+                    Follow(dt, 1.4f);
+                    if (stateT <= 0f) { intangible = false; Go(S.Idle, 0.6f); }
+                    break;
+                case S.Dying:
+                    TickDying(dt);
+                    return;
                 case S.Idle:
                     goal = RHome; lgoal = LHome;
                     Follow(dt, 5f);
@@ -183,12 +194,14 @@ namespace DigDeep
             float tele = Phase2 ? 0.55f : 0.8f;
             switch (act)
             {
-                case A.Slam: goal = new Vector2(P.pos.x, Floor + 6f); lgoal = LHome; break;
-                case A.DoubleSlam: goal = new Vector2(P.pos.x + 2.5f, Floor + 6f); lgoal = new Vector2(P.pos.x - 2.5f, Floor + 6f); break;
+                case A.Slam: goal = new Vector2(P.pos.x, Mathf.Min(P.pos.y + 6f, VoidStage.Max.y - 1f)); lgoal = LHome; break;
+                case A.DoubleSlam: goal = new Vector2(P.pos.x + 2.5f, Mathf.Min(P.pos.y + 6f, VoidStage.Max.y - 1f)); lgoal = new Vector2(P.pos.x - 2.5f, Mathf.Min(P.pos.y + 6f, VoidStage.Max.y - 1f)); break;
                 case A.Sweep:
                     {
+                        // (you fly out here: it swats across at the height you're at, not along a floor)
                         bool fromRight = P.pos.x < VoidStage.Center.x;
-                        goal = new Vector2(fromRight ? VoidStage.Max.x - 1.5f : VoidStage.Min.x + 1.5f, Floor + HandHalf.y);
+                        sweepY = Mathf.Clamp(P.pos.y, VoidStage.Min.y + HandHalf.y, VoidStage.Max.y - HandHalf.y);
+                        goal = new Vector2(fromRight ? VoidStage.Max.x - 1.5f : VoidStage.Min.x + 1.5f, sweepY);
                         lgoal = LHome; tele += 0.3f; break;
                     }
                 case A.Point: goal = new Vector2(VoidStage.Center.x + (P.pos.x < VoidStage.Center.x ? 6f : -6f), VoidStage.Center.y + 2f); lgoal = LHome; break;
@@ -235,38 +248,39 @@ namespace DigDeep
                         bool both = act == A.DoubleSlam;
                         if (!slamming)
                         {
-                            // hover over you a moment, then drop like a stone
+                            // hover over you a moment, then drop like a stone, down through where you are
                             goal.x = Mathf.Lerp(goal.x, P.pos.x + (both ? 2.5f : 0f), dt * 3f);
-                            if (both) lgoal.x = Mathf.Lerp(lgoal.x, P.pos.x - 2.5f, dt * 3f);
+                            goal.y = Mathf.Lerp(goal.y, Mathf.Min(P.pos.y + 6f, VoidStage.Max.y - 1f), dt * 3f);
+                            if (both) { lgoal.x = Mathf.Lerp(lgoal.x, P.pos.x - 2.5f, dt * 3f); lgoal.y = goal.y; }
                             Follow(dt, 8f);
-                            if (shotT <= 0f) slamming = true;
+                            if (shotT <= 0f) { slamming = true; slamY = Mathf.Max(Floor + HandHalf.y, P.pos.y - 2.5f); }
                             break;
                         }
                         lethalR = true; LethalLeft = both;
                         pos.y -= 30f * dt;
                         if (both) left.pos.y -= 30f * dt;
-                        if (pos.y <= Floor + HandHalf.y)
+                        if (pos.y <= slamY)
                         {
-                            pos.y = Floor + HandHalf.y;
-                            if (both) left.pos.y = Floor + HandHalf.y;
+                            pos.y = slamY;
+                            if (both) left.pos.y = slamY;
                             G.cam.Shake(0.6f);
                             G.sfx.Play("explode", 0.9f, 0.7f);
                             Shockwave(pos);
                             if (both) Shockwave(left.pos);
                             left_n--;
-                            if (left_n > 0) { slamming = false; shotT = 0.35f; goal = new Vector2(P.pos.x, Floor + 6f); lgoal = both ? new Vector2(P.pos.x - 2.5f, Floor + 6f) : LHome; }
+                            if (left_n > 0) { slamming = false; shotT = 0.35f; goal = new Vector2(P.pos.x, Mathf.Min(P.pos.y + 6f, VoidStage.Max.y - 1f)); lgoal = both ? new Vector2(P.pos.x - 2.5f, goal.y) : LHome; }
                             else Go(S.Rest, 1.2f);
                         }
                         break;
                     }
                 case A.Sweep:
                     {
-                        // flat along the floor, from one wall to the other
+                        // flat across the screen at the height you were, from one side to the other
                         lethalR = true;
                         float dir = pos.x > VoidStage.Center.x ? -1f : 1f;
                         if (stateT > 2.3f) sweepDir = dir;
                         pos.x += sweepDir * 16f * dt;
-                        pos.y = Floor + HandHalf.y;
+                        pos.y = Mathf.MoveTowards(pos.y, sweepY, 4f * dt);
                         if (Random.value < 0.6f) G.fx.Burst(pos + new Vector2(-sweepDir * 1.2f, -0.6f), 2, Ink, 3f, 0.3f, 10f);
                         if (pos.x < VoidStage.Min.x + 1.2f || pos.x > VoidStage.Max.x - 1.2f) { if (stateT < 2.1f) Go(S.Rest, 1f); }
                         break;
@@ -328,12 +342,21 @@ namespace DigDeep
             }
         }
 
-        float sweepDir = 1f;
+        float sweepDir = 1f, sweepY, slamY;
 
+        // where the hand lands, ink splashes out in a ring (there's no floor to run along out here)
         void Shockwave(Vector2 at)
         {
-            for (int s = -1; s <= 1; s += 2) Ink1(new Vector2(at.x + s * 1.2f, Floor + 0.35f), new Vector2(s * 9f, 0f), 1.2f);
-            G.fx.Burst(new Vector2(at.x, Floor), 20, Ink, 7f, 0.4f, 20f);
+            Vector2 c = at + Vector2.down * HandHalf.y;
+            int n = Phase2 ? 12 : 9;
+            float off = Random.value * 30f;
+            for (int k = 0; k < n; k++)
+            {
+                float a = (off + k * 360f / n) * Mathf.Deg2Rad;
+                Ink1(c, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 6.5f, 0.6f);
+            }
+            G.fx.Burst(c, 20, Ink, 7f, 0.4f, 0f);
+            G.fx.Ring(c, 2.5f, Ink);
         }
 
         void Ink1(Vector2 at, Vector2 v, float sc = 0.45f)
@@ -343,24 +366,35 @@ namespace DigDeep
             b.dmgOverride = Dmg;
         }
 
-        // any creature of the deep, drawn into being (not more than a few at once)
+        // a whole swarm of creatures of the deep, drawn into being at once; every one of them comes straight for you
         void DrawFoe(Vector2 at)
         {
             int alive = 0;
             foreach (var e in G.ents) if (!e.dead && e is Enemy en && !(en is Boss) && !(en is CreatorHand)) alive++;
-            if (alive >= (Phase2 ? 5 : 3)) { G.Spawn(new DrawnGun(at + Vector2.up * 3f, Dmg)); return; }
-            int x = Mathf.FloorToInt(at.x), y = Mathf.FloorToInt(Floor), d = arena.Depth;
-            Enemy e2;
-            switch (Random.Range(0, 6))   // things that fly: there's no floor out here
+            int cap = Phase2 ? 40 : 28;
+            if (alive >= cap) { G.Spawn(new DrawnGun(at + Vector2.up * 3f, Dmg)); return; }
+            int n = Mathf.Min(cap - alive, Phase2 ? 14 : 10);
+            int d = arena.Depth;
+            for (int i = 0; i < n; i++)
             {
-                case 0: e2 = new Bat(x, y + 3, d, false); break;
-                case 1: e2 = new Wisp(x, y + 3, d, true); break;
-                case 2: e2 = new Wisp(x, y + 3, d, false); break;
-                case 3: e2 = new GliderBat(x, y + 3, d); break;
-                case 4: e2 = new Drone(x, y + 3, d); break;
-                default: e2 = new Bee(at + Vector2.up * 2f, d); break;
+                Vector2 p = at + new Vector2(Random.Range(-4f, 4f), Random.Range(0f, 3.5f));
+                p.x = Mathf.Clamp(p.x, VoidStage.Min.x + 1f, VoidStage.Max.x - 1f);
+                p.y = Mathf.Clamp(p.y, VoidStage.Min.y + 1f, VoidStage.Max.y - 1f);
+                int x = Mathf.FloorToInt(p.x), y = Mathf.FloorToInt(p.y);
+                Enemy e2;
+                switch (Random.Range(0, 6))   // things that fly: there's no floor out here
+                {
+                    case 0: e2 = new Bat(x, y, d, false); break;
+                    case 1: e2 = new Wisp(x, y, d, true); break;
+                    case 2: e2 = new Wisp(x, y, d, false); break;
+                    case 3: e2 = new Bat(x, y, d, false); break;
+                    case 4: e2 = new Drone(x, y, d); break;
+                    default: e2 = new Bee(p, d); break;
+                }
+                e2.Enrage();   // drawn to hunt you: they know where you are, always
+                G.Spawn(e2);
+                G.fx.Burst(p, 6, Ink, 3f, 0.3f, 0f);
             }
-            G.Spawn(e2);
         }
 
         // ---------------------------------------------------------------- looks
@@ -374,6 +408,7 @@ namespace DigDeep
             if (strip != null) sr.sprite = flash > 0f && Art.EnemyWhite.TryGetValue(side ? "creatorside" : "creatorhand", out var w) ? w[0] : strip[0];
             sr.flipX = true;   // (the drawing is a left hand as seen: mirrored, it's the right one)
             if (VoidStage.White && flash <= 0f) sr.color = new Color(0.32f, 0.28f, 0.38f);   // dark against the white
+            if (flash > 0f) sr.color = HitRed;   // (a white flash vanishes against the white ink)
             float rot = 0f;
             if ((S)state == S.Act && act == A.Point) { Vector2 d = (P.pos - pos).normalized; rot = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg + 180f; }
             if ((S)state == S.Act && act == A.Clap) rot = 90f;
@@ -387,13 +422,65 @@ namespace DigDeep
             if (left != null && !left.dead) left.Kill();
         }
 
+        // Beaten: the hands shudder in slow motion and come apart in a long string of blasts, fading out, while the
+        // whole screen slowly whitens. Then it's over. (You keep flying all through it.)
+        bool dying;
+        float dyingT, blastT, shudderT;
+        Vector2 rBase, lBase, rOff, lOff;
+        const float DyingTime = 5f;
+
         public override void Die()
         {
             if (dead) return;
-            G.fx.Burst(left.pos, 40, Ink, 9f, 1f, 0f, 2f);
-            foreach (var e in G.ents) if (!e.dead && (e is DrawnGun)) e.Kill();
-            VoidStage.End();
+            if (!dying)
+            {
+                dying = true; intangible = true; dyingT = 0f;
+                rBase = pos; lBase = left.pos;
+                hp = 0f;
+                foreach (var e in G.ents)
+                    if (!e.dead && (e is DrawnGun || e is BossShot || (e is Enemy en && !(en is Boss) && !(en is CreatorHand)))) { G.fx.Burst(e.pos, 8, Ink, 3f, 0.4f, 0f); e.Kill(); }
+                G.music.Stop(4f);
+                G.sfx.Play("death", 1f, 0.4f);
+                Go(S.Dying, DyingTime);
+                return;
+            }
+            if (dyingT < DyingTime) return;   // (poison and the like can't cut the end short)
+            G.holdWhite = 1f;
             base.Die();
+        }
+
+        void TickDying(float dt)
+        {
+            dyingT += dt; blastT -= dt; shudderT -= dt;
+            float k = Mathf.Clamp01(dyingT / DyingTime);
+            // a slow, heavy shudder (a new offset only every so often: it reads as slow motion)
+            if (shudderT <= 0f)
+            {
+                shudderT = 0.07f;
+                float amp = 0.08f + 0.22f * k;
+                rOff = Random.insideUnitCircle * amp; lOff = Random.insideUnitCircle * amp;
+            }
+            pos = rBase + rOff; left.pos = lBase + lOff;
+            // blasts burst all over both hands
+            if (blastT <= 0f)
+            {
+                blastT = Mathf.Lerp(0.32f, 0.1f, k);
+                for (int i = 0; i < 2; i++)
+                {
+                    Vector2 c = (i == 0 ? pos : left.pos) + new Vector2(Random.Range(-HandHalf.x, HandHalf.x), Random.Range(-HandHalf.y, HandHalf.y));
+                    G.fx.Explosion(c, Random.Range(0.8f, 1.6f));
+                    G.fx.Burst(c, 12, Ink, 6f, 0.6f, 0f, 1.5f);
+                }
+                G.sfx.Play("explode", 0.55f, Random.Range(0.45f, 0.7f), 0.1f);
+                G.cam.Shake(0.25f);
+            }
+            // fading out, and the screen whitening
+            float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((dyingT - 1f) / (DyingTime - 1.5f)));
+            DrawHands();
+            var c1 = sr.color; c1.a = fade; sr.color = c1;
+            left.Fade(fade);
+            G.holdWhite = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((dyingT - 0.8f) / (DyingTime - 0.8f)));
+            if (dyingT >= DyingTime) Die();
         }
 
         public override void AddLight(Lighting l) { l.Add(pos, 5f, 0.9f); if (left != null) l.Add(left.pos, 5f, 0.9f); }
@@ -427,11 +514,13 @@ namespace DigDeep
             return owner.TakeShot(d, knock);
         }
 
+        public void Fade(float a) { var c = sr.color; c.a = a; sr.color = c; }
+
         public void Pose(bool side, Sprite[] strip, bool white, float rot)
         {
             if (strip != null) sr.sprite = white && Art.EnemyWhite.TryGetValue(side ? "creatorside" : "creatorhand", out var w) ? w[0] : strip[0];
             sr.flipX = false;
-            sr.color = VoidStage.White && !white ? new Color(0.32f, 0.28f, 0.38f) : Color.white;
+            sr.color = white ? Creator.HitRed : VoidStage.White ? new Color(0.32f, 0.28f, 0.38f) : Color.white;
             go.transform.rotation = Quaternion.Euler(0f, 0f, rot);
         }
 

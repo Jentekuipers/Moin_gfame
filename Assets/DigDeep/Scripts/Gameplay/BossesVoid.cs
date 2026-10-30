@@ -146,8 +146,8 @@ namespace DigDeep
     public class VoidLord : Boss
     {
         enum S { Float, Fire, Ice, Bolts, Spikes, Blink, Call }
-        int left;
-        float shotT;
+        int left, spikeGap;
+        float shotT, spikeY;
         Vector2 home;
         static readonly Color Fire = new Color(1f, 0.45f, 0.2f), Ice = new Color(0.6f, 0.9f, 1f), Void = new Color(0.65f, 0.35f, 1f);
 
@@ -360,6 +360,26 @@ namespace DigDeep
                     if (left <= 0 && shotT <= -0.8f) Go(S.Float, 1.3f);
                     break;
                 case S.Spikes: // the floor splits into void spikes, rolling across the hall from one wall to the other
+                    if (VoidStage.Active)
+                    {
+                        // out in the black there's no floor (you fly): a wall of void sweeps in from one side, with one gap
+                        if (left == 0) { spikeGap = Random.Range(3, 9); spikeY = P.pos.y; }
+                        if (shotT <= 0f && left < 12)
+                        {
+                            shotT = 0.05f;
+                            bool fromLeft = (cycle / 5) % 2 == 0;
+                            float y = spikeY + (left - 5.5f) * 0.95f;
+                            if (Mathf.Abs(left - spikeGap) > 1 && y > VoidStage.Min.y && y < VoidStage.Max.y)
+                            {
+                                float x = fromLeft ? VoidStage.Min.x - 0.5f : VoidStage.Max.x + 0.5f;
+                                var b = Shot(new Vector2(x, y), new Vector2(fromLeft ? 7.5f : -7.5f, 0f), Art.Circle, Void, 0f, 0.5f, 0.55f);
+                                b.body = Void;
+                            }
+                            left++;
+                        }
+                        if (stateT <= 0f) Go(S.Float, 1.2f);
+                        break;
+                    }
                     if (shotT <= 0f && left < 14)
                     {
                         shotT = 0.12f;

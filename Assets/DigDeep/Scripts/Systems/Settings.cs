@@ -22,6 +22,7 @@ namespace DigDeep
         public static bool PauseOnFocusLoss = true;
         public static bool ShowFps;
         public static bool AutoPickup;        // walk over trinkets and items to take them (off: press interact)
+        public static bool ShowStats;         // the stat column under the health bar
 
         public static readonly string[] DisplayNames = { "BORDERLESS", "FULLSCREEN", "WINDOWED" };
 
@@ -69,6 +70,7 @@ namespace DigDeep
             PauseOnFocusLoss = PlayerPrefs.GetInt("set_focus", 1) == 1;
             ShowFps = PlayerPrefs.GetInt("set_fpsshow", 0) == 1;
             AutoPickup = PlayerPrefs.GetInt("set_autopick", 0) == 1;
+            ShowStats = PlayerPrefs.GetInt("set_stats", 0) == 1;
             GameInput.LoadBindings();
             Apply(true);
         }
@@ -90,6 +92,7 @@ namespace DigDeep
             PlayerPrefs.SetInt("set_focus", PauseOnFocusLoss ? 1 : 0);
             PlayerPrefs.SetInt("set_fpsshow", ShowFps ? 1 : 0);
             PlayerPrefs.SetInt("set_autopick", AutoPickup ? 1 : 0);
+            PlayerPrefs.SetInt("set_stats", ShowStats ? 1 : 0);
             GameInput.SaveBindings();
             PlayerPrefs.Save();
         }
@@ -119,7 +122,7 @@ namespace DigDeep
         {
             Master = 1f; Music = 0.8f; Sfx = 1f;
             DisplayMode = 0; ResIndex = -1; VSync = true; FpsCap = 2;
-            Shake = 1f; Flashes = true; HitStop = true; Brightness = 0f; UiScale = 1f; PauseOnFocusLoss = true; ShowFps = false; AutoPickup = false;
+            Shake = 1f; Flashes = true; HitStop = true; Brightness = 0f; UiScale = 1f; PauseOnFocusLoss = true; ShowFps = false; AutoPickup = false; ShowStats = false;
             GameInput.DefaultBindings();
             GameInput.DefaultPad();
             Apply(true);

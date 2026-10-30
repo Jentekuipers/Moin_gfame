@@ -30,6 +30,7 @@ namespace DigDeep
         public List<int> weaponAmmo = new List<int>();
         public List<int> weaponCurse = new List<int>();
         public List<int> weaponCurseKills = new List<int>();
+        public List<string> weaponAmmoItem = new List<string>();
         public int curWeapon;
         public string special;
         public int charges;

@@ -112,6 +112,11 @@ namespace DigDeep
                 {
                     e.ftop = d + 22 + r.Next(14);   // one to two screens further down
                     e.fx0 = 4 + r.Next(Gen.W - 8 - EventRoom.FW);
+                    // the fuse and the run may never cross a boss hall's void walls (or end inside one)
+                    bool blocked = false;
+                    foreach (int ad in ArenaRoom.Depths(maxDepth + 100))
+                        if (d - 4 <= ad + 3 && e.ftop + EventRoom.FH + 4 >= ad - ArenaRoom.IH - 4) { blocked = true; break; }
+                    if (blocked) { d += 4; continue; }
                 }
                 e.Build();
                 if (Gen.TryAdd(e)) { n++; d += 38 + r.Next(40); }

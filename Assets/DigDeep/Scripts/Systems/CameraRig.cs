@@ -40,7 +40,13 @@ namespace DigDeep
         // during a boss fight the screen calms down a lot: you need to read the bullets
         static float BossDamp => Game.I != null && Game.I.boss != null && !Game.I.boss.dead ? 0.35f : 1f;
 
-        public void Shake(float a) { a *= Settings.Shake * BossDamp; trauma = Mathf.Min(1f, Mathf.Max(trauma, a) + a * 0.25f); }   // SCREEN SHAKE option
+        float shakeLoad;   // many shakes in a short time each count for less (a hail of explosions stays readable)
+        public void Shake(float a)
+        {
+            a *= Settings.Shake * BossDamp / (1f + shakeLoad * 2.5f);   // SCREEN SHAKE option
+            shakeLoad += a;
+            trauma = Mathf.Min(1f, Mathf.Max(trauma, a) + a * 0.25f);
+        }
 
         // A directional shove (gun kick): the view jerks and springs back fast.
         public void Kick(Vector2 d) => kick = Vector2.ClampMagnitude(kick + d * Settings.Shake * BossDamp, 0.9f);
@@ -68,6 +74,7 @@ namespace DigDeep
             pos.y = Mathf.Lerp(pos.y, goal.y, 1f - Mathf.Exp(-dt * (goal.y < pos.y ? 10f : 6f)));
             pos = Clamp(pos);
             trauma = Mathf.Max(0f, trauma - dt * 1.8f);
+            shakeLoad = Mathf.Max(0f, shakeLoad - dt * 1.5f);
             rumble = Mathf.Max(0f, rumble - dt * 0.35f);
             kick = Vector2.Lerp(kick, Vector2.zero, 1f - Mathf.Exp(-dt * 14f));   // springs back quickly
             punch = Mathf.Lerp(punch, 0f, 1f - Mathf.Exp(-dt * 10f));

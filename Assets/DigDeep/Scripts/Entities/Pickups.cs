@@ -84,6 +84,23 @@ namespace DigDeep
     }
 
     // A dropped attack / special / trinket / item. Weapons need UP to swap so you never swap by accident.
+    public static class PickupUtil
+    {
+        // buried (a block fell on it, or it landed inside one): it pops up to the surface above
+        public static bool Unbury(World w, ref Vector2 pos, ref Vector2 vel, float halfH)
+        {
+            int x = Mathf.FloorToInt(pos.x), y = Mathf.FloorToInt(pos.y);
+            if (!w.Solid(x, y)) return false;
+            int k = 0;
+            while (w.Solid(x, y) && k < 40) { y++; k++; }
+            if (k >= 40) return false;
+            pos = new Vector2(pos.x, y + halfH + 0.02f);
+            vel = new Vector2(0f, 4f);
+            Game.I.fx.Burst(pos, 6, new Color(0.8f, 0.7f, 0.55f), 2.5f, 0.35f, 10f);
+            return true;
+        }
+    }
+
     public class LootPickup : Entity
     {
         public readonly Def def;
@@ -112,6 +129,7 @@ namespace DigDeep
         public override void Tick(float dt)
         {
             bob += dt; noPick -= dt;
+            PickupUtil.Unbury(Wd, ref pos, ref vel, H.y);
             vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt);
             vel.x = U.Approach(vel.x, 0f, 4f * dt);
             Vector2 p = pos;
@@ -149,9 +167,10 @@ namespace DigDeep
 
     // A boss's reward: three things float in the air across the arena and you may take ONE (walk up, press interact).
     // The other two vanish. Hover any of them to read what it does.
-    public class BossChoice : Entity
+    public class BossChoice : Entity, IRerollable
     {
-        readonly Def def;
+        Def def;
+        public void Reroll() { def = DigDeep.Reroll.Swap(def, G.player); sr.sprite = def.icon; G.player?.MarkSeen(def); }
         readonly System.Collections.Generic.List<BossChoice> group;
         float bob, appear;
         readonly ModGlow modGlow;
@@ -196,9 +215,12 @@ namespace DigDeep
             if (!sr.enabled) { sr.enabled = true; G.fx.Ring(pos, 1.2f, DB.ColorOf(def)); G.sfx.Play("chest", 0.5f, 1.3f); }
             bob += dt;
             var pl = G.player;
-            bool near = pl.mode != Player.Mode.Dead && U.Overlap(pos, H + new Vector2(0.3f, 0.6f), pl.pos, Player.Half);
-            bool hov = G.MouseOver(pos, 0.6f);
-            if (near || hov) G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, near ? "PRESS " + GameInput.Prompt(Btn.Interact) + " TO TAKE (ONLY ONE)" : "TAKE ONE OF THREE", pl, hov);
+            bool near0 = pl.mode != Player.Mode.Dead && U.Overlap(pos, H + new Vector2(0.3f, 0.6f), pl.pos, Player.Half);
+            bool hov0 = G.MouseOver(pos, 0.6f);
+            PickFocus.Offer(this, hov0, near0, (pl.pos - pos).magnitude);
+            bool mine = PickFocus.Is(this);   // one text box at a time, everywhere
+            bool near = near0 && mine, hov = hov0 && mine;
+            if (near || hov) G.hud.ItemLabel(pos + Vector2.up * 1.05f, def, near ? "PRESS " + GameInput.Prompt(Btn.Interact) : "", pl, hov);
             if (near && GameInput.Take(Btn.Interact) && pl.Grant(def))
             {
                 G.fx.Burst(pos, 24, DB.ColorOf(def), 6f, 0.6f, 5f);
@@ -283,6 +305,7 @@ namespace DigDeep
             if (w.curse != Curse.None && Random.value < 0.25f)
                 G.fx.Burst(pos + new Vector2(Random.Range(-0.4f, 0.4f), Random.Range(-0.2f, 0.5f)), 1, Curses.Col(w.curse), 0.6f, 0.7f, -2f, 1f, false);
             bob += dt; noPick -= dt;
+            PickupUtil.Unbury(Wd, ref pos, ref vel, H.y);
             vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt);
             vel.x = U.Approach(vel.x, 0f, 4f * dt);
             Vector2 p = pos;
@@ -343,7 +366,7 @@ namespace DigDeep
             glow.transform.position = new Vector3(pos.x, pos.y, 0f);
             if (Random.value < 0.1f) G.fx.Burst(pos + Random.insideUnitCircle * 0.4f, 1, new Color(1f, 0.5f, 0.55f), 0.6f, 0.6f, -2f, 1f, false);
             if (pl.mode == Player.Mode.Dead || !U.Overlap(pos, new Vector2(0.5f, 0.5f), pl.pos, Player.Half)) return;
-            if (pl.s.hp >= pl.s.maxHp) { G.hud.Label(pos + Vector2.up * 0.9f, "FULL HEALTH: IT WILL WAIT FOR YOU", Color.white); return; }
+            if (pl.s.hp >= pl.s.maxHp) return;   // full: it waits
             if (!pl.NoHealing()) pl.s.hp = Mathf.Min(pl.s.maxHp, pl.s.hp + amount);
             G.Popup(pl.pos + Vector2.up, "+" + amount + " HEALTH", new Color(1f, 0.5f, 0.5f));
             G.sfx.Play("heal", 0.9f);

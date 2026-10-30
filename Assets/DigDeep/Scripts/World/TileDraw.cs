@@ -33,6 +33,8 @@ namespace DigDeep
                 case Block.Crate: return U.C(70, 76, 88);
                 case Block.Supply: return U.C(168, 116, 62);
                 case Block.Ice: return U.C(150, 205, 235);
+                case Block.Glass: return U.C(190, 235, 245);
+                case Block.Steel: return U.C(118, 126, 142);
                 case Block.Plate: return U.C(120, 128, 145);
                 case Block.Boulder: return boulderC;
                 case Block.Lava: return U.C(255, 110, 20);
@@ -66,6 +68,7 @@ namespace DigDeep
                 case Block.Seal: return U.C(255, 90, 220);
                 case Block.DarkMatter: return U.C(120, 70, 210);
                 case Block.Ice: return U.C(225, 250, 255);
+                case Block.Steel: return U.C(205, 212, 226);
                 case Block.Plate: return U.C(225, 230, 240);
                 default: return b.rim;
             }
@@ -110,7 +113,7 @@ namespace DigDeep
         {
             if (t == Block.Boulder) { wx = 3; wy = -3; }   // every boulder looks the same, so one that rolls and settles doesn't change its face
             if (t == Block.Bedrock) t = Block.DarkMatter;   // world walls and floors look like the void, not like background rock
-            bool full = Tiles.Solid(t) && t != Block.Chest && t != Block.Boulder && t != Block.Crate && t != Block.Supply;
+            bool full = Tiles.Solid(t) && t != Block.Chest && t != Block.Boulder && t != Block.Crate && t != Block.Supply && t != Block.Glass;
             Color32 rim = RimColor(t, b);
             Color32 baseC = BaseColor(t, b);
             for (int py = 0; py < 16; py++)
@@ -129,6 +132,8 @@ namespace DigDeep
                     break;
                 case Block.Lava: Lava(buf, stride, ox, oy, wx, wy, mask); break;
                 case Block.Spikes: Spikes(buf, stride, ox, oy); break;
+                case Block.Plate: Ledge(buf, stride, ox, oy, wx, wy); break;
+                case Block.Glass: Glass(buf, stride, ox, oy, wx, wy, mask); break;
                 case Block.Chest: Chest(buf, stride, ox, oy); break;
                 case Block.Supply: Supply(buf, stride, ox, oy); break;
                 case Block.Crate: Crate(buf, stride, ox, oy, Crates.RarityAt(wx, wy)); break;
@@ -165,6 +170,12 @@ namespace DigDeep
                     break;
                 case Block.Magma:
                     if (U.H01(gx >> 1, gy >> 1, 11) > 0.8f) return U.C(255, 120, 30);
+                    break;
+                case Block.Steel:
+                    // riveted plates: a seam down the middle, a rivet in each corner, brushed streaks
+                    if (px == 7 || py == 7) return U.C(70, 74, 88);
+                    if ((px == 2 || px == 12) && (py == 2 || py == 12)) return U.C(220, 226, 236);
+                    s = 0.9f + 0.15f * U.H01(gx >> 3, gy, 21);
                     break;
                 case Block.Obsidian:
                     if ((px + py) % 9 == 0 && n > 0.4f) return U.C(110, 80, 150);
@@ -324,6 +335,51 @@ namespace DigDeep
                     else if (n < 0.1f) c = U.C(170, 40, 10);
                     Put(buf, stride, ox, oy, px, py, c);
                 }
+        }
+
+        // A one-way ledge: a thin riveted steel girder (you see and shoot right past it), braced where it ends.
+        // GLASS: the cave shows through a pale blue-green tint; bright edges where it meets the air, and a couple of
+        // diagonal glints
+        static void Glass(Color32[] buf, int stride, int ox, int oy, int wx, int wy, int mask)
+        {
+            Color32 tint = U.C(170, 230, 240), edge = U.C(225, 250, 255), glint = U.C(255, 255, 255);
+            int seed = (wx * 7 + wy * 13) & 3;
+            for (int py = 0; py < 16; py++)
+                for (int px = 0; px < 16; px++)
+                {
+                    int idx = (oy + py) * stride + ox + px;
+                    Color32 under = buf[idx];
+                    bool rim = ((mask & UP) != 0 && py == 15) || ((mask & DOWN) != 0 && py == 0) || ((mask & LEFT) != 0 && px == 0) || ((mask & RIGHT) != 0 && px == 15);   // (mask: the open sides)
+                    Color32 c;
+                    if (rim) c = edge;
+                    else if ((px + py == 12 + seed && px > 2 && px < 11) || (px + py == 15 + seed && px > 5 && px < 12)) c = glint;
+                    else
+                    {
+                        float a = under.a == 0 ? 0.55f : 0.38f;   // (over nothing, in an icon, it still shows)
+                        c = Color32.Lerp(under.a == 0 ? U.C(40, 70, 90) : under, tint, a);
+                        c.a = 255;
+                    }
+                    buf[idx] = c;
+                }
+        }
+
+        static void Ledge(Color32[] buf, int stride, int ox, int oy, int wx, int wy)
+        {
+            var w = Game.I != null ? Game.I.world : null;
+            bool l = w != null && w.Peek(wx - 1, wy) == Block.Plate, r = w != null && w.Peek(wx + 1, wy) == Block.Plate;
+            Color32 rim = U.C(236, 240, 250), lite = U.C(170, 182, 204), mid = U.C(118, 128, 150), dark = U.C(62, 66, 84), bolt = U.C(214, 190, 120);
+            for (int px = 0; px < 16; px++)
+            {
+                Put(buf, stride, ox, oy, px, 15, rim);
+                Put(buf, stride, ox, oy, px, 14, lite);
+                Put(buf, stride, ox, oy, px, 13, ((px + wx * 16) % 8) < 1 ? dark : mid);
+                Put(buf, stride, ox, oy, px, 12, mid);
+                Put(buf, stride, ox, oy, px, 11, dark);
+            }
+            Put(buf, stride, ox, oy, 4, 13, bolt); Put(buf, stride, ox, oy, 11, 13, bolt);
+            // ends: a rounded cap and a little diagonal brace underneath
+            if (!l) { Put(buf, stride, ox, oy, 0, 15, lite); for (int i = 0; i < 5; i++) Put(buf, stride, ox, oy, 2 + i, 10 - i, i == 0 ? mid : dark); }
+            if (!r) { Put(buf, stride, ox, oy, 15, 15, lite); for (int i = 0; i < 5; i++) Put(buf, stride, ox, oy, 13 - i, 10 - i, i == 0 ? mid : dark); }
         }
 
         static void Spikes(Color32[] buf, int stride, int ox, int oy)

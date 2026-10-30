@@ -32,6 +32,29 @@ namespace DigDeep
         float poisonT, poisonDps;
         public bool Poisoned => poisonT > 0f;
 
+        // ACID eats living things (not machines); strong POISON poisons them; FUMES hurt them too
+        float acidHurtT, fumeHurtT;
+        protected virtual bool Machine => this is Clank || this is Drone || this is TeslaCoil;
+        void ChemTick(float dt, byte body)
+        {
+            acidHurtT -= dt; fumeHurtT -= dt;
+            if (Machine || Intangible) return;
+            if (body == Fluids.Acid && acidHurtT <= 0f && Fluids.Concentration(pos, Fluids.Acid) > 0.5f)
+            {
+                acidHurtT = 0.35f;
+                TakeShot(Mathf.Max(2f, maxHp * 0.06f), Vector2.up * 1.5f);
+                G.fx.Burst(pos, 4, new Color(0.85f, 1f, 0.3f), 2f, 0.4f, -3f, 1f, false);
+                if (dead) return;
+            }
+            if (body == Fluids.Poison && Fluids.Concentration(pos, Fluids.Poison) >= 0.6f) Poison(2f, Mathf.Max(1f, maxHp * 0.03f));
+            int fx = Mathf.FloorToInt(pos.x), fy = Mathf.FloorToInt(pos.y);
+            if (fumeHurtT <= 0f && Wd.LiquidType(fx, fy) == Fluids.Fumes && Wd.LiquidAmount(fx, fy) > 0.12f)
+            {
+                fumeHurtT = 0.7f;
+                TakeShot(Mathf.Max(1f, maxHp * 0.03f), Vector2.zero);
+            }
+        }
+
         // FROST: frozen solid in place for a moment. Each foe (bosses too) can only be frozen once every 6 seconds.
         float frozenT, frostCd;
         public bool Frozen => frozenT > 0f;
@@ -52,6 +75,7 @@ namespace DigDeep
         protected virtual void OnTouch(Player p) { }   // after a touch hurts you (bee stings, burning slugs...)
         protected virtual Sprite[] DeathAnim => null;   // played where it dies (a bat's death), instead of a corpse
         protected virtual bool LeavesCorpse => true;
+        public static bool ArrowKill;   // (killed by an arrow: always a body, so the arrow can pin it)
 
         // a frame of one of the extra hand-drawn strips (a slime's squash, a skeleton's punch...), flashing white when hit
         protected Sprite StripFrame(string key, int i)
@@ -78,9 +102,11 @@ namespace DigDeep
         // void creatures burst into a ring of void shards when they die; void bosses also strike out every few seconds
         protected virtual void VoidStrike() { }
 
+        public string kindKey;   // which creature it is (its art key): rerolls never turn a foe into the same thing
         protected void Setup(string name, string key, int baseHp, int depth)
         {
             this.depth = depth;
+            kindKey = key;
             if (GenSpawning && depth > 20 && Random.value < 0.012f) elitePending = true;
             int dd = depth + VoidDeeper;   // in the void you've gone deeper still, not back up
             maxHp = hp = Mathf.Max(1f, Mathf.Round(baseHp * (1f + dd / Biomes.Stretch / 85f) * 2f) / 2f);   // tougher the deeper it lives
@@ -134,12 +160,14 @@ namespace DigDeep
             float d = poisonDps * 0.4f * G.player.s.dotMul * (this is Boss ? 1f : 1.6f);
             hp -= d;
             flash = Mathf.Max(flash, 0.04f);
+            DotGold();
             if (Random.value < 0.6f) G.fx.Burst(pos, 3, new Color(0.5f, 1f, 0.3f), 1.5f, 0.4f, 5f);
         }
 
         public void Freeze(float t)
         {
             if (dead || frostCd > 0f || intangible) return;
+            if (this is Boss || this is WormSegment) { frostCd = 3f; G.fx.Ring(pos, 1.2f, Ice); flash = 0.1f; return; }   // too big to freeze solid: just a chill
             frozenT = t;
             frostCd = 6f;
             vel = Vector2.zero;
@@ -169,6 +197,14 @@ namespace DigDeep
             kickHits.Add(this);
         }
 
+        public bool kickBoom;   // DYNAMITE BOOT: it goes off when it slams into something
+        void KickBoom()
+        {
+            if (!kickBoom) return;
+            kickBoom = false;
+            G.Explode(pos, 2.3f, Mathf.Max(4f, kickDmg * 1.5f), true, true, true);
+        }
+
         public void KickedTick(float dt)
         {
             kickT -= dt; animT += dt; flash -= dt; hurtCd -= dt; contactCd -= dt;
@@ -187,6 +223,7 @@ namespace DigDeep
                 if (Mathf.Abs(vel.x) > 8f)
                 {
                     // slammed into a wall
+                    KickBoom();
                     TakeShot(kickDmg * 0.5f, Vector2.zero);
                     G.cam.Shake(0.15f);
                     G.sfx.Play("land", 0.7f, 0.7f);
@@ -197,7 +234,7 @@ namespace DigDeep
             }
             float vyWas = vel.y;
             bool landed = Wd.MoveY(ref p, half, vel.y * dt, out _);
-            if (landed) { vel.y = vyWas < -6f ? -vyWas * 0.25f : 0f; vel.x *= 0.8f; }   // a little bounce off hard landings
+            if (landed) { if (vyWas < -6f || Mathf.Abs(vel.x) > 8f) KickBoom(); vel.y = vyWas < -6f ? -vyWas * 0.25f : 0f; vel.x *= 0.8f; }   // a little bounce off hard landings
             pos = p;
             bool onGround = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             if (onGround && vel.y <= 0.01f) vel.x = Mathf.MoveTowards(vel.x, 0f, 16f * dt);   // skids to a stop
@@ -208,6 +245,7 @@ namespace DigDeep
                 {
                     if (e.dead || !(e is Enemy o) || kickHits.Contains(o) || o.Intangible || !U.Overlap(pos, half, o.pos, o.half)) continue;
                     kickHits.Add(o);
+                    KickBoom();
                     o.TakeShot(kickDmg, vel.normalized * 4f);
                     if (!o.dead) { o.Launch(vel * 0.85f + Vector2.up * 2f, kickDmg * 0.85f); o.kickHits.UnionWith(kickHits); }
                     vel *= 0.6f;
@@ -315,12 +353,14 @@ namespace DigDeep
         public virtual void Die()
         {
             Kill();
+            if (thrall) Thralls.Remove(this);
+            else if (G.player != null && G.player.s.raiseDead && Random.value < 0.3f) Raise(this);   // DEATH'S GUIDE
             Vector2 kd = lastKnock.sqrMagnitude > 0.01f ? lastKnock : Vector2.up * 3f;
             Vector2 dir = kd.normalized;
             // the body flies off along the killing shot
             if (!(this is Boss))
             {
-                if (DeathAnim != null) G.Spawn(new FrameAnim(pos, DeathAnim, 12f, facing < 0, 12, dir * 2f, 6f));
+                if (DeathAnim != null && !(ArrowKill && LeavesCorpse)) G.Spawn(new FrameAnim(pos, DeathAnim, 12f, facing < 0, 12, dir * 2f, 6f));
                 else if (LeavesCorpse) G.Spawn(new Corpse(this, dir * Mathf.Clamp(kd.magnitude * 1.6f + 7f, 8f, 26f) + Vector2.up * 4f));
             }
             if (voidDone && !(this is Boss) && !(this is WormSegment))
@@ -364,7 +404,7 @@ namespace DigDeep
         void MakeElite()
         {
             elite = true;
-            hp *= 6f; maxHp *= 6f;
+            hp *= 9f; maxHp *= 9f;   // a real fight: it always carries a trinket
             dmg = dmg * 3 / 2;
             gold = Mathf.Max(10, gold * 5);
             novaT = 2.5f + Random.value * 2f;
@@ -424,8 +464,13 @@ namespace DigDeep
         protected bool HasTarget => target != null && !target.dead && !(target is Player pl && (pl.mode == Player.Mode.Dead || pl.Camouflaged));
         protected Vector2 TPos => target != null ? target.pos : G.player.pos;
 
+        // drawn by the Creator (and the like): it knows where you are and comes for you, always
+        public bool enraged;
+        public void Enrage() => enraged = true;
+
         protected void FindTarget(float range, bool needSight, float dt)
         {
+            if (enraged && !thrall && G.player.mode != Player.Mode.Dead && !G.player.Camouflaged) { target = G.player; return; }
             retargetT -= dt;
             if (retargetT > 0f && HasTarget && (TPos - pos).sqrMagnitude < range * range * 1.5f) return;
             retargetT = 0.35f + Random.value * 0.2f;
@@ -434,8 +479,9 @@ namespace DigDeep
             var pl = G.player;
             // SHADOW STEP's decoy draws everything near it
             var dc = Decoy.Active;
-            if (dc != null && !dc.dead && (dc.pos - pos).sqrMagnitude < range * range * 1.5f) { target = dc; return; }
-            if (pl.mode != Player.Mode.Dead && !pl.Camouflaged)   // CAMOUFLAGE: they can't see you
+            if (!thrall && dc != null && !dc.dead && (dc.pos - pos).sqrMagnitude < range * range * 1.5f) { target = dc; return; }
+            if (thrall) range *= 1.5f;   // the risen look further for something to kill
+            if (!thrall && pl.mode != Player.Mode.Dead && !pl.Camouflaged)   // CAMOUFLAGE: they can't see you
             {
                 float d2 = (pl.pos - pos).sqrMagnitude * 0.85f;   // you are always a little more interesting
                 if (pl.Cursed(Curse.Hunted)) d2 *= 0.25f;          // CURSE OF THE HUNTED: they spot you from twice as far
@@ -477,12 +523,38 @@ namespace DigDeep
         public virtual bool Plant => false;   // plants go up like dry hay
 
         // Set alight for t seconds (fire bullets, flames, sparks, burning neighbours).
-        public void Ignite(float t)
+        float burnMul = 1f;   // pets' burns carry BEAST TREATS and the like
+        public void Ignite(float t, float mul = 1f)
         {
             if (dead || fireLike || intangible || this is WormSegment) return;
             if (Wd.FluidAtPoint(pos) == Fluids.Water) return;
-            if (burnT <= 0f) { burnTick = 0.2f; G.sfx.Play("ignite", 0.3f, 1.3f); }
+            if (burnT <= 0f) { burnTick = 0.2f; G.sfx.Play("ignite", 0.3f, 1.3f); burnMul = mul; }
+            else burnMul = Mathf.Max(burnMul, mul);
             burnT = Mathf.Max(burnT, t * G.player.s.dotDur);
+        }
+
+        // PICKPOCKET: every poison or fire bite shakes a coin loose
+        protected void DotGold()
+        {
+            if (!G.player.s.pickpocket || this is WormSegment || Random.value > 0.45f) return;
+            G.Spawn(new Coin(pos + Vector2.up * 0.2f, G.player.s.dotGoldX2 ? 2 : 1, new Vector2(Random.Range(-3f, 3f), Random.Range(4f, 7f)), 0.15f));
+        }
+
+        // HEART OF UNDA: water eats away at foes standing in it
+        float waterTick;
+        void TickWaterHurt(float dt)
+        {
+            if (!G.player.s.waterHurt || this is WormSegment || intangible) return;
+            if (!InWater) { waterTick = 0f; return; }
+            waterTick -= dt;
+            if (waterTick > 0f) return;
+            waterTick = 0.4f;
+            float d = (1.5f + Mathf.Max(0, depth) * 0.012f) * G.player.s.dotMul * (this is Boss ? 1f : 1.6f) * 0.5f;
+            hp -= d;
+            flash = Mathf.Max(flash, 0.04f);
+            G.fx.Burst(pos, 3, new Color(0.4f, 0.75f, 1f), 1.5f, 0.4f, 4f);
+            DotGold();
+            if (hp <= 0f) Die();
         }
 
         void TickBurning(float dt)
@@ -500,17 +572,144 @@ namespace DigDeep
             if (burnTick <= 0f)
             {
                 burnTick = 0.33f / Mathf.Max(0.2f, G.player.s.burnRate);   // BELLOWS: burns tick faster
-                float dps = (1.5f + Mathf.Max(0, depth) * 0.012f) * (Plant ? 3f : 1f) * G.player.s.dotMul * (this is Boss ? 1f : 1.6f);   // burns hurt ordinary foes more
+                float dps = (1.5f + Mathf.Max(0, depth) * 0.012f) * (Plant ? 3f : 1f) * G.player.s.dotMul * burnMul * (this is Boss ? 1f : 1.6f);   // burns hurt ordinary foes more
+                DotGold();
                 TakeShot(dps * 0.33f, Vector2.zero);
                 if (dead) return;
             }
             Fire.IgniteBox(pos, half + new Vector2(0.05f, 0.05f));
             Fire.MeltAround(pos, 1f);
+            // a burning body is a fire like any other: whatever touches it catches, just as fast as from a flame
+            foreach (var o in G.ents)
+                if (!o.dead && o != this && o is Enemy oe && !oe.Burning && !oe.Intangible && U.Overlap(pos, half + new Vector2(0.05f, 0.05f), oe.pos, oe.half)) oe.Ignite(2f);
+            var pl = G.player;
+            if (pl.mode != Player.Mode.Dead && U.Overlap(pos, half + new Vector2(0.05f, 0.05f), pl.pos, Player.Half))
+            {
+                burnTouchT += dt;
+                if (burnTouchT > 0.5f) pl.SetOnFire();
+            }
+            else burnTouchT = 0f;
             if (Random.value < 0.7f) G.fx.Burst(pos + new Vector2(Random.Range(-half.x, half.x), Random.Range(-half.y, half.y)), 1, new Color(1f, Random.Range(0.4f, 0.9f), 0.15f), 1.5f, 0.4f, -6f, 1f, false);
+        }
+
+        // nothing from outside gets into a boss arena (worms tunnelling, bats flying): only what was born in one stays in it
+        bool arenaChecked, arenaOk;
+        Vector2 lastOut;
+        void ArenaGuard()
+        {
+            bool inside = false;
+            foreach (var a in BossArena.All) if (!a.dead && a.Inside(pos)) { inside = true; break; }
+            if (!arenaChecked) { arenaChecked = true; arenaOk = inside; lastOut = pos; }
+            if (arenaOk) return;
+            if (inside) { pos = lastOut; vel = -vel * 0.3f; }
+            else lastOut = pos;
+        }
+
+        bool wasWetE = true;
+
+        // under water and out of breath: it swims up and makes for the nearest way out
+        protected bool drowning;
+        float burnTouchT;
+        static float helpCd;
+        protected int escapeDir = 1;
+        float escapeT;
+        int EscapeSide()
+        {
+            for (int k = 1; k <= 10; k++)
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    Vector2 q = pos + new Vector2(s * k, 1f);
+                    int qx = Mathf.FloorToInt(q.x), qy = Mathf.FloorToInt(q.y);
+                    if (Wd.Solid(qx, qy)) continue;
+                    if (Wd.LiquidType(qx, qy) != Fluids.Water || Wd.LiquidAmount(qx, qy) < 0.3f) return s;   // air (or shallows) that way
+                }
+            return facing;
+        }
+
+        // ---------------------------------------------------------------- DEATH'S GUIDE: the risen
+        // A slain foe can rise again on your side: ghostly, it hunts your enemies, never you, and it keeps up with
+        // you (into a boss hall too). Three at most: the oldest crumbles when a fourth rises.
+        public bool thrall;
+        public static readonly List<Enemy> Thralls = new List<Enemy>();
+        public static bool ThrallFiring;   // (set while a risen foe ticks: its shots are yours)
+
+        public static void Raise(Enemy dead)
+        {
+            if (dead == null || dead is Boss || dead is WormSegment || dead.thrall) return;
+            var at = dead.pos;
+            var type = dead.GetType();
+            int depth = dead.depth;
+            G.Spawn(new DelayedCall(0.7f, () =>
+            {
+                var e = Make(type, at, depth);
+                if (e == null) return;
+                e.pos = at;
+                e.thrall = true;
+                e.team = Team.Player;
+                e.maxHp = e.hp = Mathf.Max(1f, e.maxHp * 0.8f);
+                e.gold = 0;
+                e.arenaChecked = true; e.arenaOk = true;
+                Thralls.RemoveAll(t => t == null || t.dead);
+                while (Thralls.Count >= 3) { var old = Thralls[0]; Thralls.RemoveAt(0); if (!old.dead) { G.fx.Smoke(old.pos, 8, 0.8f); old.Kill(); } }
+                Thralls.Add(e);
+                G.Spawn(e);
+                G.fx.Burst(at, 24, new Color(0.7f, 0.45f, 1f), 5f, 0.6f, -6f);
+                G.fx.Ring(at, 1.2f, new Color(0.75f, 0.5f, 1f));
+                G.sfx.Play("death", 0.4f, 1.6f);
+                G.Popup(at + Vector2.up, "RISEN", new Color(0.8f, 0.6f, 1f));
+            }));
+        }
+
+        // a fresh foe of the same kind (whatever its constructor wants: grid position, depth, defaults)
+        static Enemy Make(System.Type type, Vector2 at, int depth)
+        {
+            foreach (var ctor in type.GetConstructors())
+            {
+                var ps = ctor.GetParameters();
+                var args = new object[ps.Length];
+                int ints = 0; bool ok = true;
+                for (int i = 0; i < ps.Length && ok; i++)
+                {
+                    var pt = ps[i].ParameterType;
+                    if (pt == typeof(int)) { args[i] = ints == 0 ? Mathf.FloorToInt(at.x) : ints == 1 ? Mathf.FloorToInt(at.y) : depth; ints++; }
+                    else if (pt == typeof(Vector2)) args[i] = at;
+                    else if (pt == typeof(bool)) args[i] = false;
+                    else if (pt == typeof(float)) args[i] = 1f;
+                    else if (pt.IsEnum) args[i] = System.Enum.GetValues(pt).GetValue(0);
+                    else ok = false;
+                }
+                if (!ok) continue;
+                try { return ctor.Invoke(args) as Enemy; } catch { }
+            }
+            return null;
+        }
+
+        // the risen keep up with you: too far behind (or left outside the boss hall you're in), it drifts to your side
+        void ThrallTick()
+        {
+            var p = G.player;
+            if (p == null || p.mode == Player.Mode.Dead) return;
+            bool behind = (p.pos - pos).sqrMagnitude > 15f * 15f;
+            foreach (var a in BossArena.All) if (!a.dead && a.Active && a.Inside(p.pos) && !a.Inside(pos)) behind = true;
+            if (!behind) return;
+            G.fx.Burst(pos, 10, new Color(0.7f, 0.45f, 1f), 3f, 0.5f, -4f);
+            Vector2 to = p.pos + new Vector2(Random.value < 0.5f ? -1.4f : 1.4f, 0.3f);
+            if (Wd.BoxSolid(to, half)) to = p.pos;
+            pos = to; vel = Vector2.zero;
+            G.fx.Burst(pos, 14, new Color(0.7f, 0.45f, 1f), 3f, 0.5f, -4f);
         }
 
         protected void BaseTick(float dt)
         {
+            if (!(this is Boss) && !(this is WormSegment) && BossArena.All.Count > 0 && !thrall) ArenaGuard();
+            if (thrall) ThrallTick();
+            // anything diving into water splashes it, by its size and speed
+            if (!(this is Fish) && !(this is WormSegment))
+            {
+                bool wetNow = Wd.FluidAtPoint(pos) == Fluids.Water;
+                if (wetNow && !wasWetE && vel.sqrMagnitude > 4f) Fluids.Impact(pos - new Vector2(0f, half.y * 0.5f), Mathf.Max(half.x, half.y) * 1.6f, vel);
+                wasWetE = wetNow;
+            }
             animT += dt; flash -= dt; hurtCd -= dt; contactCd -= dt; frostCd -= dt; shockCd -= dt;
             if (elitePending) { elitePending = false; if (CanBeElite) MakeElite(); }
             if (!voidDone && World.Void && !(this is SkyGod)) MakeVoid();
@@ -521,6 +720,8 @@ namespace DigDeep
             }
             TickBurning(dt);
             if (dead) return;
+            TickWaterHurt(dt);
+            if (dead) return;
             if (elite) EliteTick(dt);
             if (poisonT > 0f)
             {
@@ -529,12 +730,22 @@ namespace DigDeep
                 if (hp <= 0f) { Die(); return; }
             }
             var p = G.player;
-            if (p.mode != Player.Mode.Dead && !intangible && !Harmless && contactCd <= 0f && U.Overlap(pos, half * 0.85f, p.pos, Player.Half))
+            if (!thrall && p.mode != Player.Mode.Dead && !intangible && !Harmless && contactCd <= 0f && !(p.Camouflaged && p.s.camoGhost) && U.Overlap(pos, half * 0.85f, p.pos, Player.Half))
             {
                 p.Hurt(dmg, pos);
                 contactCd = 0.5f;
                 OnTouch(p);
             }
+            // the risen maul anything of the enemy's they touch
+            if (thrall && !intangible && contactCd <= 0f)
+                foreach (var e in G.ents)
+                {
+                    if (e.dead || !(e is Enemy o) || o.team == Team.Player || o.Intangible) continue;
+                    if (!U.Overlap(pos, half * 0.9f, o.pos, o.half)) continue;
+                    o.TakeShot(Mathf.Max(2f, dmg * 0.06f), (o.pos - pos).normalized * 5f + Vector2.up * 2f);
+                    contactCd = 0.5f;
+                    break;
+                }
             // beasts maul raiders that get too close
             if (team == Team.Beast && !intangible && !Harmless && contactCd <= 0f)
                 foreach (var e in G.ents)
@@ -548,6 +759,8 @@ namespace DigDeep
             // liquids
             byte body = Wd.FluidAtPoint(pos);
             byte head = Wd.FluidAtPoint(pos + Vector2.up * half.y * 0.6f);
+            if (body == Fluids.Water || body == Fluids.Haste || body == Fluids.Poison || body == Fluids.Acid) Fluids.Stir(pos, vel, Mathf.Clamp(half.x, 0.25f, 1f));   // moving through it stirs it
+            ChemTick(dt, body);
             if (fireLike && (body == Fluids.Water || head == Fluids.Water))
             {
                 G.fx.Smoke(pos, 10, 1.3f);
@@ -559,6 +772,11 @@ namespace DigDeep
             if (body == Fluids.Water && !(this is Boss)) vel.y = Mathf.Max(vel.y, -4f);   // sinks slowly
             // drowning / choking on steam
             bool choking = !waterLike && !(this is Boss) && (head == Fluids.Water || head == Fluids.Steam);
+            bool wasDrowning = drowning;
+            drowning = choking && head == Fluids.Water;
+            if (drowning && !wasDrowning && team == Team.Beast && helpCd <= Time.time && !(this is Boss)) { helpCd = Time.time + 6f; G.sfx.PlayAt(pos, "help", 0.5f, Random.Range(0.9f, 1.15f), 0.08f, 14f); }   // a cry for help as it goes under
+            escapeT -= dt;
+            if (drowning && escapeT <= 0f) { escapeT = 0.6f; escapeDir = EscapeSide(); }
             if (choking)
             {
                 breath -= dt;
@@ -590,12 +808,74 @@ namespace DigDeep
                 if (G.InReveal(pos)) c = Color.Lerp(c, new Color(1f, 0.25f, 0.25f), (0.45f + 0.15f * Mathf.Sin(Time.time * 6f)) * G.RevealFade);
                 if (voidDone) c = Color.Lerp(c, VoidTint, 0.55f) * new Color(0.75f, 0.7f, 0.85f, 1f);
                 if (elite) c = Color.Lerp(c, EliteColor, 0.35f + 0.15f * Mathf.Sin(Time.time * 5f));
+                if (thrall) c = Color.Lerp(c, new Color(0.75f, 0.55f, 1f, 0.85f), 0.55f + 0.1f * Mathf.Sin(Time.time * 4f));   // risen: ghostly violet
                 sr.color = c;
             }
             WeakSpot();
             Place(yOff);
+            XRay();
             // a hit makes it pop bigger for a frame or two
             if (!(this is Boss)) { float k = (1f + Mathf.Max(0f, flash) * 3f) * (elite ? 1.4f : 1f); go.transform.localScale = new Vector3(k, k, 1f); }
+        }
+
+        // X-RAY: a foe hidden in water, poison, acid, mist or thick gas keeps a red outline drawn over everything,
+        // so you can always see where it is
+        GameObject xrGo;
+        SpriteRenderer xrSr;
+        static readonly Dictionary<Sprite, Sprite> outlines = new Dictionary<Sprite, Sprite>();
+
+        void XRay()
+        {
+            bool covered = false;
+            if (sr != null && sr.enabled && !intangible)
+            {
+                byte f = Wd.FluidAtPoint(pos);
+                covered = f != Fluids.None;
+                if (!covered)
+                {
+                    int x = Mathf.FloorToInt(pos.x), y = Mathf.FloorToInt(pos.y);
+                    byte lt = Wd.LiquidType(x, y);
+                    covered = Fluids.IsGas(lt) && Wd.LiquidAmount(x, y) > 0.3f;
+                }
+            }
+            if (!covered) { if (xrSr != null) xrSr.enabled = false; return; }
+            var o = Outline(sr.sprite);
+            if (o == null) return;
+            if (xrGo == null)
+            {
+                xrGo = new GameObject("XRay");
+                xrGo.transform.SetParent(go.transform, false);
+                xrSr = Art.AddSR(xrGo, o, 99);
+            }
+            xrSr.enabled = true;
+            xrSr.sprite = o;
+            xrSr.flipX = sr.flipX; xrSr.flipY = sr.flipY;
+            xrSr.color = new Color(1f, 0.2f, 0.18f, 0.6f + 0.25f * Mathf.Sin(Time.time * 7f));
+        }
+
+        // the edge pixels of a sprite, in white (tinted red when drawn)
+        static Sprite Outline(Sprite s)
+        {
+            if (s == null) return null;
+            if (outlines.TryGetValue(s, out var o)) return o;
+            try
+            {
+                var r = s.textureRect;
+                int w = Mathf.RoundToInt(r.width), h = Mathf.RoundToInt(r.height), rx = Mathf.RoundToInt(r.x), ry = Mathf.RoundToInt(r.y);
+                var src = s.texture.GetPixels32();
+                int tw = s.texture.width;
+                bool On(int x, int y) => x >= 0 && y >= 0 && x < w && y < h && src[(ry + y) * tw + rx + x].a > 40;
+                var px = new Color32[w * h];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                        if (On(x, y) && (!On(x - 1, y) || !On(x + 1, y) || !On(x, y - 1) || !On(x, y + 1))) px[y * w + x] = new Color32(255, 255, 255, 255);
+                var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+                tex.SetPixels32(px); tex.Apply();
+                o = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(s.pivot.x / r.width, s.pivot.y / r.height), s.pixelsPerUnit, 0, SpriteMeshType.FullRect);
+            }
+            catch { o = null; }
+            outlines[s] = o;
+            return o;
         }
 
         // SHARPSHOOTER: a red dot on the weak spot of everything
@@ -712,8 +992,8 @@ namespace DigDeep
             float dist = d.magnitude;
             if (!awake)
             {
-                if ((HasTarget && dist < 7f) || flash > 0f) { awake = true; G.sfx.Play("bat", 0.4f); }
-                else { animT = 0f; Draw(0f); return; }
+                if ((HasTarget && (dist < 7f || enraged)) || flash > 0f) { awake = true; G.sfx.Play("bat", 0.4f); }
+                else { animT = 0f; DrawHanging(); return; }
             }
             t += dt;
             Vector2 goal = HasTarget ? tp : pos + new Vector2(Mathf.Sin(t) * 2f, 0f);
@@ -758,6 +1038,21 @@ namespace DigDeep
             pos = p;
             if (Mathf.Abs(vel.x) > 0.1f) facing = vel.x > 0 ? 1 : -1;
             Draw(0f);
+        }
+
+        // asleep, a bat hangs from the ceiling with its wings folded (its own picture, when there is one)
+        void DrawHanging()
+        {
+            var hang = imp ? null : SpriteSheet.Frames("bathang");
+            if (hang == null || hang.Length == 0) { Draw(0f); return; }
+            var s = hang[0];
+            float above = (s.rect.height - s.pivot.y) / s.pixelsPerUnit, below = s.pivot.y / s.pixelsPerUnit;
+            int cy = Mathf.FloorToInt(pos.y);
+            float yOff = Wd.Solid(Mathf.FloorToInt(pos.x), cy + 1) ? cy + 1f - pos.y - above : (above - below) * -0.5f;
+            Draw(yOff);
+            if (dead || sr == null) return;
+            sr.sprite = s;
+            if (flash > 0f) sr.color = new Color(1f, 0.6f, 0.6f);
         }
 
         public override void AddLight(Lighting l)
@@ -847,7 +1142,12 @@ namespace DigDeep
             triple = depth > 140;
             gold = 3;
             blood = new Color(0.9f, 0.4f, 0.7f);
+            // jungle spitters hawk up gobs of liquid now and then: some poison, some acid
+            if (Biomes.Index(depth) == Biomes.Jungle) juice = Random.value < 0.5f ? Fluids.Poison : Fluids.Acid;
         }
+
+        readonly byte juice;
+        int shots;
 
         public override void Tick(float dt)
         {
@@ -864,9 +1164,21 @@ namespace DigDeep
                     shootT = 2.6f;
                     animT = 0.17f;
                     Vector2 dir = (d + Vector2.up * 0.4f).normalized;
-                    Spit(dir);
-                    if (triple) { Spit(U.Rot(dir, 18f)); Spit(U.Rot(dir, -18f)); }
-                    G.sfx.Play("shoot", 0.5f, 0.6f);
+                    shots++;
+                    if (juice != 0 && shots % 2 == 0)
+                    {
+                        // a lobbed gob of poison or acid: it bursts where it lands and pools there
+                        float tFly = Mathf.Clamp(Mathf.Abs(d.x) / 6f, 0.45f, 1.2f);
+                        var v = new Vector2(d.x / tFly, (d.y + 0.5f * LiquidGlob.Grav * tFly * tFly) / tFly);
+                        G.Spawn(new LiquidGlob(pos + Vector2.up * 0.25f, v, juice, 26, dmg, this));
+                        G.sfx.Play("splat", 0.5f, 0.7f);
+                    }
+                    else
+                    {
+                        Spit(dir);
+                        if (triple) { Spit(U.Rot(dir, 18f)); Spit(U.Rot(dir, -18f)); }
+                        G.sfx.Play("shoot", 0.5f, 0.6f);
+                    }
                 }
             }
             vel.x = 0f;
@@ -880,5 +1192,48 @@ namespace DigDeep
 
         void Spit(Vector2 dir) =>
             G.Spawn(new Bullet(pos + Vector2.up * 0.25f, dir * 6f, Team.Beast, EnemyShotDamage, dmg, "b_spit", new Color(0.6f, 1f, 0.4f)));
+    }
+
+    // A gob of poison or acid lobbed by a jungle spitter: it bursts on whatever it hits into a splash of the liquid,
+    // which then pools on the ground and does its work there
+    public class LiquidGlob : Entity
+    {
+        public const float Grav = 20f;
+        Vector2 vel;
+        readonly byte type;
+        readonly int grains, dmg;
+        readonly Enemy owner;
+        float t;
+
+        public override bool AlwaysActive => true;
+
+        public LiquidGlob(Vector2 at, Vector2 v, byte type, int grains, int dmg, Enemy owner)
+        {
+            pos = at; vel = v; this.type = type; this.grains = grains; this.dmg = dmg; this.owner = owner;
+            MakeGO("Glob", Art.Bullets.TryGetValue("b_spit", out var s) ? s : Art.Bullets["b_enemy"], 20);
+            sr.color = type == Fluids.Acid ? new Color(0.9f, 1f, 0.35f) : new Color(0.45f, 0.9f, 0.3f);
+            go.transform.localScale = Vector3.one * 1.4f;
+            Place();
+        }
+
+        public override void Tick(float dt)
+        {
+            t += dt;
+            vel.y -= Grav * dt;
+            Vector2 next = pos + vel * dt;
+            bool hit = t > 4f || Wd.Solid(Mathf.FloorToInt(next.x), Mathf.FloorToInt(next.y));
+            var pl = G.player;
+            if (!hit && pl.mode != Player.Mode.Dead && U.Overlap(next, new Vector2(0.2f, 0.2f), pl.pos, Player.Half))
+            {
+                hit = true;
+                pl.Hurt(dmg, pos);
+                if (type == Fluids.Poison) pl.Poison(3f);
+            }
+            if (!hit) { pos = next; if (Random.value < 0.5f) G.fx.Burst(pos, 1, sr.color, 0.5f, 0.3f, 8f); Place(); return; }
+            Fluids.Spill(pos - vel.normalized * 0.15f, type, grains, vel);
+            G.fx.Burst(pos, 10, sr.color, 4f, 0.35f, 15f);
+            G.sfx.PlayAt(pos, "splat", 0.5f, type == Fluids.Acid ? 1.3f : 0.9f);
+            Kill();
+        }
     }
 }

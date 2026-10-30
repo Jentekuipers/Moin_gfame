@@ -37,7 +37,7 @@ namespace DigDeep
             if (en.dead) return;
             if (s.shotPoison || s.petPoison) en.Poison(3f, Mathf.Max(0.3f, dmg * 0.35f));
             if (s.shotFrost) en.Freeze(1f);
-            if (s.petFire) en.Ignite(2f);
+            if (s.petFire) en.Ignite(2f, s.petMul);
         }
     }
 
@@ -72,6 +72,7 @@ namespace DigDeep
 
         protected virtual void OnVanish() => owner.TempPetDied();
         protected bool homingBack;
+        float bossBiteT = 1f;
         protected virtual bool CanGhost => true;
 
         protected Pet(Player p, string kind)
@@ -88,8 +89,12 @@ namespace DigDeep
         protected float Dmg(float b) => owner.Dmg(b) * owner.s.petMul;
 
         // the closest foe within r (optionally only ones it can see)
+        // a boss fight: pets reach much further (so they can still hurt a boss that flies)
+        protected static bool BossFight => G.boss != null && !G.boss.dead;
+
         protected Enemy Nearest(Vector2 from, float r, bool sight)
         {
+            if (BossFight) r *= 2.5f;
             Enemy best = null;
             float bd = r * r;
             foreach (var e in G.ents)
@@ -105,7 +110,10 @@ namespace DigDeep
 
         protected bool Bite(Enemy en, float dmg, Vector2 knock)
         {
-            if (!en.TakeShot(dmg, knock)) return false;
+            Unlocks.Src = 2;   // (a kill from this bite counts as the pet's)
+            bool landed = en.TakeShot(dmg, knock);
+            Unlocks.Src = 0;
+            if (!landed) return false;
             Spent(dmg);
             Pets.Status(en, dmg);
             G.fx.Blood(en.pos, knock.normalized, en.BloodColor, 4);
@@ -135,10 +143,30 @@ namespace DigDeep
             {
                 pos = Vector2.MoveTowards(pos, owner.pos + Vector2.up * 0.6f, (10f + far * 1.5f) * dt);
                 vel = Vector2.zero;
-                if ((owner.pos - pos).magnitude < 1.2f) { homingBack = false; G.fx.Burst(pos, 8, new Color(0.85f, 0.9f, 1f, 0.8f), 2f, 0.3f, 0f); }
+                if ((owner.pos - pos).magnitude < 1.2f)
+                {
+                    // back at your side: it only turns solid again somewhere it fits (never inside a block)
+                    if (!FreeAt(pos)) pos = SafeSpot();
+                    homingBack = false; G.fx.Burst(pos, 8, new Color(0.85f, 0.9f, 1f, 0.8f), 2f, 0.3f, 0f);
+                }
             }
             else Behave(dt);
             if (dead) return;
+            // in a boss fight every pet also flings a little spirit-bite at the boss when it's out of its reach
+            bossBiteT -= dt;
+            if (BossFight && !homingBack && !temp && bossBiteT <= 0f)
+            {
+                Enemy bt = G.boss;
+                foreach (var b in new[] { G.boss, G.boss2 })
+                    if (b != null && !b.dead && !b.Intangible && (b.pos - pos).sqrMagnitude < (bt.pos - pos).sqrMagnitude) bt = b;
+                Vector2 d = bt.pos - pos;
+                if (!bt.Intangible && d.magnitude > 1.6f && d.magnitude < 11f)
+                {
+                    bossBiteT = 1.1f;
+                    G.Spawn(Bullet.Pet(pos, d.normalized * 17f, Dmg(1.1f), new Color(0.85f, 0.95f, 1f)));
+                    G.fx.Burst(pos, 3, new Color(0.85f, 0.95f, 1f), 2f, 0.25f, 0f);
+                }
+            }
             if (Mathf.Abs(vel.x) > 0.3f) facing = vel.x > 0f ? 1 : -1;
             sr.sprite = frames[((int)(t * 8f)) % frames.Length];
             sr.flipX = facing < 0;
@@ -149,6 +177,12 @@ namespace DigDeep
         }
 
         protected abstract void Behave(float dt);
+
+        // walking pets can't stand inside blocks (flyers don't care)
+        protected virtual bool FreeAt(Vector2 p) => true;
+
+        // a free spot by the owner: their own feet are always clear
+        protected virtual Vector2 SafeSpot() => owner.pos;
 
         // fly towards a point with a little lag, like a spring
         protected void Follow(Vector2 goal, float stiff, float dt)

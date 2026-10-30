@@ -14,8 +14,9 @@ namespace DigDeep
 
         protected void WalkMove(float sp, float dt, bool hop, bool turnAtLedge = true)
         {
+            if (drowning) { facing = escapeDir; sp = Mathf.Max(sp, 2.5f); hop = true; turnAtLedge = false; }
             vel.x = U.Approach(vel.x, facing * sp, 20f * dt);
-            vel.y = Mathf.Max(vel.y - 40f * dt, -16f);
+            vel.y = drowning ? U.Approach(vel.y, 4.5f, 40f * dt) : Mathf.Max(vel.y - 40f * dt, -16f);   // drowning: it swims for the surface
             Vector2 p = pos;
             if (Wd.MoveX(ref p, half, vel.x * dt, out _))
             {
@@ -37,6 +38,30 @@ namespace DigDeep
         {
             vel.x = U.Approach(vel.x, 0f, 20f * dt);
             WalkMove(0f, dt, false, false);
+        }
+
+        // Chasing: face the way a path around the rock leads (re-planned a few times a second, so it follows the
+        // cave as it's dug out). Returns true while it's following a path (so it mustn't turn back at ledges).
+        float navT; int navDir; bool navHop, navOn;
+        protected bool Chase(Vector2 target, float dt, float hopVel = 10f)
+        {
+            navT -= dt;
+            if (navT <= 0f)
+            {
+                navT = 0.35f + Random.value * 0.1f;
+                bool tall = half.y > 0.5f;
+                Vector2 tf = target + Vector2.down * (Player.Half.y - 0.05f);
+                navOn = GroundNav.Step(new Vector2(pos.x, pos.y - half.y), tf, tall, out navDir, out navHop) && navDir != 0;
+            }
+            if (!navOn) { facing = target.x > pos.x ? 1 : -1; return false; }
+            facing = navDir;
+            if (navHop && onGround && vel.y <= 0.1f)
+            {
+                // the next step is up a block: hop when at its foot
+                int fx = Mathf.FloorToInt(pos.x + facing * (half.x + 0.25f)), fy = Mathf.FloorToInt(pos.y - half.y + 0.05f);
+                if (Wd.Solid(fx, fy)) { vel.y = hopVel; navHop = false; }
+            }
+            return true;
         }
     }
 

@@ -74,8 +74,8 @@ namespace DigDeep
     // SLIMES: the water slimes, now hand-drawn. They wobble along, stretch tall as they fall and squash when they land.
     public class Slime : Walker
     {
-        float fallT, landT, hitT;
-        bool wasGround = true;
+        float fallT, landT, hitT, jumpCd = 1.5f, ledgeT;
+        bool wasGround = true, leaping, braveLedges;
 
         public Slime(int x, int y, int depth)
         {
@@ -95,7 +95,24 @@ namespace DigDeep
             FindTarget(7f, false, dt);
             float sp = 1.6f * (1f + depth / 500f);
             if (HasTarget && Mathf.Abs(TPos.y - pos.y) < 1f && Mathf.Abs(TPos.x - pos.x) < 5.5f) { facing = TPos.x > pos.x ? 1 : -1; sp *= 1.5f; }
-            WalkMove(sp, dt, HasTarget);
+            // now and then it leaps at you
+            jumpCd -= dt;
+            if (HasTarget && onGround && jumpCd <= 0f && Mathf.Abs(TPos.x - pos.x) < 6f && TPos.y > pos.y - 3f)
+            {
+                jumpCd = Random.Range(1.8f, 3.5f);
+                if (Random.value < 0.6f)
+                {
+                    facing = TPos.x > pos.x ? 1 : -1;
+                    vel = new Vector2(facing * Mathf.Clamp(Mathf.Abs(TPos.x - pos.x) * 1.6f, 3f, 7.5f), Random.Range(8f, 11f));
+                    leaping = true;
+                    G.sfx.Play("splat", 0.3f, 1.5f);
+                }
+            }
+            if (onGround && vel.y <= 0f) leaping = false;
+            // it doesn't mind dropping off a ledge (chasing you it never stops at one; wandering, now and then)
+            ledgeT -= dt;
+            if (ledgeT <= 0f) { ledgeT = Random.Range(2f, 5f); braveLedges = Random.value < 0.4f; }
+            WalkMove(leaping ? Mathf.Abs(vel.x) : sp, dt, HasTarget, !(HasTarget || braveLedges || leaping));
             if (!onGround) fallT += dt; else fallT = 0f;
             if (onGround && !wasGround) landT = 0.3f;
             wasGround = onGround;
@@ -161,14 +178,27 @@ namespace DigDeep
         }
     }
 
-    // SKELETON: a heap of bones on the floor... until you come close. Then it pulls itself together, shambles after
-    // you and punches. Smashed, it falls apart into bones.
+    // SKELETON: bones buried in a dirt block. Dig the dirt out and it pulls itself together, shambles after you and
+    // punches. While it rises it can't be hurt until it's nearly up, and it can't hurt you until it's fully up.
+    // Smashed, it falls apart into bones. (One that isn't buried wakes when you come close.)
     public class Skeleton : Walker
     {
-        bool awake;
+        bool awake, buried;
+        int bx, by;
         float wakeT, punchT, punchCd = 1f;
         bool punched;
+        const float WakeTime = 1.1f, HurtableAt = 0.3f;
         protected override bool Harmless => !awake || wakeT > 0f;
+
+        // sink it into a dirt block where it stands
+        public void Bury()
+        {
+            bx = Mathf.FloorToInt(pos.x); by = Mathf.FloorToInt(pos.y);
+            if (Wd.Get(bx, by) != Block.Air) return;
+            Wd.Set(bx, by, Block.Dirt);
+            buried = true;
+            intangible = true;   // shots and homing ignore it until it's nearly up
+        }
 
         public Skeleton(int x, int y, int depth)
         {
@@ -184,11 +214,13 @@ namespace DigDeep
 
         public override bool Hurt(float d, Vector2 knock)
         {
-            if (!awake) { awake = true; wakeT = 0.6f; }
+            if (buried && !awake) return false;           // safe inside its dirt
+            if (!awake) { awake = true; wakeT = WakeTime; return false; }
+            if (wakeT > HurtableAt) return false;         // still pulling itself together
             return base.Hurt(d, knock);
         }
 
-        public void Wake() { if (!awake) { awake = true; wakeT = 1.1f; } }
+        public void Wake() { if (!awake) { awake = true; wakeT = WakeTime; buried = false; G.sfx.Play("dig", 0.5f, 0.6f); } }
 
         public override void Die()
         {
@@ -205,16 +237,26 @@ namespace DigDeep
             Sprite over = null;
             if (!awake)
             {
-                Fall(dt);
-                if (HasTarget && (TPos - pos).sqrMagnitude < 16f) { awake = true; wakeT = 1.1f; G.sfx.Play("dig", 0.5f, 0.6f); }
+                if (buried)
+                {
+                    // the dirt it lies in is gone: up it comes
+                    if (!Wd.Solid(bx, by)) { Wake(); G.fx.Burst(pos, 10, new Color(0.92f, 0.92f, 0.86f), 3f, 0.4f, 8f); }
+                    else if (Random.value < 0.01f) G.fx.Burst(pos + Vector2.up * 0.3f, 1, new Color(0.6f, 0.5f, 0.4f), 0.6f, 0.4f, 6f);
+                }
+                else
+                {
+                    Fall(dt);
+                    if (HasTarget && (TPos - pos).sqrMagnitude < 16f) Wake();
+                }
                 over = StripFrame("skel_wake", 0);
             }
             else if (wakeT > 0f)
             {
                 // the bones rattle up into a skeleton
                 wakeT -= dt;
+                intangible = wakeT > HurtableAt;
                 Fall(dt);
-                over = StripFrame("skel_wake", (int)((1.1f - wakeT) / 1.1f * 8f));
+                over = StripFrame("skel_wake", (int)((WakeTime - wakeT) / WakeTime * 8f));
             }
             else if (punchT > 0f)
             {
@@ -239,15 +281,17 @@ namespace DigDeep
             {
                 punchCd -= dt;
                 float sp = 1.5f;
+                bool path = false;
                 if (HasTarget)
                 {
-                    facing = TPos.x > pos.x ? 1 : -1;
-                    if (Mathf.Abs(TPos.y - pos.y) < 1f && Mathf.Abs(TPos.x - pos.x) < 1.2f && punchCd <= 0f) { punchT = 0.7f; punched = false; punchCd = 1.4f; }
+                    path = Chase(TPos, dt);
+                    if (Mathf.Abs(TPos.y - pos.y) < 1f && Mathf.Abs(TPos.x - pos.x) < 1.2f && punchCd <= 0f) { facing = TPos.x > pos.x ? 1 : -1; punchT = 0.7f; punched = false; punchCd = 1.4f; }
                 }
-                WalkMove(sp, dt, HasTarget);
+                WalkMove(sp, dt, HasTarget, !path);
             }
             Draw(0f);
             if (!dead && over != null) sr.sprite = over;
+            if (!dead && buried && !awake) sr.color = new Color(0.55f, 0.47f, 0.4f, 0.85f);   // bones showing through the dirt
         }
     }
 
@@ -327,15 +371,25 @@ namespace DigDeep
             FindTarget(11f, false, dt);
             leapCd -= dt;
             float sp = 2f;
-            if (HasTarget && Mathf.Abs(TPos.y - pos.y) < 3f)
+            if (HasTarget)
             {
-                facing = TPos.x > pos.x ? 1 : -1;
+                Chase(TPos, dt, 11f);
                 sp = 5.5f;
-                if (onGround && leapCd <= 0f && Mathf.Abs(TPos.x - pos.x) < 3.5f)
+                float dy = TPos.y - pos.y, dx = Mathf.Abs(TPos.x - pos.x);
+                if (onGround && leapCd <= 0f && dx < 3.5f && Mathf.Abs(dy) < 1.5f)
                 {
+                    facing = TPos.x > pos.x ? 1 : -1;
                     vel = new Vector2(facing * 9f, 8f);
                     leapCd = 1.8f;
                     G.sfx.Play("jump", 0.4f, 0.8f);
+                }
+                // you're up on a ledge: it springs up after you
+                else if (onGround && leapCd <= 0f && dy > 1.2f && dy < 4.5f && dx < 5f && !Wd.Solid(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y + 1.2f)))
+                {
+                    facing = TPos.x > pos.x ? 1 : -1;
+                    vel = new Vector2(facing * Mathf.Min(6f, dx * 2f), 14f);
+                    leapCd = 1.4f;
+                    G.sfx.Play("jump", 0.4f, 0.7f);
                 }
             }
             if (onGround || vel.y <= 0f) WalkMove(sp, dt, HasTarget, !HasTarget);

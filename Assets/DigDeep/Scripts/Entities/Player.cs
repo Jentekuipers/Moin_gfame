@@ -53,7 +53,7 @@ namespace DigDeep
             get
             {
                 float r = s.swing > 1f ? 1f + (s.swing - 1f) * 0.5f : s.swing;
-                return Mathf.Clamp(r * (BuffActive(Buff.Rate) ? 1.35f : 1f), 0.3f, 2.5f) * Mathf.Clamp(s.rateMult, 0.2f, 3f);   // multipliers go past the cap
+                return Mathf.Clamp(r * (BuffActive(Buff.Rate) ? 1.35f : 1f), 0.3f, 2.5f) * Mathf.Clamp(s.rateMult, 0.2f, 3f) * PerkRate();   // multipliers go past the cap
             }
         }
         public float Luck => s.luck;
@@ -63,7 +63,8 @@ namespace DigDeep
         public float WeaponDamage => attack != null ? Dmg(attack.dmg * attack.count) : 0f;
         public float SwingsPerSec => attack != null ? SwingRate / Mathf.Max(0.02f, attack.delay * DelayMul(weapon)) : 0f;
 
-        public bool Invulnerable => Ascent.Shielded || invuln > 0f || grace > 0f || mode == Mode.Quick || mode == Mode.Dig || mode == Mode.Pound || mode == Mode.Parry || ReloadGhosting;
+        public bool Invulnerable => Ascent.Shielded || invuln > 0f || grace > 0f || (mode == Mode.Quick && s.dashGuard) || mode == Mode.Dig || mode == Mode.Pound || mode == Mode.Parry || ReloadGhosting
+                                    || (mode == Mode.Grapple && s.hookSafe);   // SAFE LINE
         public int MaxCharges
         {
             get
@@ -146,6 +147,7 @@ namespace DigDeep
                 G.fx.Ring(pos, 1.1f, new Color(0.45f, 0.85f, 1f));
                 G.fx.Burst(pos, 8, new Color(0.45f, 0.85f, 1f), 3.5f, 0.3f, -2f);
                 G.hud.SpecialReady();
+                PerkSpecialReady();
             }
             if (charges >= MaxCharges) energy = 0f;
         }
@@ -223,7 +225,7 @@ namespace DigDeep
             // DEADLY STILLNESS: count how long you've stood still (a glint at the gun when the crit is ready)
             if (mode == Mode.Normal && grounded && Mathf.Abs(vel.x) < 0.2f) { stillAimT += dt; if (s.stillCrit && stillAimT >= 0.5f && stillAimT - dt < 0.5f) { G.fx.Burst(Muzzle, 6, new Color(0.6f, 1f, 1f), 3f, 0.3f, 0f); G.sfx.Play("blip", 0.4f, 2f, 0f); } }
             else stillAimT = 0f;
-            if (mode != Mode.Dead) AddEnergy(dt);
+            if (mode != Mode.Dead) { AddEnergy(dt); TickPerks(dt); }
             if (mode == Mode.Dead) return;
             Hazards();
             if (mode == Mode.Dead) return;
@@ -231,7 +233,7 @@ namespace DigDeep
             if (mode == Mode.Normal && grounded && !anyInput && Mathf.Abs(vel.x) < 0.05f) stillT += dt;
             else stillT = 0f;
 
-            if (Depth > G.maxDepth) G.maxDepth = Depth;
+            if (Depth > G.maxDepth) { G.maxDepth = Depth; Unlocks.Depth(Depth); }
             Orbitals(dt);
             StarArrow();
             Render();
@@ -254,7 +256,7 @@ namespace DigDeep
         {
             byte head = Wd.FluidAtPoint(pos + new Vector2(0f, Half.y - 0.08f));
             byte body = Wd.FluidAtPoint(pos);
-            bool choking = head == Fluids.Water || head == Fluids.Lava || head == Fluids.Steam || body == Fluids.Steam || InGas(pos + new Vector2(0f, Half.y - 0.08f)) || InGas(pos);
+            bool choking = head == Fluids.Water || head == Fluids.Lava || head == Fluids.Poison || head == Fluids.Acid || head == Fluids.Steam || body == Fluids.Steam || InGas(pos + new Vector2(0f, Half.y - 0.08f)) || InGas(pos);
             if (s.gills && head == Fluids.Water && body != Fluids.Steam) choking = false;   // GILLS: water is air to a dolphin
             if (choking)
             {
@@ -284,13 +286,15 @@ namespace DigDeep
         {
             TickBreath(dt);
             byte bodyF = Wd.FluidAtPoint(pos), feetF = Wd.FluidAtPoint(pos - new Vector2(0f, Half.y - 0.05f));
-            bool wetBody = bodyF == Fluids.Water || bodyF == Fluids.Lava;
-            bool wetFeet = feetF == Fluids.Water || feetF == Fluids.Lava;
+            bool wetBody = bodyF == Fluids.Water || bodyF == Fluids.Lava || bodyF == Fluids.Poison || bodyF == Fluids.Acid;   // (you swim in poison and acid too: it's just a bad idea)
+            bool wetFeet = feetF == Fluids.Water || feetF == Fluids.Lava || feetF == Fluids.Poison || feetF == Fluids.Acid;
             bool wasSwimming = swimming;
             swimming = wetBody || (wetFeet && !grounded && vel.y <= 1.5f && !GameInput.Held(Btn.Jump));
+            deepT = wetBody ? 0.4f : deepT - dt;   // FLIPPERS only leap out of water you were really in
             if (swimming && !wasSwimming && vel.y < 0f)
             {
                 // splash: even a small drop plunges you a little way under before you bob back up
+                Fluids.Impact(pos - new Vector2(0f, Half.y - 0.2f), 1f, vel);
                 vel.y = Mathf.Clamp(vel.y, -7f, -5f);   // about 1.5 tiles from a small drop, under 3 from a big one
                 G.fx.Burst(pos - new Vector2(0f, Half.y), 10, new Color(0.75f, 0.95f, 0.95f), 4f, 0.4f, 20f, 1f, false);
                 G.sfx.Play("land", 0.4f, 1.6f);
@@ -308,6 +312,7 @@ namespace DigDeep
             {
             float target = mx * 6.4f * Speed * (1f - FireSlow);
             float acc = grounded ? (mx != 0f ? 95f : 120f) : 65f;   // tight, Super Crate Box-like control
+            if (grounded && OnIce) acc = mx != 0f ? 16f : 3.5f;   // ICE: you slide
             if (knockT > 0f) acc *= 0.12f;   // blown away by a blast: you can barely steer
             vel.x = U.Approach(vel.x, target, acc * dt);
 
@@ -339,6 +344,29 @@ namespace DigDeep
                 coyote = 0.09f;
                 if ((up || down) && Random.value < dt * 3f) G.sfx.Play("dig", 0.15f, 1.8f);
                 if (GameInput.Buffered(Btn.Jump)) climbing = false;   // the jump below takes you off it
+            }
+            // STICKY FEET: after a super jump you cling to the first wall or ceiling you touch (4 s, or until you jump)
+            if (grounded) { sjArmed = false; clinging = false; }
+            bool wL = Wd.BoxSolid(pos + new Vector2(-0.08f, 0f), Half * 0.95f), wR = Wd.BoxSolid(pos + new Vector2(0.08f, 0f), Half * 0.95f), ceil = Wd.BoxSolid(pos + new Vector2(0f, 0.08f), Half * 0.95f);
+            if (sjArmed && !grounded && !clinging && (wL || wR || ceil)) { clinging = true; clingT = 4f; sjArmed = false; G.sfx.Play("splat", 0.4f, 1.6f); }
+            if (clinging)
+            {
+                clingT -= dt;
+                if (!(wL || wR || ceil) || grounded || clingT <= 0f) clinging = false;
+                else
+                {
+                    // crawl along it
+                    vel = ceil ? new Vector2(mx * 3.5f, 0.5f) : new Vector2(wL ? -0.5f : 0.5f, up ? 3.5f : down ? -3.5f : 0f);
+                    airJumps = s.airJumps;
+                    if (GameInput.Buffered(Btn.Jump))
+                    {
+                        GameInput.Consume(Btn.Jump);
+                        clinging = false;
+                        // off a wall: leap away from it; off the ceiling: drop
+                        vel = ceil ? new Vector2(vel.x, -2f) : new Vector2(wL ? 7f : -7f, 13f * Mathf.Sqrt(JumpMul));
+                        G.sfx.Play("jump", 0.5f, 1.3f);
+                    }
+                }
             }
             if (grounded) { coyote = 0.09f; airJumps = s.airJumps; } else if (!climbing) coyote -= dt;
             if (!lift && !WallMoves(mx) && GameInput.Buffered(Btn.Jump))
@@ -466,17 +494,26 @@ namespace DigDeep
             if (GameInput.Take(Btn.CyclePrev) && items.Count > 1) { sel = (sel + items.Count - 1) % items.Count; G.sfx.Play("swing", 0.4f, 1.4f); }
         }
 
+        float deepT, clingT;
+        bool sjArmed, clinging;
+        bool Fins => s.flippers && deepT > 0f && !s.wings && !s.levitate;   // a puddle under your feet gives no leap, nor does it with wings or levitation
+
+        float waterLeapT;   // (one leap out of the water at a time)
+
         void Swim(float dt, float mx, bool down, bool submerged)
         {
+            Fluids.Stir(pos, vel, 0.4f);   // you churn the water (and anything mixed in it) as you swim
             float target = mx * 6.4f * Speed * (s.flippers ? 1.5f : 0.55f) * (1f - FireSlow);   // FLIPPERS: 1.5x your land speed
             vel.x = U.Approach(vel.x, target, (s.flippers ? 60f : 30f) * dt);
-            bool head = Wd.FluidAtPoint(pos + new Vector2(0f, Half.y - 0.08f)) != Fluids.None;
+            byte hf = Wd.FluidAtPoint(pos + new Vector2(0f, Half.y - 0.08f));
+            bool head = hf == Fluids.Water || hf == Fluids.Lava || hf == Fluids.Poison || hf == Fluids.Acid;
             swimBoost -= dt;
             // a jump under water is a quick kick upwards; reach the surface during it and you leap out
-            if (head && GameInput.Buffered(Btn.Jump)) { GameInput.Consume(Btn.Jump); vel.y = Mathf.Max(vel.y, 9.5f); swimBoost = 0.45f; G.fx.Burst(pos, 4, new Color(0.8f, 0.95f, 1f), 2f, 0.5f, -3f, 1f, false); G.sfx.Play("jump", 0.4f, 0.7f); }
-            if (swimBoost > 0f && !head) { swimBoost = 0f; Jump(s.flippers ? 1.25f : 0.9f); MoveBody(dt, mx); return; }
-            // FLIPPERS: shoot up out of the water and leap higher than a normal jump
-            if (s.flippers && !head && vel.y > 6f) { Jump(1.25f); MoveBody(dt, mx); return; }
+            if (head && GameInput.Buffered(Btn.Jump)) { GameInput.Consume(Btn.Jump); vel.y = Mathf.Max(vel.y, 9.5f); swimBoost = 0.45f; G.fx.Burst(pos, 4, new Color(0.8f, 0.95f, 1f), 2f, 0.5f, -3f, 1f, false); G.sfx.Play("splat", 0.2f, 1.5f, 0.06f); }   // (a soft kick: the leap out has the jump sound)
+            waterLeapT -= dt;
+            if (swimBoost > 0f && !head && waterLeapT <= 0f) { swimBoost = 0f; waterLeapT = 0.4f; Jump(Fins ? 1.25f : 0.9f, true); MoveBody(dt, mx); return; }
+            // FLIPPERS: shoot up out of the water and leap higher than a normal jump (once: not again the next frame)
+            if (Fins && !head && vel.y > 6f && waterLeapT <= 0f) { waterLeapT = 0.4f; Jump(1.25f, true); MoveBody(dt, mx); return; }
             if (Cursed(Curse.LeadBoots))
             {
                 // CURSE OF LEAD BOOTS: you sink like a stone; kicking only slows the fall a little
@@ -484,12 +521,12 @@ namespace DigDeep
                 vel.y = U.Approach(vel.y, GameInput.Held(Btn.Jump) ? 1.2f : -3.5f, 12f * dt);
             }
             else if (swimBoost > 0f) { }
-            else if (GameInput.Held(Btn.Jump) || GameInput.Held(Btn.Up)) vel.y = s.flippers ? U.Approach(vel.y, 15f, 80f * dt) : U.Approach(vel.y, 5.5f, 30f * dt);   // swim up (jump or up)
+            else if (GameInput.Held(Btn.Jump) || GameInput.Held(Btn.Up)) vel.y = Fins ? U.Approach(vel.y, 15f, 80f * dt) : U.Approach(vel.y, 5.5f, 30f * dt);   // swim up (jump or up)
             else if (down) vel.y = s.flippers ? U.Approach(vel.y, -12f, 70f * dt) : U.Approach(vel.y, -4f, 25f * dt);   // FLIPPERS dive fast too
             else if (vel.y < 0f) vel.y += 9f * dt;   // momentum carries you down a bit; buoyancy slowly wins
             else vel.y = U.Approach(vel.y, head ? 2.4f : 0f, 14f * dt);    // let go and you float up to the surface
             // at the surface you can hop out
-            if (!head && GameInput.Buffered(Btn.Jump) && vel.y > -1f) { GameInput.Consume(Btn.Jump); Jump(s.flippers ? 1.2f : 0.8f); }
+            if (!head && GameInput.Buffered(Btn.Jump) && vel.y > -1f) { GameInput.Consume(Btn.Jump); Jump(Fins ? 1.2f : s.flippers ? 1f : 0.8f); }
             airJumps = s.airJumps;
             coyote = 0f;
             if (Random.value < Mathf.Abs(vel.x) * dt * 2f) G.fx.Burst(pos, 1, new Color(0.8f, 0.95f, 1f), 1f, 0.5f, -3f, 1f, false);
@@ -515,13 +552,21 @@ namespace DigDeep
             squash = -0.3f;
         }
 
-        void Jump(float mul)
+        void Jump(float mul) => Jump(mul, false);
+
+        // fromWater: leaping out of the water (one sound for it: a wet whoosh, deeper and bigger for Fin's leap)
+        void Jump(float mul, bool fromWater)
         {
             vel.y = 16.6f * Mathf.Sqrt(JumpMul) * mul;   // jump height scales linearly with JUMP, so low jumpers aren't crippled
             coyote = 0f;
             grounded = false;
             squash = -0.22f;
-            G.sfx.Play("jump", 0.6f);
+            if (!fromWater) G.sfx.Play("jump", 0.6f);
+            else
+            {
+                G.sfx.Play("jump", 0.6f, Fins ? 0.72f : 0.9f, 0.04f);
+                G.sfx.Play("splat", Fins ? 0.45f : 0.3f, Fins ? 0.8f : 1.1f, 0.06f);
+            }
             G.fx.Burst(pos - new Vector2(0, Half.y), 5, new Color(0.6f, 0.5f, 0.4f), 2.5f, 0.3f, 5f);
         }
 
@@ -550,6 +595,8 @@ namespace DigDeep
             }
         }
 
+        int pushN = 1;   // how many boulders in a row you're leaning on
+
         void MoveBody(float dt, float mx)
         {
             var w = Wd;
@@ -565,10 +612,17 @@ namespace DigDeep
                     int by = int.MinValue;
                     if (hx.x != int.MinValue)
                         for (int yy = Mathf.FloorToInt(pos.y - Half.y + E); yy <= Mathf.FloorToInt(pos.y + Half.y - E); yy++)
-                            if (Wd.Get(hx.x, yy) == Block.Boulder && !Wd.Solid(hx.x + dir, yy)) { by = yy; break; }
-                    if (pushT > 0.1f && by != int.MinValue)
+                        {
+                            if (Wd.Get(hx.x, yy) != Block.Boulder) continue;
+                            // a row of boulders moves together if there's room past the last of them (but it's heavier going)
+                            int n = 1;
+                            while (n < 3 && Wd.Get(hx.x + dir * n, yy) == Block.Boulder) n++;
+                            if (!Wd.Solid(hx.x + dir * n, yy)) { by = yy; pushN = n; break; }
+                        }
+                    if (pushT > 0.1f * (by != int.MinValue ? pushN : 1) && by != int.MinValue)
                     {
-                        Wd.PushBoulder(hx.x, by, new Vector2(dir * BoulderBody.PushSpeed * Mathf.Clamp(Speed, 0.7f, 1.4f), 0f));
+                        float sp0 = dir * BoulderBody.PushSpeed * Mathf.Clamp(Speed, 0.7f, 1.4f) / Mathf.Sqrt(pushN);
+                        for (int k = pushN - 1; k >= 0; k--) Wd.PushBoulder(hx.x + dir * k, by, new Vector2(sp0, 0f));
                         G.sfx.Play("rumble", 0.4f, 1.3f);
                         pushT = 0f;
                     }
@@ -616,6 +670,7 @@ namespace DigDeep
             if (grounded && !wasGrounded && vy < -9f)
             {
                 squash = 0.32f;
+                PerkLanded(vy);
                 G.cam.Shake(Mathf.Clamp01((-vy - 9f) / 20f) * 0.25f);   // heavy landings thump the screen
                 G.sfx.Play("land", 0.5f);
                 G.fx.Burst(pos - new Vector2(0, Half.y), 6, new Color(0.55f, 0.45f, 0.38f), 3f, 0.3f, 5f);
@@ -680,7 +735,7 @@ namespace DigDeep
                 case Sp.Grapple:
                     {
                         Vector2 d = aimDir;
-                        G.Spawn(new Hook(pos + d * 0.3f, d * 30f, this, 9f));
+                        G.Spawn(new Hook(pos + d * 0.3f, d * (s.hookFast ? 42f : 30f), this, s.hookFar ? 14.5f : 9f));   // STEEL CABLE, QUICK REEL
                         G.sfx.Play("grapple", 0.6f);
                         break;
                     }
@@ -703,6 +758,7 @@ namespace DigDeep
             }
             if (!ok) return;
             charges--;
+            PerkSpecial();
             G.OnSpecialUsed(special.id, pos);
         }
 
@@ -732,7 +788,9 @@ namespace DigDeep
         {
             superT = 0.6f;
             grace = 0.35f;
-            vel = new Vector2(vel.x * 0.5f, 29f * Mathf.Sqrt(JumpMul));
+            sjArmed = s.sjStick;   // STICKY FEET: the next wall or ceiling you touch, you cling to
+            vel = new Vector2(vel.x * 0.5f, (s.sjHigh ? 35f : 29f) * Mathf.Sqrt(JumpMul));   // MOON LEAP
+            if (s.sjBlast) Shockwave(pos - new Vector2(0f, Half.y), 2.6f, Dmg(4f), 1, Src.Shockwave);   // LAUNCH BLAST
             grounded = false; coyote = 0f;
             squash = -0.35f;
             G.sfx.Play("jump", 0.9f, 0.6f);
@@ -865,7 +923,7 @@ namespace DigDeep
             Vector2 d = anchor - pos;
             float dist = d.magnitude;
             if (dist < 0.8f || modeT <= 0f || GameInput.Take(Btn.Jump)) { EndGrapple(); return; }
-            vel = d / dist * 22f;
+            vel = d / dist * (s.hookFast ? 32f : 22f);
             Vector2 p = pos;
             bool hx = Wd.MoveX(ref p, Half, vel.x * dt, out _);
             bool hy = Wd.MoveY(ref p, Half, vel.y * dt, out _);
@@ -935,6 +993,9 @@ namespace DigDeep
                 case It.Sentry:
                     G.Spawn(new Sentry(new Vector2(pos.x, pos.y - Half.y), this));
                     G.sfx.Play("clank", 0.7f, 0.8f);
+                    break;
+                case It.Reroll:
+                    Reroll.Circle(pos, 5f);
                     break;
                 case It.Bore:
                     G.Spawn(new BoreCharge(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y - Half.y - 0.5f)));
@@ -1078,6 +1139,7 @@ namespace DigDeep
 
         public void AddGold(int v)
         {
+            PerkGold();
             float f = v * s.coinMul + goldFrac;
             int n = (int)f;
             goldFrac = f - n;
@@ -1096,6 +1158,8 @@ namespace DigDeep
         public void OnKill(Enemy e)
         {
             s.kills++;
+            Unlocks.Kill(e, this);
+            PerkKill(e);
             OnHuntKill(e);
             CurseKill();
             if (s.vampire > 0 && s.kills % s.vampire == 0 && s.hp < s.maxHp) HealHp(30);   // vampire fangs
@@ -1182,6 +1246,21 @@ namespace DigDeep
             return "SOMETHING IN THE DARK";
         }
 
+        // standing on an ice block, or a sheet of ice on the floor
+        bool OnIce
+        {
+            get
+            {
+                int y = Mathf.FloorToInt(pos.y - Half.y - 0.05f);
+                for (int k = -1; k <= 1; k += 2)
+                {
+                    int x = Mathf.FloorToInt(pos.x + k * (Half.x - 0.05f));
+                    if (Wd.Get(x, y) == Block.Ice || IceSheet.At(x, y + 1)) return true;
+                }
+                return false;
+            }
+        }
+
         public void Hurt(int dmg, Vector2 from)
         {
             lastCause = Cause ?? WhatHurt(from);
@@ -1191,8 +1270,11 @@ namespace DigDeep
             if (TestMode.On && TestMode.God) { G.Popup(pos + Vector2.up, "GOD: " + dmg, new Color(0.6f, 1f, 0.6f)); return; }
             EndCamo();
             if (UseMantle()) return;   // WARDSTONE
+            if (dmg > 0) Unlocks.Hurt();
             if (s.armor > 0f && dmg < 999999) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * (1f - s.armor)));   // IRON HIDE
             if (Cursed(Curse.Glass) && dmg < 999999) dmg = Mathf.RoundToInt(dmg * 1.5f);   // CURSE OF GLASS
+            if (s.glassBody && dmg < 999999) dmg *= 3;   // GLASS CANNON
+            if (G.boss != null && dmg < 999999) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * 0.8f));   // boss fights hit a little softer (the bosses last longer)
             CursePoverty();
             if (reloading && s.reloadArmor > 0f && dmg < 999999) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * (1f - s.reloadArmor)));
             if (mode == Mode.Grapple) EndGrapple();
@@ -1209,6 +1291,7 @@ namespace DigDeep
             G.cam.Shake(0.4f);
             G.hud.DamageFlash();
             G.fx.Burst(pos, 14, new Color(1f, 0.25f, 0.25f), 6f, 0.5f, 20f);
+            PerkHurt();
 
             if (s.thorns > 0)
             {

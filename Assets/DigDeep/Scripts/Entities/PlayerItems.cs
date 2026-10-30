@@ -61,10 +61,15 @@ namespace DigDeep
         }
 
         // JETPACK: once a jump has peaked (or you're falling), hold jump to thrust upwards until the fuel runs out.
+        bool jetBlocked;
         void Jetpack(float dt)
         {
-            if (grounded) { jetFuel = Mathf.Min(JetFuelMax, jetFuel + dt * 2.5f); jetting = false; return; }
+            if (grounded) { jetFuel = Mathf.Min(JetFuelMax, jetFuel + dt * 2.5f); jetting = false; jetBlocked = false; return; }
             bool hold = GameInput.Held(Btn.Jump);
+            // a fresh press in the air spends a mid-air jump first (CLOUD STEP...); only once those are gone does a press fire the burners
+            if (GameInput.Pressed(Btn.Jump) && coyote <= 0f && (airJumps > 0 || s.wings)) { jetBlocked = true; jetting = false; }
+            if (!hold) jetBlocked = false;
+            if (jetBlocked) return;
             if (hold && jetFuel > 0f && (jetting || vel.y < 2f))
             {
                 if (!jetting) G.sfx.Play("rocket", 0.35f, 1.6f);
@@ -211,7 +216,16 @@ namespace DigDeep
         // ================================================================== luck
 
         // LUCK raises every chance in the game a little (procs, drops, revives...). Bad luck lowers them.
-        public float Lucky(float chance) => Mathf.Clamp(chance * (1f + 0.12f * Mathf.Clamp(s.luck, -5f, 15f)), 0f, 0.95f);
+        public ItemStack SelectedItem => items.Count == 0 ? null : items[Mathf.Clamp(sel, 0, items.Count - 1)];
+        public void SpendSelectedItem()
+        {
+            var st = SelectedItem;
+            if (st == null) return;
+            st.count--;
+            if (st.count <= 0) { items.Remove(st); if (sel >= items.Count) sel = 0; }
+        }
+
+        public float Lucky(float chance) => Mathf.Clamp(chance * (1f + 0.12f * Mathf.Clamp(s.luck, -5f, 15f)) * (s.loadedDie ? 2f : 1f), 0f, 0.95f);   // LOADED DIE: doubled
 
         // ================================================================== items that tick
 
@@ -304,7 +318,7 @@ namespace DigDeep
                 Revive(10, "BACK FROM THE DEAD", s.twinLives > 0 ? "ONE LIFE LEFT" : "THE LAST ONE", new Color(0.75f, 0.85f, 1f));
                 return true;
             }
-            if (s.gambleRevive && Random.value < Lucky(0.25f)) { Revive(50, "LUCKY!", "THE RABBIT'S FOOT HOLDS", new Color(0.6f, 1f, 0.5f)); return true; }
+            if (s.gambleRevive && Chance.Roll("rabbit", Lucky(0.25f))) { Revive(50, "LUCKY!", "THE RABBIT'S FOOT HOLDS", new Color(0.6f, 1f, 0.5f)); return true; }
             return false;
         }
 

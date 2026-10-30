@@ -112,6 +112,15 @@ namespace DigDeep
                 new Dictionary<char, Color32> { { 'G', U.C(236, 184, 60) }, { 'g', U.C(255, 240, 180) }, { 'H', U.C(140, 240, 255) }, { 'T', U.C(255, 255, 255) } }, true, true);
             var ap = new Dictionary<char, Color32> { { 'W', U.C(240, 236, 220) }, { 'B', U.C(120, 84, 52) }, { 'F', U.C(220, 70, 60) } };
             Bullets["b_arrow"] = Make(new[] { "F......W.", "FFBBBBBWW", "F......W." }, ap, true, true);
+            // every bow and crossbow has its own shaft
+            Color32 ArC(int ar, int ag, int ab) => U.C(ar, ag, ab);
+            Dictionary<char, Color32> ArP(Color32 af, Color32 asft, Color32 ahd, Color32 ax) => new Dictionary<char, Color32> { { 'F', af }, { 'B', asft }, { 'W', ahd }, { 'X', ax } };
+            Bullets["b_arrow_twin"] = Make(new[] { "FF......W.", "FFFBBBBBWW", "FF......W." }, ArP(ArC(110, 200, 90), ArC(150, 112, 70), ArC(220, 224, 230), ArC(0, 0, 0)), true, true);
+            Bullets["b_arrow_storm"] = Make(new[] { "F.......XW.", "FFBBBBBBXWW", "F.......XW." }, ArP(ArC(110, 230, 255), ArC(70, 80, 110), ArC(200, 250, 255), ArC(120, 230, 255)), true, true);
+            Bullets["b_bolt_cross"] = Make(new[] { "F....W", "FBBBBWW", "F....W" }, ArP(ArC(200, 160, 110), ArC(110, 76, 44), ArC(180, 184, 196), ArC(0, 0, 0)), true, true);
+            Bullets["b_bolt_auto"] = Make(new[] { "FBBBBW", "FBBBBWW" }, ArP(ArC(90, 94, 108), ArC(60, 62, 74), ArC(196, 200, 212), ArC(0, 0, 0)), true, true);
+            Bullets["b_bolt_super"] = Make(new[] { "F.....WW", "FBBBBBWWW", "F.....WW" }, ArP(ArC(170, 60, 50), ArC(70, 72, 84), ArC(226, 230, 240), ArC(0, 0, 0)), true, true);
+            Bullets["b_bolt_deep"] = Make(new[] { "F.......X.", "FBXBXBXBWWX", "F.......X." }, ArP(ArC(150, 90, 230), ArC(40, 30, 60), ArC(240, 220, 255), ArC(190, 120, 255)), true, true);
         }
 
         // a copy of a sprite, its colours pulled towards a tint (keeps the dark outline): weapon variants

@@ -23,7 +23,110 @@ namespace DigDeep
                 src[i].spatialBlend = 0f;
             }
             Build();
+            LoadRecorded();
         }
+
+        // ---------------------------------------------------------------- recorded sounds
+        // Jente's own sounds (Resources/DigDeepSfx, trimmed so they hit instantly and driven hot). Each key has several
+        // takes, picked at random (never the same twice running) at a slightly random pitch; under water the
+        // "submerged" takes are used where there are any; and the heavy ones keep the synthesised thump layered
+        // underneath for weight.
+        class Rec { public AudioClip[] dry, wet; public float layer; public int last = -1; }
+        readonly Dictionary<string, Rec> recorded = new Dictionary<string, Rec>();
+        public static bool Submerged;   // (the player's head is under water: everything sounds muffled)
+
+        void R(string key, float layer, string[] dry, string[] wet = null)
+        {
+            var d = LoadAll(dry);
+            if (d.Length == 0) return;
+            recorded[key] = new Rec { dry = d, wet = wet != null ? LoadAll(wet) : null, layer = layer };
+        }
+
+        static AudioClip[] LoadAll(string[] names)
+        {
+            var l = new List<AudioClip>();
+            foreach (var n in names) { var c = Resources.Load<AudioClip>("DigDeepSfx/" + n); if (c != null) l.Add(c); }
+            return l.ToArray();
+        }
+
+        static string[] Takes(string baseName, int n)
+        {
+            var a = new string[n];
+            for (int i = 0; i < n; i++) a[i] = i == 0 ? baseName : baseName + (i + 1);
+            return a;
+        }
+
+        void LoadRecorded()
+        {
+            var rail = new List<string>(Takes("also_potential_railgun", 5)) { "Rail_gun_fire" };
+            R("rail", 0.35f, rail.ToArray());
+            R("arrow_stick", 0f, new[] { "Arrow_stuck_in_block" });
+            R("plasma", 0.25f, Takes("Big_laserShoot", 4), Takes("big_single_laser_submerged", 4));
+            R("laserbig", 0.2f, Takes("big_single_laser", 5), Takes("big_single_laser_submerged", 4));
+            R("laser", 0f, Takes("laserShoot", 4), Takes("laserShoot_submerged", 3));
+            R("pistol", 0.35f, Takes("big_pistol_fire", 2), Takes("pistol_submerged", 4));
+            R("launcher", 0.35f, new[] { "grenade_launcher_fire" });
+            R("rocket", 0.3f, Takes("rocket_launcher_fire", 5));
+            R("explode", 0f, new[] { "explosion2", "explosion3", "jsfxr_Explosion" }, Takes("under_water_explosion", 4));
+            R("explode_small", 0f, Takes("small_explosion", 2), Takes("under_water_explosion", 4));
+            R("explode_mid", 0f, new[] { "Grenade_launcher_explosion", "explosion3" }, Takes("under_water_explosion", 4));
+            R("explode_big", 0f, new[] { "explosion2", "jsfxr_Explosion" }, Takes("Big_Underwater_explosion", 4));
+            R("explode_tnt_wet", 0f, Takes("TNT_explode_under_water", 3));
+            R("explode_wet", 0f, Takes("under_water_explosion", 4));
+            R("explode_big_wet", 0f, Takes("Big_Underwater_explosion", 4));
+            R("explode_far", 0f, Takes("far_away_explosion", 2));
+            R("boulder_wet", 0f, Takes("boulder_land_submerged", 3));
+            R("grass_cut", 0f, Takes("Cut_melee_Grass", 3));
+            R("help", 0f, new[] { "help_cry" });
+            R("hit_big", 0.3f, Takes("hit_enemy_with_big_melee_weapon", 2));
+            R("hurt", 0f, new[] { "hit_Hurt", "hitHurt2", "hitHurt3", "hitHurt4" });
+            R("sword", 0.25f, new[] { "Katana" });
+            R("cursed", 0f, new[] { "Pick_up_cursed_weapon" });
+            R("deny", 0f, new[] { "Select_but_not_possible" });
+            R("ui", 0f, Takes("Select_or_hover_over_with_mouse", 4));
+            R("shine", 0f, new[] { "Shine_Sound_Effect" });
+            R("flame_start", 0f, new[] { "Start_fire_flamethrower" }, new[] { "Start_fire_flamethrower_submerged" });
+        }
+
+        bool PlayRecorded(string n, float vol, float pitch, float var)
+        {
+            if (!recorded.TryGetValue(n, out var r)) return false;
+            var set = Submerged && r.wet != null && r.wet.Length > 0 ? r.wet : r.dry;
+            int pick = Random.Range(0, set.Length);
+            if (set.Length > 1 && pick == r.last) pick = (pick + 1 + Random.Range(0, set.Length - 1)) % set.Length;   // never the same take twice running
+            r.last = pick;
+            var s = src[idx];
+            idx = (idx + 1) % src.Length;
+            s.pitch = pitch * (1f + Random.Range(-Mathf.Max(var, 0.07f), Mathf.Max(var, 0.07f)));   // a little pitch shift every time
+            s.volume = vol * master;
+            s.clip = set[pick];
+            s.Play();
+            // weight: the synthesised thump underneath
+            if (r.layer > 0f && clips.TryGetValue(n, out var syn))
+            {
+                var s2 = src[idx];
+                idx = (idx + 1) % src.Length;
+                s2.pitch = pitch * 0.85f * (1f + Random.Range(-var, var));
+                s2.volume = vol * r.layer * master;
+                s2.clip = syn;
+                s2.Play();
+            }
+            return true;
+        }
+
+        // menus: a soft tick whenever the mouse moves onto a new button (call with the button's hover test and rect)
+        static int uiKey, uiFrame;
+        public static bool HoverUi(bool hov, Rect r)
+        {
+            if (!hov || Event.current == null || Event.current.type != EventType.Repaint) return hov;
+            int key = Mathf.RoundToInt(r.x) * 7919 + Mathf.RoundToInt(r.y) * 31 + Mathf.RoundToInt(r.width);
+            if (Time.frameCount - uiFrame > 2) uiKey = 0;   // (nothing was hovered for a moment)
+            uiFrame = Time.frameCount;
+            if (key != uiKey) { uiKey = key; if (Game.I != null) Game.I.sfx.Play("ui", 0.18f, 1.1f, 0.05f); }
+            return hov;
+        }
+
+        public bool Has(string n) => recorded.ContainsKey(n) || clips.ContainsKey(n);
 
         // A sound that happens somewhere in the world: full volume close to you, fading out with distance,
         // silent beyond `range` tiles.
@@ -43,6 +146,7 @@ namespace DigDeep
 
         public void Play(string n, float vol = 1f, float pitch = 1f, float var = 0.06f)
         {
+            if (PlayRecorded(n, vol, pitch, var)) return;
             if (!clips.TryGetValue(n, out var c)) return;
             var s = src[idx];
             idx = (idx + 1) % src.Length;
@@ -74,8 +178,8 @@ namespace DigDeep
             {
                 case Block.Dirt: case Block.Sand: return "m_dirt";
                 case Block.Stone: case Block.HardStone: case Block.Obsidian: case Block.Boulder: case Block.Magma: case Block.Brick: case Block.GildBrick: return "m_rock";
-                case Block.Gold: case Block.Gem: case Block.Crystal: case Block.Volatile: case Block.BigGold2: case Block.BigGold4: case Block.BigGold6: case Block.Ice: return "m_crystal";
-                case Block.Crate: case Block.Spikes: return "m_metal";
+                case Block.Gold: case Block.Gem: case Block.Crystal: case Block.Volatile: case Block.BigGold2: case Block.BigGold4: case Block.BigGold6: case Block.Ice: case Block.Glass: return "m_crystal";
+                case Block.Crate: case Block.Spikes: case Block.Steel: return "m_metal";
                 case Block.Chest: case Block.Supply: case Block.TNT: case Block.Wood: return "m_wood";
                 case Block.DarkMatter: case Block.Seal: case Block.Bedrock: return "m_void";
             }
@@ -154,6 +258,8 @@ namespace DigDeep
                 }
                 return v + Click(t, 0f, 1100f, 0.5f);
             });
+            // spears: shafts slid back into the quiver, a wooden knock
+            Make("rl_spear", 0.5f, t => Slide(t, 0f, 0.18f, 0.25f) + Click(t, 0.2f, 420f, 0.7f) + Slide(t, 0.24f, 0.4f, 0.2f) + Click(t, 0.42f, 520f, 0.6f));
             // energy weapons: steam venting
             float lp2 = 0f;
             Make("vent", 0.8f, t =>
@@ -414,6 +520,45 @@ namespace DigDeep
             Notes("chest", new[] { 392f, 523f, 659f, 784f, 1047f }, 0.06f, 0.45f, true);
             Notes("heal", new[] { 523f, 659f, 784f }, 0.09f, 0.45f, true);
 
+            // UNLOCK: its own fanfare. A quick rising run (G C E G) into a held, shimmering C-major chord an octave up,
+            // a square lead over a triangle bass, so it never sounds like a pickup or a chest
+            {
+                float[] run = { 392f, 523f, 659f, 784f };
+                float[] chord = { 1047f, 1319f, 1568f };
+                float ul = 0f, ub = 0f, c0 = 0f, c1 = 0f, c2 = 0f;
+                Make("unlock", 1.15f, t =>
+                {
+                    const float each = 0.075f;
+                    float runEnd = run.Length * each;
+                    if (t < runEnd)
+                    {
+                        int k = (int)(t / each);
+                        float lt = t - k * each;
+                        ul += run[k] / SR;
+                        ub += run[k] * 0.5f / SR;
+                        return Sq(ul) * 0.2f * Mathf.Exp(-lt * 8f) + Tri(ub) * 0.25f;
+                    }
+                    float ht = t - runEnd;
+                    float vib = 1f + Mathf.Sin(ht * 34f) * 0.004f * Mathf.Min(1f, ht * 4f);   // a little shimmer as it rings
+                    c0 += chord[0] * vib / SR; c1 += chord[1] * vib / SR; c2 += chord[2] * vib / SR;
+                    ub += 262f / SR;
+                    float env = Mathf.Min(1f, ht * 60f) * Mathf.Exp(-ht * 2.6f);
+                    return (Sq(c0) * 0.13f + Tri(c1) * 0.22f + Tri(c2) * 0.16f + Tri(ub) * 0.28f) * env;
+                });
+            }
+            // the card flipping up: a short rising swish with a bright ding on top
+            {
+                float cp = 0f, cl = 0f;
+                Make("unlockcard", 0.32f, t =>
+                {
+                    cl += (Noise() - cl) * Mathf.Lerp(0.05f, 0.4f, t / 0.32f);
+                    float sw = cl * 0.6f * Mathf.Sin(Mathf.Min(1f, t / 0.12f) * Mathf.PI) * (t < 0.12f ? 1f : 0f);
+                    float dt2 = Mathf.Max(0f, t - 0.08f);
+                    cp += 1760f / SR;
+                    return sw + (t > 0.08f ? Tri(cp) * 0.3f * Mathf.Exp(-dt2 * 14f) : 0f);
+                });
+            }
+
             ph = 0;
             Make("deny", 0.2f, t =>
             {
@@ -625,6 +770,55 @@ namespace DigDeep
                 lp += (Noise() - lp) * 0.5f;
                 return (Saw(ph) * 0.25f + lp * 0.5f) * Mathf.Sin(Mathf.PI * t / 0.2f);
             });
+
+            // minigun: heard from inside the helicopter - a fat, clipped low thump with a mechanical rattle on top
+            {
+                float mp = 0f, ml = 0f;
+                Make("minigun", 0.09f, t =>
+                {
+                    float n = Noise();
+                    ml += (n - ml) * 0.4f;
+                    mp += Mathf.Lerp(105f, 52f, t / 0.09f) / SR;
+                    float v = Sin(mp) * 1.6f * Mathf.Exp(-t * 26f) + n * 0.8f * Mathf.Exp(-t * 120f) + ml * 0.9f * Mathf.Exp(-t * 45f)
+                            + Sq(t * 190f) * 0.25f * Mathf.Exp(-t * 60f);
+                    return (float)System.Math.Tanh(v * 2.2f) * 0.8f;
+                });
+            }
+            // energy weapons close to overheating: a tight warning pip (played faster and higher as heat climbs)
+            {
+                float hp = 0f;
+                Make("heatwarn", 0.07f, t =>
+                {
+                    hp += 1320f / SR;
+                    return (Sq(hp) * 0.25f + Mathf.Sin(2 * Mathf.PI * 2640f * t) * 0.15f) * Mathf.Exp(-t * 30f);
+                });
+            }
+            // EARTHSPLITTER: each swing a heavy rock-tearing whoosh; the third a huge seismic crack
+            {
+                float a1 = 0f, a2 = 0f, sp = 0f;
+                Make("split", 0.45f, t =>
+                {
+                    float n = Noise();
+                    a1 += (n - a1) * Mathf.Lerp(0.04f, 0.3f, t / 0.45f);
+                    a2 += (a1 - a2) * 0.08f;
+                    sp += Mathf.Lerp(80f, 40f, t / 0.45f) / SR;
+                    float crumble = Random.value < 0.02f ? Noise() * 0.6f * Mathf.Exp(-t * 4f) : 0f;
+                    return ((a1 - a2) * 2f * Mathf.Sin(Mathf.PI * Mathf.Min(1f, t / 0.25f)) + Sin(sp) * 0.9f * Mathf.Exp(-t * 7f) + crumble) * Mathf.Min(1f, t * 300f);
+                });
+                float b1 = 0f, b2 = 0f, bp = 0f, bq = 0f;
+                Make("split3", 1.6f, t =>
+                {
+                    float n = Noise();
+                    b1 += (n - b1) * Mathf.Lerp(0.6f, 0.015f, Mathf.Clamp01(t / 1.6f));
+                    b2 += (n - b2) * 0.02f;
+                    bp += Mathf.Lerp(70f, 22f, Mathf.Clamp01(t / 1.4f)) / SR;
+                    bq += Mathf.Lerp(140f, 35f, Mathf.Clamp01(t / 0.6f)) / SR;
+                    float crack = n * 1.2f * Mathf.Exp(-t * 40f);
+                    float rubble = (Random.value < 0.04f ? Noise() * 0.7f : 0f) * Mathf.Exp(-t * 2.2f) * Mathf.Min(1f, t * 6f);
+                    float v = crack + b1 * 1.6f * Mathf.Exp(-t * 3f) + b2 * 3f * Mathf.Exp(-t * 2f) + Sin(bp) * 1.5f * Mathf.Exp(-t * 2.4f) + Saw(bq) * 0.35f * Mathf.Exp(-t * 6f) + rubble;
+                    return (float)System.Math.Tanh(v * 1.6f) * Mathf.Min(1f, t * 400f);
+                });
+            }
 
             Make("reflect", 0.16f, t => (Mathf.Sin(2 * Mathf.PI * 1600 * t) + Mathf.Sin(2 * Mathf.PI * 2400 * t)) * 0.22f * Mathf.Exp(-t * 22f));
             Make("ricochet", 0.2f, t =>

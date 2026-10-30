@@ -12,7 +12,7 @@ namespace DigDeep
     // around them traps them in the ice: smash the ice and the fish dies with it, melt it and the fish swims off.
     public class Fish : Enemy
     {
-        public enum Kind { Minnow, Biter, Grouper }
+        public enum Kind { Minnow, Biter, Grouper, Glow, Gold }   // GLOW and GOLD: harmless, and they shine (gold fish drop gold)
         enum St { Swim, Air, Flop, Iced }
 
         readonly Kind kind;
@@ -24,21 +24,22 @@ namespace DigDeep
         bool hasDrain, draining;
         readonly float speed;
 
-        protected override bool Harmless => kind == Kind.Minnow || st == St.Flop || st == St.Iced;
+        bool Meek => kind == Kind.Minnow || kind == Kind.Glow || kind == Kind.Gold;
+        protected override bool Harmless => Meek || st == St.Flop || st == St.Iced;
 
         public Fish(int x, int y, int depth, Kind k)
         {
             kind = k;
             pos = new Vector2(x + 0.5f, y + 0.5f);
-            half = k == Kind.Minnow ? new Vector2(0.3f, 0.16f) : k == Kind.Biter ? new Vector2(0.36f, 0.24f) : new Vector2(0.55f, 0.32f);
-            Setup(k == Kind.Minnow ? "Minnow" : k == Kind.Biter ? "Biter" : "Grouper",
-                  k == Kind.Minnow ? "fish_minnow" : k == Kind.Biter ? "fish_piranha" : "fish_grouper",
-                  k == Kind.Minnow ? 1 : k == Kind.Biter ? 2 : 7, depth);
+            half = k == Kind.Biter ? new Vector2(0.36f, 0.24f) : k == Kind.Grouper ? new Vector2(0.55f, 0.32f) : new Vector2(0.3f, 0.16f);
+            Setup(k == Kind.Minnow ? "Minnow" : k == Kind.Biter ? "Biter" : k == Kind.Grouper ? "Grouper" : k == Kind.Glow ? "Glow Fish" : "Gold Fish",
+                  k == Kind.Minnow ? "fish_minnow" : k == Kind.Biter ? "fish_piranha" : k == Kind.Grouper ? "fish_grouper" : k == Kind.Glow ? "fish_glow" : "fish_gold",
+                  k == Kind.Biter ? 2 : k == Kind.Grouper ? 7 : 1, depth);
             waterLike = true;
             team = Team.Beast;
-            speed = k == Kind.Minnow ? 3.4f : k == Kind.Biter ? 4.2f : 2.4f;
+            speed = k == Kind.Biter ? 4.2f : k == Kind.Grouper ? 2.4f : 3.4f;
             if (k == Kind.Grouper) dmg = Mathf.RoundToInt(dmg * 1.7f);
-            gold = k == Kind.Minnow ? 0 : k == Kind.Biter ? 2 : 5;
+            gold = k == Kind.Gold ? 8 : k == Kind.Biter ? 2 : k == Kind.Grouper ? 5 : 0;
             blood = new Color(0.85f, 0.3f, 0.3f);
             facing = Random.value < 0.5f ? -1 : 1;
             wander = new Vector2(facing, Random.Range(-0.3f, 0.3f)).normalized;
@@ -136,7 +137,7 @@ namespace DigDeep
             float spd = speed;
 
             var pl = G.player;
-            if (kind == Kind.Minnow)
+            if (Meek)
             {
                 // darts away from you
                 if (pl.mode != Player.Mode.Dead && (pl.pos - pos).sqrMagnitude < 16f) { want = (pos - pl.pos).normalized; spd *= 1.8f; }
@@ -157,6 +158,7 @@ namespace DigDeep
                         st = St.Air; leapT = 0.3f;   // (don't count the water it's leaving as landing)
                         G.fx.Burst(pos + Vector2.up * 0.3f, 8, new Color(0.75f, 0.95f, 1f), 3f, 0.4f, 20f, 1f, false);
                         G.sfx.Play("land", 0.3f, 1.8f);
+                        Fluids.Splash(pos + Vector2.up * 0.5f, 0.3f);
                         return;
                     }
                     else { want = new Vector2(Mathf.Sign(d.x), 0.4f).normalized; spd *= 1.2f; }   // shadow it from below
@@ -202,7 +204,7 @@ namespace DigDeep
         // bites the other creatures it touches (you are handled by the usual contact damage)
         void Bite()
         {
-            if (kind == Kind.Minnow || biteCd > 0f) return;
+            if (Meek || biteCd > 0f) return;
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en) || en is Fish || en.Intangible) continue;
@@ -245,9 +247,10 @@ namespace DigDeep
                 vel = new Vector2(vel.x * 0.6f, vel.y * 0.55f);
                 G.fx.Burst(pos + Vector2.up * 0.4f, 8, new Color(0.75f, 0.95f, 1f), 3f, 0.4f, 20f, 1f, false);
                 G.sfx.Play("land", 0.25f, 1.7f);
+                Fluids.Splash(pos, 0.3f);
                 return;
             }
-            if (kind != Kind.Minnow) BiteAir();
+            if (!Meek) BiteAir();
             if (landed) { st = St.Flop; flopT = 0.15f; G.sfx.Play("splat", 0.25f, 1.9f); }   // the first touch of ground
         }
 
@@ -298,6 +301,14 @@ namespace DigDeep
                     if (Swimmable(c.x + r, c.y + dy)) return 1f;
                 }
             return 0f;
+        }
+
+        // fish don't shine... except the glow and gold fish
+        public override void AddLight(Lighting l)
+        {
+            if (kind == Kind.Glow) l.Add(pos, 2.6f + Mathf.Sin(Time.time * 3f + pos.x) * 0.2f, 0.75f);
+            else if (kind == Kind.Gold) l.Add(pos, 2f, 0.6f);
+            else if (elite || burnT > 0f) base.AddLight(l);
         }
 
         // moves with collision; true if it hit the ground

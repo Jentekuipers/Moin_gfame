@@ -8,13 +8,16 @@ namespace DigDeep
     public partial class Bullet : Entity
     {
         public Team team;
+        bool wasWet = true;   // (shots born under water don't splash)
         public bool poison;   // an enemy seed that poisons you
         public bool zaps;     // a drone's spark: it shocks instead of hurting normally
         public bool chills;   // a frost shard: slows you
         public Vector2 vel;
         float dmg, life, age, knock, size, radius, grav, accel;
+        public float Age => age;
         int pierce, bounces, mine, tilePierce, blockPierce, playerDmg = 60;
         Vector2Int lastTile = new Vector2Int(int.MinValue, 0);
+        bool softHome;
         bool lob, flame, crit, homing, nativeHoming, selfHurt, explosive, sharp, wallBreaker, highCal, hurtsOwner, first = true;
         bool burns, frost, modExplosive, laser, tinted, noPrism;   // item effects: see ApplyPlayerEffects
         bool linger, boomerang, returning, sword, mega, petShot;
@@ -41,7 +44,7 @@ namespace DigDeep
             pos = at; vel = v;
             highCal = w.Has(Mod.HighCaliber);
             dmg = p.Dmg(d.dmg) * (highCal ? 2.5f : 1f) * (w.Has(Mod.Ricochet) && d.abuses ? 0.7f : 1f) * p.nextShotMul;
-            crit = Random.value < p.CritChance + (w.Has(Mod.Crit) ? 0.2f : 0f) || (echo && p.Combo("echochamber") && Random.value < 0.5f) || p.nextShotCrit;
+            crit = Chance.Roll("crit", p.CritChance + (w.Has(Mod.Crit) ? 0.2f : 0f)) || (echo && p.Combo("echochamber") && Random.value < 0.5f) || p.nextShotCrit;
             if (crit) dmg *= p.s.critMul;
             life = d.life;
             knock = d.knock * (highCal ? 1.8f : 1f);
@@ -65,20 +68,28 @@ namespace DigDeep
             {
                 // an arrow: the harder the draw, the faster it flies and the deeper it digs; weak ones drop
                 float frac = Mathf.Clamp01(v.magnitude / Mathf.Max(1f, d.speed));
-                blockPierce = d.blockPierce + Mathf.RoundToInt(3f * frac);
+                // the harder the draw, the more it punches through: a weak twang stops at the first block, a full draw goes
+                // through several
+                blockPierce = Mathf.FloorToInt((d.blockPierce + 7) * frac * frac);
+                mine = Mathf.Max(1, Mathf.RoundToInt((d.mine + 2) * frac));
                 grav = 22f * (1f - frac);
                 life = d.life / Mathf.Max(0.35f, frac);
                 arrow = true;
             }
+            else if (d.boltArrow) arrow = true;   // crossbow bolts: no draw, but they lodge and pin like arrows
             ApplyPlayerEffects(p, w, d, echo || crit);
             Spawned();
         }
 
         bool arrow;   // arrows lodge in whatever stops them (just for show)
+        public bool lodged;      // (it stuck in a wall: anything pinned on it stays there)
+        public Vector2 lodgedAt;
+        public Vector2Int lodgedCell;
 
         // ---------------------------------------------------------------- enemy shot
         public Bullet(Vector2 at, Vector2 v, Team team, float dmgVsEnemies, int dmgVsPlayer, string sprite, Color col, float size = 1f, float life = 3f)
         {
+            if (Enemy.ThrallFiring && team != Team.Player) team = Team.Player;   // a risen foe's shots are on your side
             this.team = team; pos = at; vel = v;
             dmg = dmgVsEnemies; playerDmg = dmgVsPlayer;
             this.col = col; this.size = size; this.life = life;
@@ -102,6 +113,15 @@ namespace DigDeep
             poisons = (w != null && w.Has(Mod.Poison)) || ps.shotPoison;
             chains = w != null && w.Has(Mod.Chain);
             homing |= ps.shotHoming;
+            // HUNTER'S HUNCH: a lazy pull that fast or far-off shots outrun
+            if (!homing && ps.softHoming) { homing = true; softHome = true; }
+            // the reworked trinkets' shot tricks
+            if (ps.fullPierce && p.s.hp >= p.s.maxHp) pierce += 1;                 // STOUT HEART: at full health
+            if (ps.longShots) life *= 1.5f;                                         // NIGHT EYES: shots fly further
+            if (ps.lanternShots) lanternLit = true;                                 // LANTERN OIL: shots light the dark
+            if (ps.lastShots && w != null && w.def.mag > 0 && w.ammo == 0) { dmg *= 2f; size *= 1.3f; }   // TERMINAL ROUND: the last round in the mag
+            if (ps.critPierce && crit) pierce += 2;                                 // SHARP EDGE: crits pierce
+            if (ps.rockEater) { blockPierce += 3; mine += 2; }                      // WORLD EATER: shots eat rock
             float delay = d != null ? d.delay : 0.2f;
             // ALL SHOTS EXPLODE: very fast guns (and prism lasers) only blow up some of the time, or the world would vanish
             if (ps.shotExplode && radius <= 0f && (noPrism ? Random.value < 0.4f : delay >= 0.08f || Random.value < 0.3f)) explosive = true;
@@ -208,6 +228,26 @@ namespace DigDeep
             MakeGO("Shot", Art.Circle, 15);
             go.transform.localScale = Vector3.one * 0.75f * Mathf.Max(0.8f, size);
             sr.color = Color.Lerp(Color.white, col, 0.25f);
+            if (team != Team.Player) halo = Threat(go, sr, col);
+        }
+
+        // ENEMY SHOTS must always be seen: drawn over everything (water, smoke, the dark) with a pulsing red halo behind them
+        public static SpriteRenderer Threat(GameObject g, SpriteRenderer s, Color c)
+        {
+            s.sortingOrder = 102;
+            var h = new GameObject("Halo");
+            h.transform.SetParent(g.transform, false);
+            h.transform.localScale = Vector3.one * 1.9f;
+            var hs = Art.AddSR(h, Art.Glow != null ? Art.Glow : Art.Circle, 101);
+            hs.color = new Color(1f, 0.15f, 0.1f, 0.55f);
+            return hs;
+        }
+        SpriteRenderer halo;
+        public static void Pulse(SpriteRenderer hs)
+        {
+            if (hs == null) return;
+            float k = 0.45f + 0.25f * Mathf.Sin(Time.time * 18f);
+            hs.color = new Color(1f, 0.15f, 0.1f, k);
         }
 
         public float Speed => vel.magnitude;
@@ -242,6 +282,10 @@ namespace DigDeep
         public override void Tick(float dt)
         {
             age += dt; life -= dt; spareT -= dt;
+            if (halo != null) { if (team == Team.Player) { Object.Destroy(halo.gameObject); halo = null; if (sr != null) sr.sortingOrder = 15; } else Pulse(halo); }
+            // nothing of yours lives forever (lingering, bouncing, splitting stacks): quietly gone after a while,
+            // sooner when the air is already full of your shots
+            if (team == Team.Player && age > (G.playerShots > 220 ? 2.5f : 7f)) { Kill(); return; }
             if (VoidStage.Active && team == Team.Player)
             {
                 // the void's last hall: bouncing shots bounce off the screen's edges, everything else just leaves
@@ -249,7 +293,7 @@ namespace DigDeep
                 {
                     if (bounces > 0)
                     {
-                        bounces--;
+                        bounces--; hit.RemoveWhere(he => he is Enemy);   // (after a bounce it can hit the same foe again)
                         if (pos.x < VoidStage.Min.x || pos.x > VoidStage.Max.x) vel.x = -vel.x;
                         if (pos.y < VoidStage.Min.y || pos.y > VoidStage.Max.y) vel.y = -vel.y;
                         pos = new Vector2(Mathf.Clamp(pos.x, VoidStage.Min.x, VoidStage.Max.x), Mathf.Clamp(pos.y, VoidStage.Min.y, VoidStage.Max.y));
@@ -270,15 +314,18 @@ namespace DigDeep
 
             // fluids: water drags shots down, puts out fire; frost shots freeze water into an ice platform
             byte fl = Wd.FluidAtPoint(pos);
+            if (fl == Fluids.Water && !wasWet) Fluids.Impact(pos, 0.25f * Mathf.Max(0.6f, size), vel);   // a shot hitting the water
+            wasWet = fl == Fluids.Water;
+            if (fl == Fluids.Water || fl == Fluids.Haste) Fluids.Stir(pos, vel, 0.3f * Mathf.Max(1f, size));   // it drags the liquid along its path
             if (fl == Fluids.Water)
             {
                 if (flame && team == Team.Player)
                 {
                     // a flamethrower under water boils the water around it away and keeps burning (and digging) through
                     int fx0 = Mathf.FloorToInt(pos.x), fy0 = Mathf.FloorToInt(pos.y);
-                    float wa0 = Wd.LiquidAmount(fx0, fy0) - 0.3f;
+                    float wa0 = Wd.LiquidAmount(fx0, fy0) - 0.08f;
                     if (wa0 <= 0.02f) Wd.SetLiquid(fx0, fy0, Fluids.None, 0f); else Wd.SetLiquid(fx0, fy0, Fluids.Water, wa0);
-                    Wd.AddSteam(fx0, fy0 + 1, 0.12f);
+                    if (Random.value < 0.5f) Fluids.Bubble(pos, Random.Range(2.5f, 4.5f));   // fire under water: gas bubbles rise
                     if (Random.value < 0.3f) G.fx.Smoke(pos, 1, 0.6f);
                     vel *= 1f - Mathf.Min(0.8f, 2.5f * dt);
                 }
@@ -286,16 +333,15 @@ namespace DigDeep
                 {
                     // fire boils water away into steam
                     int wx = Mathf.FloorToInt(pos.x), wy = Mathf.FloorToInt(pos.y);
-                    float wa = Wd.LiquidAmount(wx, wy) - (flame ? 0.06f : 0.2f);
+                    float wa = Wd.LiquidAmount(wx, wy) - (flame ? 0.02f : 0.07f);   // fire only boils a little water away
                     if (wa <= 0.02f) Wd.SetLiquid(wx, wy, Fluids.None, 0f); else Wd.SetLiquid(wx, wy, Fluids.Water, wa);
-                    Wd.AddSteam(wx, wy + 1, flame ? 0.1f : 0.3f);
-                    G.fx.Smoke(pos, 2, 0.7f);
+                    for (int bb = 0; bb < (flame ? 1 : 4); bb++) Fluids.Bubble(pos + Random.insideUnitCircle * 0.15f, Random.Range(2.5f, 5f));   // it boils off as rising bubbles
                     Kill();
                     return;
                 }
                 // frost shots no longer freeze on touching water: they swim on and dig like any shot; a few of
                 // them flash-freeze the water where they finally stop (see Kill), and foes they hit in water get iced in
-                if (!flame)
+                if (!flame && !(team == Team.Player && owner != null && owner.s.swimShots))   // SEA LEGS: yours fly on at full speed
                 {
                     vel *= 1f - Mathf.Min(0.9f, 4f * dt);
                     life -= dt;
@@ -368,13 +414,21 @@ namespace DigDeep
             if ((accel > 0f || lob || (nativeHoming && radius > 0f)) && Random.value < 0.6f) G.fx.Smoke(pos - vel.normalized * 0.2f, 1, 0.55f);
             if (flame)
             {
-                float k = 1f - life / 0.38f;
-                float sc = Mathf.Lerp(0.7f, 1.9f, k) * size;
+                // crispy pixel fire: a blocky clump stepping white -> yellow -> orange -> red -> ember, swelling then
+                // shrinking in hard steps, never rotated, shedding little square sparks
+                if (flameLife <= 0f) { flameLife = Mathf.Max(0.05f, life); flameVar = Random.Range(0, 3); }
+                float k = Mathf.Clamp01(1f - life / flameLife);
+                int step = Mathf.Min(FlameRamp.Length - 1, (int)(k * FlameRamp.Length));
+                float grow = k < 0.55f ? Mathf.Lerp(0.55f, 1.7f, k / 0.55f) : Mathf.Lerp(1.7f, 0.9f, (k - 0.55f) / 0.45f);
+                float sc = Mathf.Round(grow * 4f) / 4f * size;
                 go.transform.localScale = new Vector3(sc, sc, 1f);
-                var c = Color.Lerp(new Color(1f, 0.92f, 0.5f), new Color(0.75f, 0.12f, 0.05f), k);
-                c.a = 1f - k * 0.7f;
+                string key = k > 0.8f ? "b_flame4" : FlameKeys[(flameVar + (int)(k * 4f)) % FlameKeys.Length];
+                if (Art.Bullets.TryGetValue(key, out var fs)) sr.sprite = fs;
+                var c = FlameRamp[step];
+                if (step == FlameRamp.Length - 1 && ((int)(Time.time * 30f + flameVar)) % 2 == 0) c.a = 0f;   // the last embers flicker out
                 sr.color = c;
-                if (Random.value < 0.08f) G.fx.Smoke(pos, 1, 0.6f);
+                if (Random.value < 0.12f) G.fx.Burst(pos + Random.insideUnitCircle * 0.25f * sc, 1, FlameRamp[Mathf.Min(step + 1, FlameRamp.Length - 1)], 2f, 0.2f, -6f, 0.7f, false);
+                if (k > 0.7f && Random.value < 0.05f) G.fx.Smoke(pos, 1, 0.5f);
             }
             else
             {
@@ -382,9 +436,18 @@ namespace DigDeep
                 go.transform.localScale = new Vector3(s * stretch, s, 1f);
             }
             if ((lob && !linger) || main == Art.Bullets["b_disc"]) { spinA += dt * (lob ? -500f : 1400f); go.transform.rotation = Quaternion.Euler(0, 0, spinA); }
+            else if (flame) go.transform.rotation = Quaternion.identity;
             else go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(vel.y, vel.x) * Mathf.Rad2Deg);
             Place();
         }
+
+        float flameLife; int flameVar;
+        static readonly string[] FlameKeys = { "b_flame1", "b_flame2", "b_flame3" };
+        static readonly Color[] FlameRamp =
+        {
+            new Color(1f, 1f, 0.94f), new Color(1f, 0.95f, 0.55f), new Color(1f, 0.8f, 0.28f), new Color(1f, 0.55f, 0.16f),
+            new Color(0.9f, 0.27f, 0.12f), new Color(0.5f, 0.13f, 0.14f),
+        };
 
         void Steer(float dt)
         {
@@ -401,9 +464,9 @@ namespace DigDeep
                     if (e.dead || !(e is Enemy en) || en.Intangible || hit.Contains(en) || !Teams.Hostile(team, en.team)) continue;
                     Vector2 v = en.pos - pos;
                     float d = v.magnitude;
-                    if (d > 11f) continue;
+                    if (d > (softHome ? 6f : 11f)) continue;
                     float ang = Vector2.Angle(vel, v);
-                    if (ang > 110f) continue;
+                    if (ang > (softHome ? 55f : 110f)) continue;
                     if (!ghost && !Wd.LineClear(pos, en.pos)) continue;   // ghosts home in through rock
                     float score = d * (1f + ang / 60f);
                     if (score < best) { best = score; homeTarget = en; }
@@ -412,6 +475,7 @@ namespace DigDeep
             if (homeTarget == null) return;
             Vector2 want = (homeTarget.pos - pos).normalized;
             float turn = (lockTarget ? 900f : nativeHoming ? 430f : 320f) * (laser ? 2.2f : 1f) * dt * Mathf.Deg2Rad;   // lasers bend hard
+            if (softHome) turn = 140f * Mathf.Clamp(10f / Mathf.Max(1f, vel.magnitude), 0.2f, 1f) * dt * Mathf.Deg2Rad;   // fast shots barely bend
             vel = Vector3.RotateTowards(vel, want * vel.magnitude, turn, 0f);
         }
 
@@ -460,6 +524,11 @@ namespace DigDeep
             {
                 var def = Tiles.Def(b);
                 int power = Mathf.Max(1, owner.s.digPower) * mine * (wallBreaker ? 3 : 1) * (highCal ? 2 : 1);
+                // gold cracks by how hard a shot hits, not how many shots: a big round does more than a peashooter
+                if (b == Block.Gold || BigOre.Is(b)) power = Mathf.Max(1, Mathf.RoundToInt(dmg / 3f)) * Mathf.Max(1, owner.s.digPower) * (wallBreaker ? 3 : 1);
+                if (arrow && (b == Block.Gold || BigOre.Is(b))) power = Mathf.Max(power, mine * 3 * Mathf.Max(1, owner.s.digPower));   // an arrowhead splits gold seams fast
+                // an arrow that has punched through all it can: it just nicks the block it ends in, and sticks there
+                if (arrow && tilePierce >= Mathf.Max(blockPierce, wallBreaker ? 2 : 0)) power = Wd.Hp(cx, cy) > 1 ? 1 : 0;
                 if (power > 0) r = owner.MineCell(cx, cy, power, vel.normalized);
                 else r = World.Hit.Damaged;
             }
@@ -492,7 +561,7 @@ namespace DigDeep
             }
             if (bounces > 0 && !flame)
             {
-                bounces--;
+                bounces--; hit.RemoveWhere(he => he is Enemy);   // (after a bounce it can hit the same foe again)
                 if (w != null && w.def.id == "disc") OnImpact(prev, -vel.normalized, null);   // the disc's tricks (splits, ghosts...) go off on every bounce
                 Reflect(prev, cx, cy);
                 pos = prev;
@@ -501,7 +570,7 @@ namespace DigDeep
                 return true;
             }
             OnImpact(prev, -vel.normalized, null);
-            if (arrow) StuckArrow.Lodge(prev + vel.normalized * 0.2f, vel, main, new Vector2Int(cx, cy));
+            if (arrow) { StuckArrow.Lodge(prev + vel.normalized * 0.2f, vel, main, new Vector2Int(cx, cy), size); G.sfx.PlayAt(prev, "arrow_stick", 0.6f, 1f, 0.1f); lodged = true; lodgedAt = prev + vel.normalized * 0.2f; lodgedCell = new Vector2Int(cx, cy); }
             Kill();
             return false;
         }
@@ -565,7 +634,7 @@ namespace DigDeep
                     if (radius > 0f) { OnImpact(pos, -vel.normalized, null); Explode(pos); return true; }
                     if (bounces > 0 && !flame)
                     {
-                        bounces--;
+                        bounces--; hit.RemoveWhere(he => he is Enemy);   // (after a bounce it can hit the same foe again)
                         Vector2 n = (pos - bb.pos).normalized;
                         vel = Vector2.Reflect(vel, n);
                         pos = bb.pos + n * (BoulderBody.H.x + 0.2f);
@@ -628,8 +697,13 @@ namespace DigDeep
                 if (sharp && (pos - en.pos).magnitude < Mathf.Min(en.half.x, en.half.y) * 0.55f + 0.12f) { d *= 2.2f; weak = true; }
                 if (en.Poisoned) d *= 1.25f;
                 Vector2 dir = vel.normalized;
-                if (en.TakeShot(d, dir * knock + Vector2.up * knock * 0.15f))
+                Enemy.ArrowKill = arrow;
+                bool tookIt = en.TakeShot(d, dir * knock + Vector2.up * knock * 0.15f);
+                Enemy.ArrowKill = false;
+                if (tookIt)
                 {
+                    // ARROWS take what they kill with them, and pin it to the wall they end in
+                    if (arrow && en.dead && Corpse.Last != null && !Corpse.Last.dead && Corpse.Last.born == Time.frameCount) { Corpse.Last.Pin(this); Unlocks.Pinned(); }
                     if (owner != null) owner.OnWeaponHit(en, w, d, pos, dir, chainGen, hit);
                     else G.fx.Blood(pos, dir, en.BloodColor, 4);
                     if (petShot) Pets.Status(en, d);
@@ -652,7 +726,9 @@ namespace DigDeep
                     if (!U.Overlap(pos, h, a.pos, a.Half)) continue;
                     hit.Add(a);
                     a.OnHit(Src.Weapon);
-                    if (pierce <= 0) { Kill(); return true; }
+                    if (radius > 0f) { OnImpact(pos, -vel.normalized, null); Explode(pos); return true; }   // grenades and rockets go off on altars too
+                    if (explosive) ModBlast(pos);
+                    if (pierce <= 0) { OnImpact(pos, -vel.normalized, null); Kill(); return true; }
                 }
             return false;
         }
@@ -672,8 +748,8 @@ namespace DigDeep
                 bool safe = owner.s.blastProof || (!selfHurt && !modExplosive);
                 float r = radius > 0f ? radius : 1.15f;
                 float e = radius > 0f ? dmg : dmg * 0.6f + 1f;
-                G.Explode(at, r, e, safe, true, !noPrism && splitGen == 0);
-                if (w != null && w.def.digPocket > 0f) G.DigPocket(at, w.def.digPocket, Mathf.Max(1, owner.s.digPower) * 4);
+                G.Explode(at, r, e, safe, true, !noPrism && splitGen == 0, false, true);
+                if (w != null && w.def.digPocket > 0f) G.DigPocket(at, w.def.digPocket * owner.s.blastMul, Mathf.Max(1, owner.s.digPower) * 4);
             }
             else G.Explode(at, Mathf.Max(radius, 1f), Mathf.Max(dmg, 3f), false, false);
         }
@@ -681,10 +757,11 @@ namespace DigDeep
         void ModBlast(Vector2 at)
         {
             if (owner == null) return;
-            G.Explode(at, (splitGen > 0 ? 0.5f : 1.4f) * blastScale, dmg * 0.9f + 2f, owner.s.blastProof || !modExplosive, true, !noPrism && splitGen == 0);   // only the EXPLOSIVE modifier can hurt you
+            G.Explode(at, (splitGen > 0 ? 0.5f : 1.4f) * blastScale, dmg * 0.9f + 2f, owner.s.blastProof || !modExplosive, true, !noPrism && splitGen == 0, false, true);   // only the EXPLOSIVE modifier can hurt you
         }
 
-        public override void AddLight(Lighting l) => l.Add(pos, (flame ? 1.6f : mega ? 2.4f : 1.2f) * Mathf.Max(0.8f, size), team == Team.Player ? (mega ? 0.9f : 0.55f) : 0.75f);
+        bool lanternLit;
+        public override void AddLight(Lighting l) => l.Add(pos, (flame ? 1.6f : mega ? 2.4f : lanternLit ? 3f : 1.2f) * Mathf.Max(0.8f, size), team == Team.Player ? (mega || lanternLit ? 0.9f : 0.55f) : 0.75f);
 
         // THOUSAND BLADES: flying swords bat enemy shots back, like a melee swing
         void DeflectNear()
@@ -718,7 +795,9 @@ namespace DigDeep
             this.p = p; this.dir = dir; this.d = d; this.scaleMul = scaleMul;
             if (scaleMul > 1f) Life = 0.18f;
             pos = p.pos;
-            MakeGO("Slash", Art.SlashArc, scaleMul > 1f ? 21 : 22);
+            bool stab = d.swing == "stab", smash = d.swing == "smash";
+            if (stab) Life = 0.09f; else if (smash && scaleMul <= 1f) Life = 0.17f;
+            MakeGO("Slash", stab ? Art.ThrustArc : smash ? Art.HeavyArc : Art.SlashArc, scaleMul > 1f ? 21 : 22);
             // the swoosh wears the colour of your newest attack element, and sheds a few sparks of each one you have
             fx = tint == null ? p.AttackFx(p.weapon) : null;
             c = tint ?? (echo ? new Color(0.8f, 0.6f, 1f) : fx != null && fx.Count > 0 ? fx[fx.Count - 1] : d.col);
@@ -726,17 +805,35 @@ namespace DigDeep
             sr.flipY = side < 0;
             go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
             float sc = (d.reach * p.s.meleeReach * Player.MeleeReachMul + 0.2f) / 1.4f * scaleMul;
-            go.transform.localScale = new Vector3(sc, sc * Mathf.Clamp(d.arc / 110f, 0.7f, 1.5f), 1f);
+            go.transform.localScale = new Vector3(sc, stab ? sc * 0.8f : sc * Mathf.Clamp(d.arc / 110f, 0.7f, 1.5f), 1f);
         }
 
         readonly System.Collections.Generic.List<Color> fx;
         float fxAcc;
+
+        bool splashed;
 
         public override void Tick(float dt)
         {
             t += dt;
             if (t >= Life) { Kill(); return; }
             pos = p.pos + new Vector2(0f, 0.04f);
+            // the blade cuts the water: a splash where it meets the surface (and fire hisses into bubbles under it)
+            if (!splashed && t > 0.03f)
+            {
+                splashed = true;
+                float reach = d.reach * p.s.meleeReach * Player.MeleeReachMul * scaleMul;
+                bool fiery = fx != null && fx.Contains(new Color(1f, 0.55f, 0.2f));
+                for (int sk = -2; sk <= 2; sk++)
+                {
+                    Vector2 at = pos + U.Rot(dir, sk * d.arc * 0.2f) * reach * 0.8f;
+                    byte sf = Wd.FluidAtPoint(at);
+                    if (sf == Fluids.Water || sf == Fluids.Haste) Fluids.Stir(at, U.Rot(dir, sk * d.arc * 0.2f) * 12f, 0.45f * scaleMul);   // the blade sweeps the liquid along
+                    if (sf != Fluids.Water) continue;
+                    Fluids.Impact(at, 0.5f * scaleMul, U.Rot(dir, sk * d.arc * 0.2f) * 12f);
+                    if (fiery) for (int b = 0; b < 3; b++) Fluids.Bubble(at + Random.insideUnitCircle * 0.2f, Random.Range(2.5f, 4.5f));
+                }
+            }
             if (fx != null && fx.Count > 0)
             {
                 // about 12 sparks per swing in all, shared out between the elements
@@ -758,6 +855,74 @@ namespace DigDeep
         }
 
         public override void AddLight(Lighting l) => l.Add(pos + dir * d.reach * 0.6f, 1.6f, 0.5f * (1f - t / Life));
+    }
+
+    // SPLIT melee: once the swing is over, little air slices fly off it, fanned out to the sides of the swing
+    // (never further round than almost square to it). Each cuts every foe it passes once, and dies on rock.
+    public class AirSlice : Entity
+    {
+        float delay, t;
+        const float Life = 0.3f, Speed = 15f;
+        readonly Player p;
+        readonly Vector2 dir;
+        readonly float dmg;
+        readonly Color c;
+        readonly System.Collections.Generic.HashSet<Enemy> hit = new System.Collections.Generic.HashSet<Enemy>();
+
+        public override bool AlwaysActive => true;
+
+        public AirSlice(Player p, Vector2 from, Vector2 dir, float dmg, Color c, float delay, int side)
+        {
+            this.p = p; this.dir = dir; this.dmg = dmg; this.c = c; this.delay = delay;
+            pos = from;
+            MakeGO("AirSlice", Art.SlashArc, 22);
+            sr.color = c;
+            sr.flipY = side < 0;
+            sr.enabled = false;
+            go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
+            go.transform.localScale = new Vector3(0.42f, 0.5f, 1f);
+        }
+
+        public override void Tick(float dt)
+        {
+            if (delay > 0f)
+            {
+                delay -= dt;
+                pos = p.pos + dir * 0.5f;   // it leaves from you as the swing ends
+                if (delay > 0f) return;
+                sr.enabled = true;
+                G.sfx.Play("swing", 0.25f, 1.9f, 0.1f);
+            }
+            t += dt;
+            if (t >= Life) { Kill(); return; }
+            Vector2 next = pos + dir * Speed * dt;
+            if (Wd.Solid(Mathf.FloorToInt(next.x), Mathf.FloorToInt(next.y)))
+            {
+                G.fx.Sparks(pos, c);
+                Kill();
+                return;
+            }
+            pos = next;
+            byte fl = Wd.FluidAtPoint(pos);
+            if (fl == Fluids.Water || fl == Fluids.Haste) Fluids.Stir(pos, dir * Speed, 0.3f);
+            var hb = new Vector2(0.35f, 0.35f);
+            foreach (var e in G.ents)
+            {
+                if (e.dead || !(e is Enemy en) || en.Intangible || en.thrall || en.team == Team.Player || hit.Contains(en)) continue;
+                if (!U.Overlap(pos, hb, en.pos, en.half)) continue;
+                hit.Add(en);
+                if (en.TakeShot(dmg, dir * 3f + Vector2.up * 1f))
+                {
+                    p.MeleeStatus(en);
+                    G.fx.Burst(en.pos, 4, c, 3f, 0.2f, 0f);
+                }
+            }
+            var cc = c; cc.a = 1f - (t / Life) * (t / Life);
+            sr.color = cc;
+            go.transform.position = new Vector3(U.Snap(pos.x), U.Snap(pos.y), 0);
+        }
+
+        public override void AddLight(Lighting l) => l.Add(pos, 1f, 0.35f * (1f - t / Life));
     }
 
     // Railgun streak.
@@ -815,8 +980,25 @@ namespace DigDeep
 
         public override bool AlwaysActive => true;
 
+        public static Corpse Last;   // the newest body (so the arrow that killed it can carry it off)
+        public int born;
+        Bullet pinBy;
+        bool pinned;
+        Vector2Int pinCell;
+        Vector2 pinOff;
+
+        // skewered on an arrow: it rides along with it, and stays pinned where the arrow sticks
+        public void Pin(Bullet b)
+        {
+            pinBy = b;
+            pinOff = (pos - b.pos) * 0.3f;
+            ang = Mathf.Atan2(b.vel.y, b.vel.x) * Mathf.Rad2Deg + (sr != null && sr.flipX ? 180f : 0f);
+            spin = 0f;
+        }
+
         public Corpse(Enemy e, Vector2 kv)
         {
+            Last = this; born = Time.frameCount;
             pos = e.pos;
             var spr = e.CorpseSprite;
             centerUp = (spr.rect.height * 0.5f - spr.pivot.y) / Art.PPU;
@@ -841,6 +1023,30 @@ namespace DigDeep
         {
             life -= dt;
             if (life <= 0f) { Kill(); return; }
+            if (pinBy != null || pinned)
+            {
+                if (pinBy != null)
+                {
+                    if (!pinBy.dead) pos = pinBy.pos + pinOff - pinBy.vel.normalized * 0.25f;
+                    else if (pinBy.lodged) { pos = pinBy.lodgedAt - pinBy.vel.normalized * 0.35f + pinOff; pinned = true; pinCell = pinBy.lodgedCell; pinBy = null; G.fx.Blood(pos, Vector2.down, blood, 4); }
+                    else { pinBy = null; vel = Vector2.zero; }   // the arrow just flew off: the body drops
+                }
+                if (pinned && !Wd.Solid(pinCell.x, pinCell.y)) { pinned = false; vel = Vector2.down; spin = Random.Range(-200f, 200f); }   // its block broke: it drops
+                if (pinned)
+                {
+                    // hanging on the wall
+                    if (Random.value < 0.01f) G.fx.Blood(pos, Vector2.down, blood, 1);
+                    go.transform.position = new Vector3(U.Snap(pos.x), U.Snap(pos.y), 0f);
+                    go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
+                    return;
+                }
+                if (pinBy != null)
+                {
+                    go.transform.position = new Vector3(U.Snap(pos.x), U.Snap(pos.y), 0f);
+                    go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
+                    return;
+                }
+            }
             if (!resting)
             {
                 vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 38f * dt, -22f), dt);

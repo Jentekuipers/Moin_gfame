@@ -19,7 +19,7 @@ namespace DigDeep
             if (r.NextDouble() < (tier >= 2 ? 0.3f : 0.06f))
             {
                 var mythic = new System.Collections.Generic.List<SkillDef>();
-                foreach (var t in DB.Trinkets) if (t.rarity == Rarity.Relic && p.SkillCount(t.id) < t.cap && DB.Unlocked(t) && !p.SeenOnce(t.id)) mythic.Add(t);
+                foreach (var t in DB.Trinkets) if (t.rarity == Rarity.Relic && !t.ultra && p.SkillCount(t.id) < t.cap && DB.Unlocked(t) && !p.SeenOnce(t.id)) mythic.Add(t);
                 if (mythic.Count > 0) return mythic[r.Next(mythic.Count)];
             }
             Def best = null;
@@ -44,7 +44,7 @@ namespace DigDeep
             int want = 1 + (depth > 200 ? 1 : 0) + (depth > 420 ? 1 : 0) + tier;
             want = Mathf.Clamp(want, 1, Mods.Max);
             for (int i = 0; i < want; i++) if (!Mods.AddRandom(w, r)) break;
-            if (r.NextDouble() < 0.2f) { w.curse = (Curse)(1 + r.Next((int)Curse.COUNT - 1)); w.curseKills = 0; }
+            if (r.NextDouble() < 0.2f) { w.curse = Curses.Pick(r); w.curseKills = 0; }
             return w;
         }
 
@@ -59,7 +59,7 @@ namespace DigDeep
             int tier = Tier(depth, p, r);
             bool premium = tier > 0;
             int roll = depth + tier * 150;   // better shelves stock as if you were much deeper
-            g.Spawn(new Keeper(new Vector2(room.x0 + 2.5f, standY), tier));
+            g.Spawn(new Keeper(new Vector2(room.x0 + 2.5f, standY), tier, room.x0));
             if (premium)   // a premium shop is built of gilded brick: you can tell from the walls
                 for (int gd = room.top - 3; gd <= room.top + ShopRoom.Ht; gd++)
                     for (int gx = room.x0 - 4; gx < room.x0 + ShopRoom.Wd + 4; gx++)
@@ -75,12 +75,12 @@ namespace DigDeep
             all.Add(k < (premium ? 30 : 35) ? DB.RollMod(p, r) : Trinket(roll, tier, p, r));
             all.Add(r.Next(2) == 0 ? (r.Next(2) == 0 ? DB.Ale : DB.ById.TryGetValue("stew", out var stew) ? stew : DB.Ale) : Trinket(roll, tier, p, r));
             for (int i = 4; i < n; i++) all.Add(Trinket(roll, tier, p, r));
-            // a better shop has a second shelf above the first: another weapon and more trinkets
+            // a better shop has a second shelf above the first, its wares sitting in the gaps between the ones below
             int rows = premium ? 2 : 1;
             if (premium)
             {
                 all.Add(null); weapons.Add(ShopWeapon(depth + 60, tier, p, r));
-                for (int i = 1; i < n; i++) all.Add(i == 2 && r.Next(3) == 0 ? DB.RollMod(p, r) : Trinket(roll, tier, p, r));
+                for (int i = 1; i < n - 1; i++) all.Add(i == 2 && r.Next(3) == 0 ? DB.RollMod(p, r) : Trinket(roll, tier, p, r));
             }
             // never the same thing twice in one shop
             for (int i = 0; i < all.Count; i++)
@@ -94,11 +94,12 @@ namespace DigDeep
             float priceMul = (1f + Mathf.Max(0, depth - 120) / 350f) * (tier == 2 ? 2.4f : tier == 1 ? 1.6f : 1f);   // deeper diggers carry more gold
             int wi = 0;
             for (int row = 0; row < rows; row++)
-                for (int i = 0; i < n; i++)
+                for (int i = 0; i < (row == 0 ? n : n - 1); i++)
                 {
                     int idx = row * n + i;
-                    float x = room.x0 + 4.5f + (n <= 4 ? 1f : 0f) + i * gap;
-                    int fy = standY + row * 3;   // the top shelf sits right above the bottom one
+                    float x = room.x0 + 4.5f + (n <= 4 ? 1f : 0f) + i * gap + (row == 1 ? gap * 0.5f : 0f);
+                    x = Mathf.Floor(x) + 0.5f;
+                    int fy = standY + row * 2;   // the top shelf: two up, in between the ones below
                     // each offer sits on an indestructible steel plate that stays put even if the floor is blown away
                     g.world.Set(Mathf.FloorToInt(x), fy - 1, Block.Plate);
                     if (IsWeaponSlot(idx, n))
@@ -106,23 +107,104 @@ namespace DigDeep
                         var w = weapons[wi++];
                         int wp = DB.Price(w.def, depth, p);
                         wp = Mathf.RoundToInt(wp * (1f + 0.35f * w.mods.Count) * (w.curse != Curse.None ? 0.7f : 1f) * priceMul / 5f) * 5;
-                        g.Spawn(new Pedestal(new Vector2(x, fy), w, Mathf.Max(5, wp), tier));
+                        g.Spawn(new Pedestal(new Vector2(x, fy), w, Mathf.Max(5, wp), tier) { shopX0 = room.x0, depth = depth, priceMul = priceMul });
                         continue;
                     }
                     var d = all[idx] ?? DB.Ale;
                     int price = Mathf.RoundToInt(DB.Price(d, depth, p) * priceMul / 5f) * 5;
-                    g.Spawn(new Pedestal(new Vector2(x, fy), d, Mathf.Max(5, price), tier));
+                    g.Spawn(new Pedestal(new Vector2(x, fy), d, Mathf.Max(5, price), tier) { shopX0 = room.x0, depth = depth, priceMul = priceMul });
                 }
         }
 
         static bool IsWeaponSlot(int idx, int n) => idx % n == 0;
+
+        // MERCHANT'S LEDGER picked up inside a shop: one more ware appears on the bottom shelf right away
+        public static void AddOffer(Player p)
+        {
+            var near = Pedestal.NearestShop(p.pos);
+            if (near == null) return;
+            var g = Game.I;
+            float bestX = float.NaN, bestGap = 0f;
+            for (float x = near.shopX0 + 3.5f; x <= near.shopX0 + ShopRoom.Wd - 1.5f; x += 1f)
+            {
+                float gap = 99f;
+                foreach (var o in Pedestal.All) if (o.shopX0 == near.shopX0 && !o.dead) gap = Mathf.Min(gap, Mathf.Abs(o.pos.x - x) + (Mathf.Abs(o.BaseY - near.BaseY) > 0.5f ? 0.8f : 0f));
+                if (gap > bestGap) { bestGap = gap; bestX = x; }
+            }
+            if (float.IsNaN(bestX) || bestGap < 1.2f) return;
+            var d = DB.RollTrinket(near.depth, p, g.rng) ?? DB.Ale;
+            int price = Mathf.Max(5, Mathf.RoundToInt(DB.Price(d, near.depth, p) * near.priceMul / 5f) * 5);
+            int fy = Mathf.RoundToInt(near.BaseY);
+            float lowest = near.BaseY;
+            foreach (var o in Pedestal.All) if (o.shopX0 == near.shopX0) lowest = Mathf.Min(lowest, o.BaseY);
+            fy = Mathf.RoundToInt(lowest);
+            g.world.Set(Mathf.FloorToInt(bestX), fy - 1, Block.Plate);
+            g.Spawn(new Pedestal(new Vector2(bestX, fy), d, price, near.Tier) { shopX0 = near.shopX0, depth = near.depth, priceMul = near.priceMul });
+            g.fx.Burst(new Vector2(bestX, fy + 1f), 20, new Color(1f, 0.85f, 0.3f), 5f, 0.5f, 3f);
+            g.sfx.Play("chest", 0.6f, 1.3f);
+        }
+
+        // MEMBER'S CARD picked up inside a shop: its prices drop on the spot
+        public static void Reprice(Player p, float mul)
+        {
+            var near = Pedestal.NearestShop(p.pos);
+            if (near == null) return;
+            foreach (var o in Pedestal.All) if (o.shopX0 == near.shopX0 && !o.dead) o.MulPrice(mul);
+        }
     }
 
-    public class Pedestal : Entity
+    public class Pedestal : Entity, IRerollable
     {
-        readonly Def def;
-        readonly Weapon weapon;   // a weapon for sale, with its modifiers (and maybe a curse)
-        readonly int price;
+        public static readonly System.Collections.Generic.List<Pedestal> All = new System.Collections.Generic.List<Pedestal>();
+        Def def;
+        Weapon weapon;   // a weapon for sale, with its modifiers (and maybe a curse)
+        int price;
+
+        // SPELL - REROLL CIRCLE: the ware turns into another of its kind and rarity (priced afresh)
+        public void Reroll()
+        {
+            if (sold) return;
+            var pl = G.player;
+            if (weapon != null)
+            {
+                weapon = DigDeep.Reroll.Swap(weapon, pl);
+                def = weapon.def;
+                int wp = DB.Price(weapon.def, depth, pl);
+                price = Mathf.Max(5, Mathf.RoundToInt(wp * (1f + 0.35f * weapon.mods.Count) * (weapon.curse != Curse.None ? 0.7f : 1f) * priceMul / 5f) * 5);
+            }
+            else
+            {
+                def = DigDeep.Reroll.Swap(def, pl);
+                price = Mathf.Max(5, Mathf.RoundToInt(DB.Price(def, depth, pl) * priceMul / 5f) * 5);
+            }
+            sr.sprite = def.icon;
+            pl?.MarkSeen(def);
+        }
+        public int shopX0 = int.MinValue, depth;
+        public float priceMul = 1f;
+        public float BaseY => baseY;
+        public bool Sold => sold;
+        public int Tier => tier;
+
+        public void MulPrice(float m)
+        {
+            if (sold) return;
+            price = Mathf.Max(5, Mathf.RoundToInt(price * m / 5f) * 5);
+            G.fx.Burst(pos, 8, new Color(1f, 0.85f, 0.3f), 3f, 0.4f, 2f);
+        }
+
+        // the shop (its first pedestal) closest to p, within shouting distance
+        public static Pedestal NearestShop(Vector2 p)
+        {
+            Pedestal best = null; float bd = 16f * 16f;
+            foreach (var o in All)
+            {
+                if (o.dead || o.shopX0 == int.MinValue) continue;
+                float d2 = (o.pos - p).sqrMagnitude;
+                if (d2 < bd) { bd = d2; best = o; }
+            }
+            return best;
+        }
         bool sold;
         float bob;
         readonly GameObject stand;
@@ -138,6 +220,7 @@ namespace DigDeep
         public Pedestal(Vector2 floorPos, Def d, int price, int tier = 0)
         {
             def = d; this.price = price; this.tier = tier; premium = tier > 0;
+            All.Add(this);
             G.player?.MarkSeen(d);
             baseY = floorPos.y;
             pos = new Vector2(floorPos.x, floorPos.y + 1.0f);
@@ -162,8 +245,6 @@ namespace DigDeep
         }
 
         readonly ModGlow modGlow;
-        static Pedestal hoverNow, hoverLast;
-        static int hoverFrame;
 
         public override void Tick(float dt)
         {
@@ -179,16 +260,16 @@ namespace DigDeep
             }
             G.hud.Label(pos + Vector2.up * 0.75f, price + "G", pl.s.gold >= price ? (premium ? new Color(1f, 0.95f, 0.55f) : new Color(1f, 0.85f, 0.3f)) : new Color(0.7f, 0.4f, 0.35f));
             if (pl.mode == Player.Mode.Dead) return;
-            bool near = Mathf.Abs(pl.pos.x - pos.x) < 0.8f && Mathf.Abs(pl.pos.y - (baseY + Player.Half.y)) < 1.2f;
-            // the one under the mouse gets the say: the one you stand at keeps quiet while you hover another
-            if (Time.frameCount != hoverFrame) { hoverFrame = Time.frameCount; hoverLast = hoverNow; hoverNow = null; }
-            bool hov = G.MouseOver(pos, 0.7f);
-            if (hov) hoverNow = this;
-            bool otherHovered = hoverLast != null && hoverLast != this && !hoverLast.dead && !hoverLast.sold;
-            if (!near && hov) Describe("WALK UP, PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, true);
+            bool near0 = Mathf.Abs(pl.pos.x - pos.x) < 0.8f && Mathf.Abs(pl.pos.y - (baseY + Player.Half.y)) < 1.2f;
+            bool hov0 = G.MouseOver(pos, 0.7f);
+            // one text box at a time across everything you could take (shop, floor, boss rewards)
+            PickFocus.Offer(this, hov0, near0, Mathf.Abs(pl.pos.x - pos.x) + Mathf.Abs(pl.pos.y - baseY) * 0.5f);
+            bool mine = PickFocus.Is(this);
+            bool near = near0 && mine, hov = hov0 && mine;
+            if (!near && hov) Describe("", pl, true);
             if (near)
             {
-                if (!otherHovered) Describe("PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, hov);
+                Describe("PRESS " + GameInput.Prompt(Btn.Interact), pl, hov);
                 if (GameInput.Take(Btn.Interact))
                 {
                     if (pl.s.gold < price)
@@ -221,6 +302,7 @@ namespace DigDeep
         public override void Kill()
         {
             base.Kill();
+            All.Remove(this);
             if (stand != null) Object.Destroy(stand);
             if (halo != null) Object.Destroy(halo);
             modGlow?.Kill();
@@ -242,9 +324,19 @@ namespace DigDeep
         float hp = 30f, vy, hurtCd, flashT, burnT, fallFrom;
         bool grounded = true;
 
-        public Keeper(Vector2 floorPos, int tier = 0)
+        // he walks his shop: up to a ware, points at it ("can I interest you...?"), then on to the next
+        readonly float minX, maxX;
+        readonly bool roams;
+        float walkT, pointT, idleT = 1f, goalX;
+        Pedestal pointAt;
+        static readonly string Pitch = "CAN I INTEREST YOU IN THIS ITEM?";
+
+        public Keeper(Vector2 floorPos, int tier = 0, int shopX0 = int.MinValue)
         {
             this.tier = tier; premium = tier > 0;
+            roams = shopX0 != int.MinValue;
+            minX = shopX0 + 1.5f; maxX = shopX0 + ShopRoom.Wd - 1.5f;
+            goalX = floorPos.x;
             pos = new Vector2(floorPos.x, floorPos.y + H.y);
             fallFrom = pos.y;
             MakeGO("Shopkeeper", premium && Art.KeeperOld != null ? Art.KeeperOld : Art.Keeper, 11);
@@ -286,11 +378,78 @@ namespace DigDeep
             if (Wd.FluidAtPoint(pos - new Vector2(0f, H.y * 0.8f)) == Fluids.Lava) Hurt(30f * dt, pos, true);
             if (dead) return;
 
-            sr.flipX = pl.pos.x < pos.x;
+            Wander(dt, pl);
             sr.color = flashT > 0f ? new Color(1f, 0.45f, 0.45f) : tier >= 2 ? new Color(0.9f, 0.8f, 1f) : Color.white;
             Place(-H.y);
-            if ((pl.pos - pos).sqrMagnitude < 25f) G.hud.Label(pos + Vector2.up * (Top - H.y + 0.45f), line, tier >= 2 ? new Color(0.85f, 0.6f, 1f) : premium ? new Color(1f, 0.85f, 0.3f) : new Color(0.6f, 1f, 0.6f));
+            bool near = (pl.pos - pos).sqrMagnitude < 25f;
+            var lc = tier >= 2 ? new Color(0.85f, 0.6f, 1f) : premium ? new Color(1f, 0.85f, 0.3f) : new Color(0.6f, 1f, 0.6f);
+            if (pointAt != null && pointT > 0f && (pl.pos - pos).sqrMagnitude < 4.5f * 4.5f) G.hud.Label(pos + Vector2.up * (Top - H.y + 1.9f), Pitch, lc);
+            else if (near && pointAt == null && walkT <= 0f && !roams) G.hud.Label(pos + Vector2.up * (Top - H.y + 1.9f), line, lc);
             if (premium && Random.value < dt * 3f) G.fx.Burst(pos + new Vector2(Random.Range(-1f, 14f), Random.Range(0f, 4f)), 1, tier >= 2 ? new Color(0.8f, 0.5f, 1f) : new Color(1f, 0.85f, 0.35f), 0.5f, 0.8f, -0.5f);
+        }
+
+        void Wander(float dt, Player pl)
+        {
+            var baseSpr = premium && Art.KeeperOld != null ? Art.KeeperOld : Art.Keeper;
+            if (!roams || !grounded)
+            {
+                sr.sprite = baseSpr;
+                sr.flipX = pl.pos.x < pos.x;
+                return;
+            }
+            if (pointAt != null && (pointAt.dead || pointAt.Sold)) { pointAt = null; pointT = 0f; idleT = 0.6f; }
+            if (pointT > 0f)
+            {
+                // holding his hand out at the ware
+                pointT -= dt;
+                sr.sprite = baseSpr;
+                if (pointAt != null) sr.flipX = pointAt.pos.x < pos.x;
+                if (pointT <= 0f) { pointAt = null; idleT = Random.Range(0.6f, 1.6f); }
+                return;
+            }
+            if (idleT > 0f)
+            {
+                idleT -= dt;
+                sr.sprite = baseSpr;
+                sr.flipX = pl.pos.x < pos.x;
+                if (idleT <= 0f) PickWare(pl);
+                return;
+            }
+            // walking over to it
+            float dx = goalX - pos.x;
+            if (Mathf.Abs(dx) < 0.08f)
+            {
+                pos.x = goalX;
+                if (pointAt != null) { pointT = Random.Range(2f, 3f); G.sfx.Play("swing", 0.15f, 0.7f); }
+                else idleT = Random.Range(0.8f, 2f);
+                return;
+            }
+            float step = Mathf.Sign(dx) * Mathf.Min(Mathf.Abs(dx), 1.7f * dt);
+            Vector2 p = pos;
+            if (Wd.MoveX(ref p, H, step, out _)) { goalX = pos.x; idleT = 1f; pointAt = null; return; }
+            pos = p;
+            walkT += dt;
+            var walk = SpriteSheet.Frames("keeperwalk");
+            sr.sprite = walk != null && walk.Length > 0 && !premium ? walk[((int)(walkT * 7f)) % walk.Length] : baseSpr;
+            sr.flipX = dx < 0f;
+        }
+
+        // the ware nearest to you (or any, when you're not about), and a spot beside it to stand
+        void PickWare(Player pl)
+        {
+            Pedestal best = null; float bd = float.MaxValue;
+            bool playerHere = Mathf.Abs(pl.pos.y - pos.y) < 6f && pl.pos.x > minX - 3f && pl.pos.x < maxX + 3f;
+            foreach (var o in Pedestal.All)
+            {
+                if (o.dead || o.Sold || o.pos.x < minX - 1f || o.pos.x > maxX + 1f || Mathf.Abs(o.BaseY - (pos.y - H.y)) > 4f) continue;
+                float d = playerHere ? Mathf.Abs(o.pos.x - pl.pos.x) + Random.value * 1.5f : Random.value * 10f;
+                if (o == pointAt) d += 5f;
+                if (d < bd) { bd = d; best = o; }
+            }
+            pointAt = best;
+            if (best == null) { goalX = Random.Range(minX, maxX); return; }
+            float side = pos.x < best.pos.x ? -1f : 1f;
+            goalX = Mathf.Clamp(best.pos.x + side * 1.1f, minX, maxX);
         }
 
         public void Hurt(float d, Vector2 from, bool dot = false)

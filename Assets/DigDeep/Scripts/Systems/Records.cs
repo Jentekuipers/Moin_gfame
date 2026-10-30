@@ -145,7 +145,7 @@ namespace DigDeep
             {
                 var r = new Rect(pad, top, W * 0.5f - pad * 1.5f, mid - top - pad * 0.5f);
                 int have = 0;
-                foreach (var c in Chars.All) if (PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) == 1) have++;
+                foreach (var c in Chars.All) if (Unlocks.CharOpen(c)) have++;
                 Panel(r, "CHARACTERS", have, Chars.All.Count, S, sm);
                 float size = 22f * S, x = r.x + 6f * S, y = r.y + 16f * S;
                 foreach (var c in Chars.All)
@@ -153,9 +153,12 @@ namespace DigDeep
                     bool won = PlayerPrefs.GetInt("digdeep_won_" + c.id, 0) == 1;
                     bool vwon = PlayerPrefs.GetInt("digdeep_voidwon_" + c.id, 0) == 1;
                     if (x + size > r.xMax - 4f * S) { x = r.x + 6f * S; y += size + 10f * S; }
-                    Sprite(c.frames != null && c.frames.Length > 0 ? c.frames[0] : null, x, y, size, won ? Color.white : new Color(0.25f, 0.25f, 0.3f));
+                    bool open = Unlocks.CharOpen(c);
+                    // locked: a black shape (hover says how to free them); open: full colour, diamonds underneath
+                    Sprite(c.frames != null && c.frames.Length > 0 ? c.frames[0] : null, x, y, size, !open ? Color.black : won ? Color.white : new Color(0.62f, 0.62f, 0.68f));
                     if (won) PixelFont.Draw(x + size * 0.5f, y + size + S, vwon ? "* *" : "*", sm, vwon ? new Color(0.8f, 0.55f, 1f) : new Color(0.6f, 0.9f, 1f), 1);
-                    if (new Rect(x, y, size, size).Contains(mouse)) tip = c.name + (won ? (vwon ? ": GOD-DIAMOND AND VOID DIAMOND" : ": GOD-DIAMOND") : ": NO DIAMOND YET");
+                    if (new Rect(x, y, size, size).Contains(mouse))
+                        tip = !open ? "LOCKED: " + Unlocks.How("char:" + c.id) : c.name + (won ? (vwon ? ": GOD-DIAMOND AND VOID DIAMOND" : ": GOD-DIAMOND") : ": NO DIAMOND YET");
                     x += size + 4f * S;
                 }
             }
@@ -191,7 +194,17 @@ namespace DigDeep
                     n++;
                 }
             }
-            if (tip != null) PixelFont.Draw(W * 0.5f, H - 22f * S, tip, sm, Color.white, 1);
+            if (tip != null)
+            {
+                float ts = sm;
+                while (ts > 1f && PixelFont.Width(tip, ts) > W * 0.94f) ts -= 1f;
+                PixelFont.Draw(W * 0.5f, H - 22f * S, tip, ts, tip.StartsWith("LOCKED") ? new Color(1f, 0.82f, 0.4f) : Color.white, 1);
+            }
+            {
+                int got = 0;
+                foreach (var u in Unlocks.All) if (Unlocks.Done(u.id)) got++;
+                PixelFont.Draw(W - pad, 8f * S, "ACHIEVEMENTS " + got + " / " + Unlocks.All.Count, sm, new Color(1f, 0.82f, 0.4f), 2);
+            }
         }
 
         static void Panel(Rect r, string name, int have, int total, float S, float sm)
@@ -218,8 +231,10 @@ namespace DigDeep
                 float x = x0 + (i % cols) * (size + 2f * S), y = y0 + (i / cols) * (size + 2f * S);
                 if (y + size > r.yMax) break;
                 bool seen = Records.Seen(kind, list[i].id);
-                Sprite(list[i].icon, x, y, size, seen ? Color.white : new Color(0f, 0f, 0f, 0.85f));
-                if (new Rect(x, y, size, size).Contains(mouse)) tip = seen ? list[i].name : "NOT FOUND YET";
+                string how = Unlocks.How(list[i].id);   // locked behind an achievement?
+                // locked: solid black, hover tells you how; unlocked but never found: a dim shape; found: full colour
+                Sprite(list[i].icon, x, y, size, how != null ? Color.black : seen ? Color.white : new Color(0.3f, 0.3f, 0.36f, 0.9f));
+                if (new Rect(x, y, size, size).Contains(mouse)) tip = how != null ? "LOCKED: " + how : seen ? list[i].name : "NOT FOUND YET";
             }
             return tip;
         }

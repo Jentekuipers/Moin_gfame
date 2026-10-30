@@ -9,7 +9,8 @@ namespace DigDeep
         public enum Kind { Gunner, Brute, Marksman, Bomber }
         readonly Kind kind;
         readonly float speed, range;
-        float fireT, hopT, telegraph, gunKick;
+        float fireT, hopT, telegraph, gunKick, navT, leapT;
+        int navDir; bool navOn;
         bool grounded;
         Vector2 aimDir = Vector2.right;
         readonly Transform gun, laser;
@@ -72,9 +73,19 @@ namespace DigDeep
                 facing = d.x > 0f ? 1 : -1;
                 float near = kind == Kind.Brute ? 1.5f : kind == Kind.Marksman ? 7f : 4f;
                 float far = kind == Kind.Brute ? 4f : kind == Kind.Marksman ? 13f : 8f;
-                if (dist > far) want = facing;
+                bool sight = Wd.LineClear(MuzzlePos, TPos);
+                if (dist > far || !sight)
+                {
+                    // out of range or out of sight: work round the rock towards you
+                    navT -= dt;
+                    if (navT <= 0f) { navT = 0.4f; navOn = GroundNav.Step(new Vector2(pos.x, pos.y - half.y), TPos + Vector2.down * (Player.Half.y - 0.05f), false, out navDir, out _) && navDir != 0; }
+                    want = navOn ? navDir : facing;
+                }
                 else if (dist < near) want = -facing;
                 if (telegraph > 0f) want = 0f;
+                // jump for a better shot (or to get up to you)
+                if (grounded && hopT <= 0f && telegraph <= 0f && (d.y > 1.5f || (!sight && Random.value < dt * 1.2f)) && Random.value < dt * 2.5f)
+                { vel.y = d.y > 1.5f ? 12f : 10f; hopT = 1.1f; }
                 Fire(dt, d, dist);
             }
             else
@@ -84,7 +95,9 @@ namespace DigDeep
                 aimDir = Vector2.Lerp(aimDir, new Vector2(facing, -0.2f).normalized, dt * 4f).normalized;
             }
 
-            vel.x = U.Approach(vel.x, want * speed * WaterSlow, 20f * dt);
+            if (drowning) { want = escapeDir; vel.y = U.Approach(vel.y, 4.5f, 60f * dt); }   // swim up and out
+            if (leapT > 0f) { leapT -= dt; want = 0f; }   // mid-leap: it keeps its momentum
+            else vel.x = U.Approach(vel.x, want * speed * WaterSlow, 20f * dt);
             Vector2 p = pos;
             if (Wd.MoveX(ref p, half, vel.x * dt, out _))
             {
@@ -102,13 +115,42 @@ namespace DigDeep
                 Block below = Wd.Get(fx, fy);
                 if (!Tiles.Solid(below) && (Wd.LiquidType(fx, fy) == Fluids.Lava || !Wd.Solid(fx, fy - 1) || !has))
                 {
-                    vel.x = 0f;
-                    if (!has) facing = -facing;
+                    // a gap: leap across to the next ledge if there's one in reach, else stop at the edge
+                    if (hopT <= 0f && (has || Random.value < 0.3f) && LeapGap((int)Mathf.Sign(want))) { }
+                    else
+                    {
+                        vel.x = 0f;
+                        if (!has) facing = -facing;
+                    }
                 }
             }
             gunKick = Mathf.MoveTowards(gunKick, 0f, dt * 2.5f);
             Draw(-half.y);
             RenderGun();
+        }
+
+        // a spot to land on across the gap (2-5 blocks off, a little up or down): jump for it
+        bool LeapGap(int dir)
+        {
+            int fy = Mathf.FloorToInt(pos.y - half.y + 0.05f);
+            int x0 = Mathf.FloorToInt(pos.x);
+            for (int dist = 2; dist <= 5; dist++)
+                for (int dy = 1; dy >= -3; dy--)
+                {
+                    int cx = x0 + dir * dist, cy = fy + dy;
+                    if (!Wd.Solid(cx, cy - 1) || Wd.Solid(cx, cy) || Wd.Solid(cx, cy + 1)) continue;
+                    if (Wd.LiquidType(cx, cy) == Fluids.Lava || Wd.Get(cx, cy - 1) == Block.Spikes) continue;
+                    // a clear flight path over the gap
+                    if (Wd.Solid(x0, fy + 2) || Wd.Solid(x0 + dir, fy + 2)) continue;
+                    float t = 0.45f + dist * 0.07f;
+                    float tx = cx + 0.5f, ty = cy + half.y + 0.05f;
+                    vel.x = (tx - pos.x) / t;
+                    vel.y = Mathf.Min(15f, (ty - pos.y + 0.5f * 40f * t * t) / t);
+                    leapT = t; hopT = t + 0.3f;
+                    facing = dir;
+                    return true;
+                }
+            return false;
         }
 
         void Fire(float dt, Vector2 d, float dist)

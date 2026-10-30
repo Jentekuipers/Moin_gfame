@@ -146,6 +146,7 @@ namespace DigDeep
                 Douse();
                 return;
             }
+            if (Random.value < dt * 2f) Fluids.Heat(cx, cy);   // the heat boils poison off and melts sand into glass
             // the burning block got knocked out from under it early
             // the thing it was burning is gone (knocked out, or the floor under it broke): it tumbles down, still burning
             if ((onBlock && !Tiles.Def(Wd.Get(cx, cy)).burnable) || (!onBlock && !Wd.Solid(cx, cy - 1) && !Fire.HasFuel(cx, cy)))

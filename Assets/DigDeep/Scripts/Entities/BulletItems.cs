@@ -32,7 +32,7 @@ namespace DigDeep
         {
             var ps = p.s;
             // WILD CARD: every so often a shot gets a random extra effect on top of everything else
-            if (ps.wildShots && Random.value < p.Lucky(0.3f))
+            if (ps.wildShots && Chance.Roll("wild", p.Lucky(0.3f)))
                 switch (Random.Range(0, 7))
                 {
                     case 0: if (radius <= 0f) explosive = true; else radius *= 1.4f; break;
@@ -44,8 +44,8 @@ namespace DigDeep
                     default: bounces += 2; break;
                 }
             // KINDLING / TOXIC SKIN: a chance for any shot to burn or poison
-            if (ps.fireChance > 0f && Random.value < p.Lucky(ps.fireChance)) burns = true;
-            if (ps.poisonChance > 0f && Random.value < p.Lucky(ps.poisonChance)) poisons = true;
+            if (ps.fireChance > 0f && Chance.Roll("fire", p.Lucky(ps.fireChance))) burns = true;
+            if (ps.poisonChance > 0f && Chance.Roll("poison", p.Lucky(ps.poisonChance))) poisons = true;
             bounces += ps.extraBounces;   // BOUNCY ROUNDS stack: one more bounce each
             knock *= ps.knockMul;
             // SKIPPING modifier: shots arc down and skip off floors
@@ -96,7 +96,7 @@ namespace DigDeep
                 ghostKidT -= dt;
                 if (ghostKidT <= 0f && owner != null)
                 {
-                    int n = 1 + (Random.value < owner.Lucky(0.25f) ? 1 : 0);
+                    int n = 1 + (Chance.Roll("splinter", owner.Lucky(0.25f)) ? 1 : 0);
                     for (int i = 0; i < n; i++)
                     {
                         Vector2 dir = U.Rot(vel.sqrMagnitude > 0.01f ? vel.normalized : Vector2.right, Random.Range(-50f, 50f));
@@ -130,7 +130,7 @@ namespace DigDeep
             vel = new Vector2(vel.x, -vel.y) * 0.5f;
             if (vel.magnitude < 7f) { Expire(); return true; }
             if (radius > 0f || explosive)
-                G.Explode(prev, Mathf.Max(0.45f, (radius > 0f ? radius : 1.1f) * 0.25f), dmg * 0.25f, owner == null || owner.s.blastProof || !(selfHurt || modExplosive), true, false);
+                G.Explode(prev, Mathf.Max(0.45f, (radius > 0f ? radius : 1.1f) * 0.25f), dmg * 0.25f, owner == null || owner.s.blastProof || !(selfHurt || modExplosive), true, false, false, team == Team.Player);
             G.fx.Burst(prev, 6, TileDraw.DebrisColor(Wd.Get(cx, cy), Biomes.At(cx, cy)), 4f, 0.3f, 20f);
             G.sfx.Play("ricochet", 0.25f, Random.Range(1.2f, 1.5f));
             return true;
@@ -251,6 +251,7 @@ namespace DigDeep
         void OnHitExtras(Enemy en, float d, Vector2 dir)
         {
             if (owner == null || team != Team.Player) return;
+            if (crit && owner.s.critCoin) G.Spawn(new Coin(en.pos + Vector2.up * 0.3f, 1));   // LUCKY MARBLE: crits knock a coin loose
             if (!en.dead)
             {
                 if (burns) en.Ignite(2f);

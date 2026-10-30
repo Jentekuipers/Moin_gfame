@@ -830,6 +830,256 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 - **EXPLOSIVE** now says it hurts you too, except on melee weapons, and melee blasts no longer hurt you.
 - **Curse info:** the "lifts after N more kills" line is highlighted.
 
+### The big list (batches 69-72)
+- **Rarities and text**: ground slam, wall jump, coil spring common; star map and chain reaction uncommon; beast treats rare ("INCREASE PET DAMAGE BY 50%", pet poison and burns included); seeker's eye and thousand blades mythic (+1 damage / +15% melee). Pet items say "YOUR PET'S ATTACKS POISON / BURN". Bows say "HOLD AND RELEASE". Witch's brew: "YOUR POISON AND FIRE DAMAGE HURT MORE". Less text everywhere (no IN HAND, modifiers just "+ NAME").
+- **Stacking**: barrels add up (2 + 3 = 5 shots), trophy case stacks (cap 3), overdrive combo +0.3 / +0.3.
+- **Weapons**: dagger slower and harder, pickaxe weaker, hunting bow digs more, the rifle always fires clean 3-round bursts, minigun 150 rounds / faster / long reload / flash at the barrel tip / heavy helicopter sound. Energy weapons pip faster and higher through the last 25% of heat, and every extra shot per pull heats them too. Earthsplitter: a 3-hit combo, the third a huge far-reaching quake with its own sound. Flamethrower: chunky pixel flames (white, yellow, orange, red, embers).
+- **Spears**: ammo and reloads, pressure-chamber volleys, boomerang curse returns them (caught = ammo back), soul splinters throw ghost spears, element colours and particles, bigger with shot-size items (arrows too). They snap spikes, burst chests and crates, glance off boulders, and moving boulders snap them. Two spears only join into a longer ledge when both are near level and the first is stuck in the world (never in a foe).
+- **World**: arena ledges and shop plates are one-way girders (new look): stand on them, everything else (shots, bosses) passes through. Kicked boulders plough through blocks by speed. TNT falls when undermined and goes off after 3+ blocks. Floating grass pruned. Skeletons lie buried in dirt: dig them out; they can only be hurt once nearly up, and hurt you once fully up. Walkers path around rock; wolves and gunners jump.
+- **Items**: every plain-stat trinket now does something (see PlayerPerks.cs). Fewer trinkets drop (3 chests in 5, elites half the time). New: HUNTER'S HUNCH (weak homing), PICKPOCKET (poison/fire bites drop coins), HEART OF UNDA (water hurts foes), ultra-rare tier (rainbow): ACE FOX (wavedash + shine), BLACK SUN, LOADED DIE. Rust curse retired. Ghost reload works on any reload and while venting. Member's card and ledger work in the shop you're in.
+- **Chances**: every gameplay chance is a marble bag (Core/Chance.cs), including which rarity a trinket is.
+- **SPELL - REROLL CIRCLE** (consumable) and the **Hungry Altar** (rare, wordless: feeds your held consumable to the weapon in hand, which then fires it forever). Rerolls keep kind and rarity; see Gameplay/Reroll.cs to register new foes/objects.
+- **Creator**: untouchable through the intro until its hands are back at their sides; bigger white; flight never ends; slow-motion shuddering death in a chain of blasts while the screen whitens, then the end. Floor attacks in the flying fights (Creator, Void Archmage, God) now work in the air; drawn foes come in swarms and always hunt you.
+- **Performance**: max ~360 of your shots alive; old shots expire; hit-stop, shake and explosion effects shrink when many happen at once.
+- **HUD**: stats under the health bar are an option (off by default); modifier runes beside weapons in the pause menu (hover each); hovering a combo lights its trinkets; the death screen lists your trinkets and combos (hoverable); one pickup text box at a time (shop and boss rewards too).
+
+### Sprites, shopkeeper, layered music (batch 73)
+- Sprite overrides in `StreamingAssets/SpriteSheet/overrides/` (165 PNGs + `anchors.txt` for pivots). Extra frames `Field.key_N` extend animations; `Extra.key_N` feeds `SpriteSheet.Frames(key)`. Duplicate sprites share one override.
+- Shopkeeper wanders his shop (`keeperwalk` frames) and points at wares: "CAN I INTEREST YOU IN THIS ITEM?".
+- Dragon statue animates (`dragonstatue` frames).
+- Menu music layers: `menu_base` + `menu_chars` (characters) / `menu_options` (options); `menu_stats` standalone for stats/unlocks/credits. `void_run` plays in the void world.
+- Chest <-> weapon crate reroll; Hunger altar renamed Fuse altar; Reroll spell works on it.
+- Loaded Die, Black Sun, Whetstone, Glass Cannon (3x dmg dealt and taken) are Rare. Fox is the only ultra.
+- Elites: 9x HP, always drop a trinket.
+- Shots always spawn; oldest player shots are culled past the cap.
+
+### Dragons, void stage, fish, sprite fixes (batch 75)
+- Dragons: new PREY move (circles you outside a ring, head dodges your shots, breathes at you; each element its own way). Void dragon DARK: lights out (`Lighting.Blackout`), only its shots shine (`BossShot.OverDark`).
+- Dragons fly out of the hall before a dash (no vanishing), stay inside the hall otherwise, hide body parts outside the hall. Dashes faster; fire/void breathe during fly-bys; water floods then swims low blowing bubbles up. Breath sweep ends lower.
+- Arenas fully lit once you're inside. Void Archmage stage: the screen edges hold you, not the old arena walls.
+- Fish no longer glow. New GLOW and GOLD fish (harmless, shine; gold fish drop gold).
+- Chests: 9 in 10 hold a trinket. Spring boots fire once until you stand on the ground again. Creator hands flash red. Shopkeeper's line sits higher. Buried pickups pop up to the surface.
+- Sprites: hanging bat (`Extra.bathang_0`) only while asleep; queen bee new flying frames + dive picture (`Extra.queendive_0`); forge golem frames aligned (bottom on the floor, top orange pixel centred).
+
+### Boss tuning, Maw, ice, arena guard (batch 76)
+- Bosses: more health the deeper the arena (`hpMul` in `BossArena.Begin`); all damage taken during a boss fight x0.8 (`Player.Hurt`).
+- Dragons pass through walls like worms (no clamping); body segments flip upright like the head. Fire dragon boils water from inside its body (`ArenaWater.BoilAt`) with flames along it; evaporation sinks the level over ~2.6s (`S.Boil`); a re-flood rises from the floor; a boiled flood isn't topped up.
+- Verdant Maw: no bushes, always hangs from the middle of the ceiling. Living seeds (`BossShot.onWall`) grow snappers rooted to floor, walls or ceiling (`Snapper.Grow`).
+- Crystal Colossus charges leave a sheet of ice (`IceSheet`, melts after 12s). Ice blocks and ice sheets are slippery.
+- Enemies from outside can't enter a boss arena (`Enemy.ArenaGuard`).
+
+### HUD, water, Fin (batch 77)
+- HUD reworked Nuclear Throne style: one cluster top-left (health bar with a dark outline, gun + ammo, other gun, ability with charge pips, item, gold), outlined icons without boxes (`Hud.IconO`), trinkets along the top-right, depth top-middle.
+- Water: surfaces slope between cells and ripple, darker with depth, light glints, streams are glassy ribbons that froth where they land (`Fluids.Render`).
+- Character screen: "ABILITY" and "SKILL".
+- Fin's Tidal Burst spreads its water through open space from you (never through walls); in a pool the new water lands where there's room, so the level rises.
+
+### Grain water (batch 81)
+- Water and lava are grains, 8x8 per block (each grain 2x2 pixels), Noita-style (`Fluids`, `Chunk.sub`/`cnt`). Grains fall (water 3 per step), slide off diagonally, and run sideways only towards a drop within reach (7 for water, 2 for lava) or when squeezed by water above, so still water is still. Lava moves every third step.
+- Each block's type/amount (`lt`/`liq`) is counted from its grains; `World.SetLiquid` lays grains in from the bottom, so all older code keeps working. `FluidAtPoint` checks the grain at the point.
+- Splashes (`Fluids.Splash`/`Ripple`) throw surface grains up; they fall back in. Steam is still per block.
+- Rendering: one pixel per grain, darker with depth below the surface, bright surface line, falling/flying grains lighter. Tune: `Step`, reach in `Grain`, colours in `Render`.
+
+### Splashes, kicks, risen foes (batch 89)
+- Water: things hitting it (`Fluids.Impact(p, size, vel)`: you, shots, boulders, TNT, foes) knock surface grains loose as flying drops, scaled by size and (capped) speed; blasts (`Fluids.Blast`) fling the water around them. Drops land back as grains. Water feels drops a few blocks off (reach 48) so it finds its way along ledges and through gaps. Fire boils far less water.
+- TNT: falling into water resets its fall (3 blocks out of the water to go off). Kick launches TNT nose first (`TntBody`), going off on a hard hit. The kick also bats away enemy shots within ~2.4 blocks.
+- Slimes drop off ledges and leap at you. Fin's big water leap only after being properly submerged, and not with wings or levitation.
+- Items: HAIR TRIGGER uncommon; EXTENDED MAG is now TERMINAL ROUND (last round in the mag hits 2x); DEATH'S GUIDE: slain foes may rise (30%) and fight for you (max 3, follow you into boss halls). Gold ore cracks by shot damage. Poison can't kill (stops at 1 HP).
+
+### Ability upgrades, underwater blasts, test diggers (batches 91-93)
+- ABILITY UPGRADES (`DB.AbilityUps`, `Ab(...)` in Loot.cs), 2-3 per character special. Each boss pick has a 5% chance to be one for the special you carry (`DB.AbilityChoices`), each at most once a run. Kept out of every trinket pool.
+  Mole: DEEP DRILL / DRILL QUAKE / SPARE BIT. Fox: GHOST DASH / PHASE DASH (through rock, not void; faster recharge). Frog: STICKY FEET (cling to walls/ceilings after a super jump, +1) / LAUNCH BLAST (+faster). Beetle: IRON BOOT (reach+damage) / DYNAMITE BOOT (kicked foes explode, faster). Dolphin: UNDERTOW (water hurts foes, more water) / SEA LEGS (+1, shots full speed in water). Owl: LONG SHADOW / BOOBY DECOY (+1). Cat: RIPOSTE / LONG GUARD / NINE LIVES. Octopus: SLIPPERY SKIN (no contact damage in camo) / FROM THE DARK (shot that breaks camo crits, +1). Lynx: STEEL CABLE (further, faster) / SAFE LINE (+1, untouchable while reeling).
+- Blasts under water open an air pocket that closes in, the water surging up as a plume. Fin's Tidal Burst in water makes its full ball of new water, shoving the old water outwards (`Fluids.CreateBall`).
+- Test mode: DIGGER tab and ABILITY tab.
+
+## Batch 98: water momentum, haste-mist
+
+- **Water has sideways momentum.** A grain that moves sideways keeps going for a few steps and passes its push on to the water it bumps into. A surge now rushes out across a pool and shoves falling streams aside. Water squeezed out from under deep water shoots out harder, and splashes keep their sideways speed when they land. Still pools stay still.
+- **New liquid: HASTE.** A milky white mist-liquid (not icy) that pools like water. Water sinks through it. Everything inside it runs at 2x speed: the player, enemies, bullets, pickups and everything else. You don't swim or drown in it. Now and then a whole cave pool below depth 30 is haste instead of water (`World.HasteAt`).
+
+## Batch 99: lava in water, round boulders, softer implosions
+
+- **Lava sinks through water** (and haste); it's heavier, so the two swap places.
+- **Lava only reacts on real contact**, grain against grain (`Fluids.WaterTouch`). It stays alive in the water for about 0.4–1.3s, boiling the water around it into bubbles and steam and hissing, then sets into stone (a big clump) or is gone (a little). Lava grains sinking through a water block behave the same way.
+- **Boulders look round under water.** Water is drawn into the corners of a boulder's block next to it.
+- **The implosion splash is capped.** The column after an underwater blast scales down with the blast's depth (it's skipped when the blast is deep) and peaks at about two blocks. Water pushed out of the surface by the blast is capped at speed 7.
+- **The air pocket closes sooner**: life 1.1s → 0.75s, with a shorter hold before the water rushes back.
+
+## Batch 100: round boulders in water
+
+- **Boulders are round to the water.** Only the circle of a boulder's block is rock (`Fluids.RoundIn`, radius 3.7 grains); water fills the corners around it. A boulder sitting in water is drawn tinted, as if seen through the water.
+- **Waves hit rock.** Moving water that runs into rock rides up a boulder's round face, climbs a wall a little, or bursts off it as spray (more often off boulders). The rest flows on past.
+- **Water pushes boulders.** Each grain that slams into a boulder adds its push in its direction (`rockPush`, fading 5% per step). Past 140, the boulder is knocked loose and rolls at 2.5–8 speed depending on how much water hit it.
+
+## Batch 101: boulder splashes and landing fixes
+
+- **Bigger boulder splashes.** The splash size scales with the boulder's speed when it hits the water (`1.2 + speed * 0.08`).
+- **No more impact spam on ledges and spears.**
+  - A boulder now counts arena ledges and spear ledges as ground.
+  - The fall height resets every time it lands, so it no longer replays a big impact every frame.
+  - It only turns back into a block on a real floor or an arena ledge. On a spear it stays as a resting body.
+  - A boulder block sitting on an arena ledge no longer starts falling again.
+
+## Batch 101b: starting weapons
+
+- Fin (dolphin) now starts with the MINER'S MORTAR; Tor (beetle) starts with the MACHINE PISTOL (`Characters.cs`).
+
+## Batch 102: boulders shove boulders, dry spear ledges
+
+- **A rolling boulder knocks a resting one loose.** They split the speed between them, so it stays heavy and neither flies off.
+- **Loose boulders shove each other side by side** (`BoulderBody.BumpBoulders`). Speeds average out when they close in, with a slight bounce, and a hard knock jolts the camera with a thud. One landing on another rests on top.
+- **Pushing a row of boulders.** The player can push up to 3 boulders in a row if there's room past the last one. It's heavier going: speed divided by √n, and it takes longer to get started. Leaning on a loose boulder that has more behind it is slowed the same way (`Chain`).
+- **Spear ledges under water.** A sunk spear is no longer a ledge, so you swim past it. Only the part of a spear above the water surface holds you (`Spear.DryPart`).
+
+## Batch 103: arrows, pets, melee split, curse skulls, spring boots, black powder, water fixes
+
+- **Arrows dig deeper.** The block pierce is the bow's own +1, plus up to +6 more with a full draw. Mining power is +1 (+2 for a strong draw). Gold and big ore crack at 3x mining power per arrow.
+- **MINER'S MORTAR** reloads in 2.2s (was 1.3s).
+- **Ground pets no longer get stuck in blocks.** Inside a block, a pet pops out to the nearest free spot (or back to your feet). After flying back to you as a ghost, it only turns solid again where it fits.
+- **Split items work on melee** (SPLASH DAMAGE 2, SUPERNOVA 4, CLOUD BURST 2). Once the swing ends, that many small air slices (`AirSlice`) fan out evenly within ±80° of the swing. Each does 25% of the swing's damage (× SHRAPNEL STORM), hits every foe it passes once, and dies on rock.
+- **Curse lines end with a little skull** (new `☠` glyph, `Curses.Skull`).
+- **SPRING BOOTS** are now +1 mid-air jump. Their old blast on hard landings is the new **CURSE OF THE QUAKE**.
+- **BLACK POWDER** (`blastMul`) now only boosts *your* blasts: shots, bombs, kicks, items, and the mortar's dig pocket. TNT lying around and enemy bombs are no longer boosted.
+- **Water fills tunnels under a ceiling.** Water pressed against a ceiling spreads into any air gap of 2+ grains along it, so the strip of air under the roof of a flooding tunnel is gone.
+- **Liquids mix and get dragged.**
+  - Shots, blades, air slices, swimmers, enemies and rolling boulders moving through liquid drag it along (`Fluids.Stir`): grains of different liquids trade places along the path, and get a sideways push.
+  - Blasts, Fin's ball and pockets now shove haste-mist as well as water.
+
+## Batch 104: poison, acid, fumes, glass, liquid spitters, recorded sounds
+
+- **Black powder** boosts *all* explosions again (TNT and enemy bombs too). Its holes are much bigger: dig radius × (1 + 1.3 × (blastMul − 1)), with damage × blastMul. Every explosion also heats its surroundings, so poison boils off and sand turns to glass.
+- **Haste-mist dissolves in water.** It only works when it makes up 75%+ of the grains in the block (`Fluids.Concentration`).
+- **New liquid: POISON** (green).
+  - It pools in the jungle and fungal caves.
+  - Mixed with water, it spreads through it and thins away grain by grain.
+  - It only poisons whoever is in it while it's strong: 60%+ of the grains in the block.
+  - Fire, lava and explosions boil it off into **FUMES** (`Fluids.Heat`, `BlastBoil`).
+- **FUMES** are a semi-green gas, like steam: they rise and spread, but linger longer. They hurt a little when breathed in (players can't die from them, but enemies can). The void swallows them.
+- **New liquid: ACID** (glowing yellow-green, now and then a pool deeper than 60).
+  - It eats the blocks it touches: faster the more acid touches the block, fastest for the floor under it. It is used up as it eats.
+  - Immune (`AcidProof`): steel ledges, the void, gilded brick, ore and minerals, glass, anything unbreakable.
+  - With water: they eat each other into steam.
+  - With poison, or with lava: they eat each other into fumes, with now and then a small poison blast (`PoisonPop`).
+  - The void destroys acid and poison fast.
+  - It hurts living things in it: players a little (3/0.45s), enemies more (6% of max HP per 0.35s). Machines (Clank, Drone, Tesla coil) are immune.
+- **New block: GLASS.**
+  - Sand next to lava, fire or a blast melts into it.
+  - It's see-through and breaks at any hit.
+  - Landing hard on it, a rolling or falling boulder, or a falling block shatters it.
+  - Acid can't touch it.
+- **Jungle spitters** lob a gob of poison or acid every other shot (`LiquidGlob`). The gob bursts into a pool where it lands.
+- **Arrows** now pierce and dig by draw strength: pierce = ⌊(bow pierce + 7) × draw²⌋, so a weak twang stops at the first block.
+- **Bounced shots** (ricochet, disc, boulder bounces) can hit the same enemy again after each bounce.
+- **Recorded sounds** from `Assets/Sounds`, processed into `Resources/DigDeepSfx`. The originals are untouched.
+  - Processing: leading silence cut for an instant hit, normalised and driven into soft saturation (hot, lo-fi), 16-bit.
+  - Playback (`Sfx.R` / `PlayRecorded`): a random take each time, never the same twice running, with ±7%+ pitch shift. The heavy sounds keep the synth layered underneath. "Submerged" takes play while your head is under water (`Sfx.Submerged`).
+  - Mapping:
+    - rail = also_potential_railgun 1–5 + Rail_gun_fire
+    - plasma = Big_laserShoot
+    - shrapnel prism burst = big_single_laser
+    - laser pistol = laserShoot
+    - revolver/pistol = big_pistol_fire, under water pistol_submerged
+    - grenade/mortar = grenade_launcher_fire
+    - rocket = rocket_launcher_fire
+    - explosions by size: small_explosion, Grenade_launcher_explosion/explosion3, explosion2/jsfxr; under water: under_water / Big_Underwater / TNT_explode_under_water; far away: far_away_explosion
+    - boulder landing in water = boulder_land_submerged
+    - blade through grass = Cut_melee_Grass
+    - an enemy starting to drown = help_cry
+    - hammer/earthsplitter/sword hit = hit_enemy_with_big_melee_weapon
+    - player hurt = hitHurt
+    - jump = jump 1–4
+    - sword swing = Katana
+    - cursed pickup = Pick_up_cursed_weapon
+    - can't do that = Select_but_not_possible
+    - menu hover/select = Select_or_hover_over_with_mouse
+    - flamethrower catching = Start_fire_flamethrower (+ submerged)
+    - arrow lodging = Arrow_stuck_in_block
+
+## Batch 105: ace fox rework, fire spreads by touch, Fin's water jump
+
+- **ACE FOX** uses Jente's sprites, cut from the screenshots into `StreamingAssets/SpriteSheet/overrides/Extra.*`:
+  - `foxace_idle` (4 frames), `foxace_shoot`, `foxace_dash` (drawn facing left, mirrored for the right), `foxace_shine` (2 frames), `foxgun` (3 frames).
+  - All the fox frames share one 36×30 canvas, lined up on his head and feet.
+- **How he moves:** he never stands still. He wavedashes left and right in short bursts (0.1–0.2s at speed 14, with dust and afterimages), working his way after you or a foe. 12% of the time he shines between dashes for no reason.
+- **Shining at foes:** up against a foe he shines it again and again. Each shine is less likely to continue (85%, 75%, …), 8 at most. Each shine hurts, pops the foe up, and sends every enemy shot within 1.7 back at the nearest foe. Reflecting makes its own sharp ping.
+- **Shine sound:** `Shine_Sound_Effect`, with the silence at the start cut off and crushed to 8 bit (≈11 kHz, 5 bits).
+- **His blaster** floats up and behind him, swaying, and aims at foes he can see. It fires about once a second and kicks back (frames 2–3). He flashes his shooting pose when it fires.
+- **BELLOWS removed.** A burning foe, player or boss now sets fire to whatever touches it, just like a flame does: foes catch on contact, the player after 0.5s of touching.
+- **Fin's water jump has one sound.** The kick under water is a soft splash. The leap out is one jump sound with a splash, deeper and bigger for Fin's high leap.
+
+## Batch 106: blasts crack big gold veins
+
+- A blast now hits each big gold vein (2×2, 4×4, 6×6) it reaches once, as one block. That covers TNT, bombs, any explosion.
+- The hit is heavy: 4 × the blast's damage, falling off with distance, × black powder. It knocks gold out of the vein like a pickaxe hit does. TNT (7) breaks a 2×2 in one blast and a 4×4 in about two.
+
+## Batch 107: ace fox — fire fox, ghost frame, gun flip
+
+- **FIRE FOX** (`St.FoxCharge` → `St.FoxFly`).
+  - With a foe 2.5–8 away in sight, after a dash he sometimes (30%, 3.5–6s cooldown) hangs in the air for 0.4s, flickering with flame.
+  - Then he rockets nose-first at the foe for 0.38s at speed 24. He's drawn with his shooting frame, rotated so his nose leads.
+  - He trails fire and afterimages. Every foe he ploughs through takes 3× pet damage, is knocked away and set alight. He also lights up whatever he passes.
+  - He stops at walls.
+- **Ghost:** flying back to you as a ghost, he shows his first idle frame.
+- **The floating blaster** flips to the side it's shooting at (never upside down), tilted up to ±60°.
+
+## Batch 108: fixes, hand cannons, crossbows, the buzz SMG, melee reworked
+
+- **Race events** never span a boss hall's void walls: a race whose start-to-finish depth range overlaps a hall is skipped.
+- **Fin's water leap** has a 0.4s guard (`waterLeapT`), so one leap out of the water is one jump.
+- **Tesla coils** fall when nothing holds them up, and thud when they land.
+- **Dragons:**
+  - Bosses (and their body segments) can't be frozen solid any more; they get a chill flash instead. Being frozen locked them in place.
+  - Watchdogs: if the duo partner dies, the survivor enrages. A lone dragon never hides or roams forever. Any move that overruns its time by 4s ends.
+- **Pets in boss fights** look for targets 2.5× further away. Every pet also flings a spirit-bite at the boss every 1.1s when it's out of reach (within 11 tiles).
+- **Acid only comes in steel buckets** (`World.AcidBuckets`, deeper than 70) on cave floors. New block **STEEL**: riveted metal, hp 12, acid-proof.
+- **Bone Slime** never turns up in the magma core.
+- **New weapons:**
+  - HAND CANNON (uncommon, grey): a pistol-sniper. Pierces 2 foes and a block, 7-round mag.
+  - THE ONE (mythic): Jente's golden sprite. Fires like a cannon (boom + big explosion + deep sniper crack), and the muzzle blast is a real explosion that doesn't hurt you.
+  - BUZZ SMG (uncommon): 20 shots/s, very wild, 40-round mag.
+- **Crossbows**, which fire arrow-bolts that lodge and pin:
+  - CROSSBOW (common), AUTO CROSSBOW (uncommon), SUPER CROSSBOW (rare, 5 bolts).
+  - ARBALEST OF THE DEEP (mythic): 3 rune bolts that pierce 20.
+- **Arrows and bolts pin what they kill.** The body rides the arrow and hangs on the wall where it sticks (`Corpse.Pin`).
+- **Grenade launcher** (and the mortar) redrawn as a fat tube with a raked wooden grip.
+- **Melee: each blade has its own swing and hit shape** (`swing`, `arcPad`, `closeR`, `shred`):
+  - DAGGER: a very short, thin, fast stab (`ThrustArc`). It shreds enemy shots instead of reflecting them.
+  - SWORD: a wide crescent, balanced.
+  - HAMMER: the sword's reach and swing, but slower and much harder (`HeavyArc`, dust thud).
+  - Mythic blades swing specially (`MythicSwing`):
+    - PRISM GREATSWORD: a rainbow of three ghost arcs.
+    - STAR PICK: a crossing gold slash flinging stars.
+    - EARTHSPLITTER: rock torn up along the arc.
+
+## Batch 109: arrows stick, liquids mix and tint, visibility, small fixes
+
+- **Ducking under clean water washes poison off** ("CLEANSED").
+- **Arrows and bolts** either break a block and fly on (while they still have pierce left), or nick the block they end in by 1 and stick there. When that block breaks, they fall out.
+  - What an arrow kills always leaves a body, which rides the arrow and hangs where it sticks. It drops when that block breaks.
+- **Each bow and crossbow has its own arrow:** twin (green fletching), storm (glowing cyan), crossbow / auto / super bolts, and the Arbalest's purple rune bolt.
+- **No shot at the start of a run:** nothing fires until the click that picked your digger is let go (`attackLock`).
+- **Liquids mix on their own, slowly** (`MixTile`).
+  - Grains trade places across block edges, and haste-mist and poison next to water slowly thin into it, much faster where the liquids move.
+  - What dissolves tints the water: green for poison, milky for haste (`Chunk.mixP` / `mixH`). The tint spreads through the water and fades over about a minute.
+  - Thinned poison and haste do nothing.
+- **Help cry:** GOOD DOG cries for help when it gets stuck far from you. Animal enemies (beasts) cry out when they start drowning; other enemies don't.
+- **Falling sand** hits the player for 20 (was 50).
+- **Jump** uses the old synth sound again.
+- **Grenades, rockets and explosive shots** go off when they hit an altar.
+- **Enemy shots** (and boss shots) are drawn over everything, even the dark, with a pulsing red halo (`Bullet.Threat`).
+- **X-ray:** an enemy inside water, poison, acid, mist or thick gas gets a pulsing red outline drawn on top (`Enemy.XRay`).
+
+## Unlocks and achievements (Systems/Unlocks.cs)
+
+FIN is the digger everyone starts with. The other diggers and a good share of the weapons and pets are locked behind achievements (PlayerPrefs `ul_<id>`; test runs never earn any and see everything open). Locked gear never drops, shows up in shops or comes from rerolls.
+
+- **Tiers.** Easy achievements (first boss, 100 kills, 5 deaths, 3 runs, depth 150, 1000 gold) open diggers and common gear. Medium ones (pacifist first biome, 4 kills in one blast, 250 kills, burn/melee/pet/pin counts) open uncommon gear. Hard ones (untouched first biome, 5 bosses, flawless boss, 6 in one blast, depth 300, 1000 kills) open rares. Very hard ones (finish a run, 3 wins, 15 bosses, a void win) open mythics.
+- **Earning.** The moment an achievement is earned, the `unlock` fanfare plays and a small popup appears. Each unlock is then shown on its own card at the end of the run: over the death screen, or after the ending just before the title. Any key or click flicks a card away to the next one.
+- **Select screen.** Locked diggers stand as black shapes. Picking one shows what it takes to unlock them, and starting with them is refused.
+- **UNLOCKS screen.** Locked things are black, and hovering one shows how to unlock it. Unlocked things you haven't found yet are dim. The achievement count sits top right.
+- **Per digger.** Finishing a run as a digger (`win_<id>`) and sealing the void as them (`void_<id>`) each unlock a rare or mythic thing of their own. Wins from before unlocks existed count too.
+- **Editing the list.** The full list lives in `Unlocks.Init()`: `U(id, tier, title, how, rewards...)`. A reward is a weapon or trinket id, or `char:<id>`.
+
 ## Where to tune things
 
 | What | Where |

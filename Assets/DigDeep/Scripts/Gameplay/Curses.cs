@@ -5,17 +5,18 @@ namespace DigDeep
 {
     // Curses ride on weapons: a cursed weapon always carries one extra modifier, and the curse is the price.
     // While you carry it (either slot) the curse is on you; after 10 kills it lifts and the weapon stays.
-    public enum Curse { None, Digger, Flame, Speed, Glass, Darkness, Poverty, Recoil, Jamming, Weight, Shaking, Hunted, Thirst, Restless, LeadBoots, Rust, Boomerang, Water, Lava, COUNT }
+    public enum Curse { None, Digger, Flame, Speed, Glass, Darkness, Poverty, Recoil, Jamming, Weight, Shaking, Hunted, Thirst, Restless, LeadBoots, Rust, Boomerang, Water, Lava, Quake, COUNT }
 
     public static class Curses
     {
         public const int KillsToLift = 10;
+        public const string Skull = " \u2620";   // marks every line about a curse
 
         public static readonly string[] Names =
         {
             "", "CURSE OF THE DIGGER", "CURSE OF THE FLAME", "CURSE OF SPEED", "CURSE OF GLASS", "CURSE OF DARKNESS",
             "CURSE OF POVERTY", "CURSE OF RECOIL", "CURSE OF JAMMING", "CURSE OF WEIGHT", "CURSE OF SHAKING",
-            "CURSE OF THE HUNTED", "CURSE OF THIRST", "CURSE OF THE RESTLESS DEAD", "CURSE OF LEAD BOOTS", "CURSE OF RUST", "CURSE OF THE BOOMERANG", "CURSE OF WATER", "CURSE OF LAVA",
+            "CURSE OF THE HUNTED", "CURSE OF THIRST", "CURSE OF THE RESTLESS DEAD", "CURSE OF LEAD BOOTS", "CURSE OF RUST", "CURSE OF THE BOOMERANG", "CURSE OF WATER", "CURSE OF LAVA", "CURSE OF THE QUAKE",
         };
 
         public static readonly string[] Desc =
@@ -39,6 +40,7 @@ namespace DigDeep
             "YOUR SHOTS STALL FAST AND FLY BACK TO YOU",
             "EVERY SHOT LEAVES A PUDDLE OF WATER WHERE IT HITS",
             "SLAIN FOES LEAVE A POOL OF LAVA",
+            "BIG FALLS LAND WITH A BLAST THAT TEARS UP THE GROUND",
         };
 
         // the colour of the trapped ghost in each curse's lantern
@@ -47,7 +49,7 @@ namespace DigDeep
             new Color32(0, 0, 0, 0),
             U.C(214, 168, 96), U.C(255, 132, 52), U.C(110, 238, 255), U.C(226, 242, 255), U.C(118, 92, 214),
             U.C(250, 212, 70), U.C(255, 92, 92), U.C(176, 176, 190), U.C(126, 158, 120), U.C(255, 150, 222),
-            U.C(204, 46, 60), U.C(84, 164, 255), U.C(184, 112, 255), U.C(96, 116, 150), U.C(206, 112, 62), U.C(120, 230, 170), U.C(70, 140, 255), U.C(255, 96, 30),
+            U.C(204, 46, 60), U.C(84, 164, 255), U.C(184, 112, 255), U.C(96, 116, 150), U.C(206, 112, 62), U.C(120, 230, 170), U.C(70, 140, 255), U.C(255, 96, 30), U.C(196, 150, 100),
         };
 
         public static Color Col(Curse c) => Ghost[(int)c];
@@ -55,13 +57,21 @@ namespace DigDeep
 
         // ---- which curses can show up, and how often
 
+        // any curse but RUST (shop prices: retired)
+        public static Curse Pick(System.Random rng)
+        {
+            Curse c;
+            do c = (Curse)(1 + rng.Next((int)Curse.COUNT - 1)); while (c == Curse.Rust);
+            return c;
+        }
+
         public static void MaybeCurse(Weapon w, int depth, System.Random rng)
         {
             if (w == null || w.def == DB.Pickaxe) return;
             var pl = Game.I != null ? Game.I.player : null;
             double chance = Mathf.Min(0.1f + depth * 0.0005f, 0.3f) / (1f + 0.1f * Mathf.Max(0f, pl != null ? pl.s.luck : 0f));   // luck keeps curses away
             if (rng.NextDouble() >= chance) return;
-            w.curse = (Curse)(1 + rng.Next((int)Curse.COUNT - 1));
+            w.curse = Pick(rng);
             w.curseKills = 0;
             // the payment: one more modifier than it would have had, even past the normal limit
             var pool = new List<Mod>();

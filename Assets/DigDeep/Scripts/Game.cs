@@ -78,7 +78,8 @@ namespace DigDeep
             cam = new CameraRig(c);
             hud = new Hud();
             best = PlayerPrefs.GetInt("digdeep_best", 0);
-            charIndex = Mathf.Clamp(PlayerPrefs.GetInt("digdeep_char", 0), 0, Chars.All.Count - 1);
+            charIndex = Mathf.Clamp(PlayerPrefs.GetInt("digdeep_char", Chars.FinIndex), 0, Chars.All.Count - 1);
+            if (!Unlocks.CharOpen(Chars.All[charIndex])) charIndex = Chars.FinIndex;   // FIN is the one you start with
             story = new Story();
             GoTitle();   // the intro slideshow is shelved for now (GoIntro() plays it)
         }
@@ -134,6 +135,7 @@ namespace DigDeep
             }
             PlayerPrefs.SetInt("digdeep_wins", PlayerPrefs.GetInt("digdeep_wins", 0) + 1);
             Records.RunEnded(player, true, null, time);
+            Unlocks.RunEnded(true);
             if (maxDepth > best) { best = maxDepth; PlayerPrefs.SetInt("digdeep_best", best); }
             PlayerPrefs.Save();
             // every digger has it now: the diamond lifts you up, above the clouds, to the gods
@@ -146,7 +148,7 @@ namespace DigDeep
             World.SkyMode = false;
             state = State.Ending;
             Time.timeScale = 1f;
-            whiteAlpha = 0f;
+            whiteAlpha = 0f; holdWhite = 0f;
             endMusic = false;
             story.StartEnding(variant);
             music.Stop(1.5f);
@@ -156,6 +158,7 @@ namespace DigDeep
         // ------------------------------------------------------------ the God above the clouds
 
         public float skyWhite, cloudFade;
+        public float holdWhite;   // a white-out that stays put (the Creator's end)
 
         // ------------------------------------------------------------ the void key and the void world
 
@@ -222,11 +225,14 @@ namespace DigDeep
             if (!TestMode.On)
             {
                 if (player != null) PlayerPrefs.SetInt("digdeep_voidwon_" + player.character.id, 1);
+                Unlocks.VoidWon(player != null ? player.character.id : null);
                 PlayerPrefs.SetInt("digdeep_voidwins", PlayerPrefs.GetInt("digdeep_voidwins", 0) + 1);
                 PlayerPrefs.Save();
                 SaveGame.Delete();
             }
-            Spawn(new DelayedCall(4f, () => { skyWhite = 1f; Spawn(new DelayedCall(1.2f, () => ShowEnding(3))); }));
+            // (after the Creator the screen is already white: straight on to the end)
+            if (holdWhite >= 0.9f) Spawn(new DelayedCall(1.6f, () => ShowEnding(3)));
+            else Spawn(new DelayedCall(4f, () => { skyWhite = 1f; Spawn(new DelayedCall(1.2f, () => ShowEnding(3))); }));
         }
 
         // the white fades and you're back in Ornin's hall, able to fly, an arrow pointing up
@@ -368,6 +374,15 @@ namespace DigDeep
 
         // TEST MODE: a run with the test panel (F1 / VIEW): every weapon, item and boss, god mode, damage numbers.
         // It never touches your saved run.
+        // TEST MODE: start the test run over with another digger (keeping everything picked)
+        public void TestSetDigger(int i)
+        {
+            charIndex = Mathf.Clamp(i, 0, Chars.All.Count - 1);
+            BeginRun(null, false, true);
+            TestMode.Replay(player);
+            TestMode.OpenPanel(true);
+        }
+
         void StartTestMode()
         {
             TestMode.ClearPicks();
@@ -455,12 +470,14 @@ namespace DigDeep
             whiteAlpha = 0f;
             World.SkyMode = false;
             BossArena.ForceKind = -1;   // a test boss pick never carries over into another run
-            FloorFire.ClearAll(); ArenaWater.ClearAll();
-            skyWhite = 0f; cloudFade = 0f; voidFade = 0f; voidDragonDone = save != null && save.voidDragon;
+            FloorFire.ClearAll(); ArenaWater.ClearAll(); IceSheet.ClearAll(); BossArena.All.Clear(); Enemy.Thralls.Clear(); Lighting.Blackout = 0f;
+            Chance.Reset();   // fresh marble bags every run
+            fuseSpawned = false;
+            skyWhite = 0f; cloudFade = 0f; voidFade = 0f; holdWhite = 0f; voidDragonDone = save != null && save.voidDragon;
             Ascent.Active = null; Ascent.Cover = 0f;
             revealT = 0f;
             VoidStage.End();
-            BoulderBody.All.Clear(); Spear.All.Clear(); Keeper.All.Clear(); StuckArrow.ClearAll();
+            BoulderBody.All.Clear(); Spear.All.Clear(); Keeper.All.Clear(); Pedestal.All.Clear(); StuckArrow.ClearAll();
             Fire.Reset();
             Electric.Reset();
             FriendlyWorm.Alive = 0; GhostGun.Alive = 0; Decoy.Active = null;
@@ -468,6 +485,8 @@ namespace DigDeep
             if (!menu) music.PlayLevel(2.5f);
             seed = save != null ? save.seed : Random.Range(1, 999999);
             if (save != null) charIndex = Mathf.Clamp(save.charIndex, 0, Chars.All.Count - 1);
+            if (save == null && !Unlocks.CharOpen(Chars.All[charIndex])) charIndex = Chars.FinIndex;
+            if (!menu) Unlocks.RunStarted(save == null);
             rng = new System.Random(seed);
             hud.Reset();
             Gen.Init(seed);
@@ -515,6 +534,7 @@ namespace DigDeep
         // the chosen digger steps out of the lineup and the run begins, right where you are
         void StartChosen()
         {
+            if (!Unlocks.CharOpen(Chars.All[charIndex])) { sfx.Play("deny", 0.6f); return; }   // locked: not yet
             if (camp == null || !camp.lineup) { NewRun(); return; }
             SaveGame.Delete();
             menuWorld = false;
@@ -530,6 +550,7 @@ namespace DigDeep
             state = State.Playing;
             music.PlayLevel(2f);
             maxDepth = 0; deadT = 0f; time = 0f; newBest = false;
+            Unlocks.RunStarted(true);
             aim = player.pos + Vector2.right * 3f;
             sfx.Play("buy", 0.7f);
         }
@@ -538,7 +559,7 @@ namespace DigDeep
         {
             if (!menuWorld || world == null) { BeginRun(null, true); music.PlayMenu(); }
             state = State.Select;
-            charIndex = 0;   // the leftmost digger is up first
+            charIndex = Chars.FinIndex;   // FIN is up first (the one everybody starts with)
             sfx.Play("swing", 0.5f, 1.2f);
         }
 
@@ -577,6 +598,15 @@ namespace DigDeep
         Vector2 lastMouse;
 
         // Mouse over a weapon crate or TNT: say what it is.
+        // in the haste-mist (and it trails white wisps off whatever's in it)
+        bool Hasted(Entity e)
+        {
+            if (world.FluidAtPoint(e.pos) != Fluids.Haste) return false;
+            if (Fluids.Concentration(e.pos, Fluids.Haste) < 0.75f) return false;   // thinned out in water it does nothing
+            if (Random.value < 0.12f) fx.Burst(e.pos + new Vector2(Random.Range(-0.3f, 0.3f), Random.Range(-0.3f, 0.3f)), 1, new Color(1f, 0.98f, 0.94f, 0.8f), 2.5f, 0.35f, 0f, 1f, false);
+            return true;
+        }
+
         void HoverBlocks()
         {
             if (GameInput.UsingStick || state != State.Playing) return;
@@ -600,14 +630,42 @@ namespace DigDeep
             while (corpses.Count > 40) { corpses[0].Kill(); corpses.RemoveAt(0); }
         }
 
-        public void Spawn(Entity e) => toAdd.Add(e);
+        // Too many of your own shots alive at once (bouncing, splitting, lingering item stacks): the OLDEST quietly go,
+        // so new shots always come out and the game keeps running instead of grinding to a halt.
+        public const int ShotCap = 360;
+        public int playerShots;
+        public void Spawn(Entity e)
+        {
+            toAdd.Add(e);
+        }
+
+        // Load meters: lots of hit-stops, shakes or blasts in a short time and each new one counts for less
+        // (so a screen full of exploding shots stays playable). They drain away within a second or two.
+        float stopLoad, boomLoad;
+        readonly System.Collections.Generic.List<Bullet> cull = new System.Collections.Generic.List<Bullet>();
+        void CullShots(int n)
+        {
+            cull.Clear();
+            foreach (var e in ents) if (!e.dead && e is Bullet b && b.team == Team.Player) cull.Add(b);
+            cull.Sort((a, b) => b.Age.CompareTo(a.Age));
+            for (int i = 0; i < n && i < cull.Count; i++) cull[i].Kill();
+            playerShots -= Mathf.Min(n, cull.Count);
+        }
+        public float BoomLoad => boomLoad;
         public void AddAltar(Altar a)
         {
             Spawn(a); altars.Add(a);
             int fy = Mathf.FloorToInt(a.pos.y - a.Half.y - 0.05f), fx = Mathf.FloorToInt(a.pos.x);
             for (int ax = fx - 1; ax <= fx + 1; ax++) world.Anchor(ax, fy);   // the floor under an altar never breaks
         }
-        public void HitStop(float t) { if (Settings.HitStop) freeze = Mathf.Max(freeze, t); }
+        public void HitStop(float t)
+        {
+            if (!Settings.HitStop || t <= 0f) return;
+            t /= 1f + stopLoad * 8f;   // the more freezes lately, the shorter each new one
+            stopLoad += t;
+            if (t < 0.008f) return;
+            freeze = Mathf.Max(freeze, t);
+        }
         public readonly OptionsMenu options = new OptionsMenu();
         float fps = 60f;
 
@@ -629,6 +687,10 @@ namespace DigDeep
             GameInput.Tick(rdt);
             if (rdt > 0f) fps = Mathf.Lerp(fps, 1f / rdt, 0.05f);
             music.Tick(rdt);
+            music.SetMenu(state == State.Select ? Music.MenuMix.Characters
+                        : state == State.Options && !options.FromPause ? Music.MenuMix.Options
+                        : state == State.Stats || state == State.Unlocks || state == State.Credits ? Music.MenuMix.Stats
+                        : Music.MenuMix.Title);
             // the OS cursor hides while you're aiming; the HUD draws a crosshair instead
             Cursor.visible = state != State.Playing || (TestMode.On && TestMode.Open);
 
@@ -680,7 +742,9 @@ namespace DigDeep
             {
                 story.TickEnding(rdt);
                 if (story.EndT > 2f && !endMusic) { endMusic = true; music.PlayIntro(3f); }
-                if (story.EndingCanExit && GameInput.AnyPressed()) GoTitle();
+                // the unlock cards come up just before the title
+                if (UnlockPopup.Active) { UnlockPopup.Tick(rdt); if (!UnlockPopup.Active) GoTitle(); return; }
+                if (story.EndingCanExit && GameInput.AnyPressed()) { if (Unlocks.Pending.Count > 0) UnlockPopup.Begin(); else GoTitle(); }
                 return;
             }
 
@@ -741,6 +805,8 @@ namespace DigDeep
                 return;
             }
 
+            stopLoad = Mathf.Max(0f, stopLoad - rdt * 0.35f);
+            boomLoad = Mathf.Max(0f, boomLoad - rdt * 6f);
             if (freeze > 0f) { freeze -= rdt; cam.Apply(); return; }   // hitstop: the whole world holds its breath
 
             hud.ClearFrame();
@@ -751,25 +817,40 @@ namespace DigDeep
             if (state == State.Dead)
             {
                 deadT += dt;
-                if (deadT > 0.4f && (GameInput.Pressed(Btn.Pause) || (hud.DeadQuitHovered && GameInput.MouseClicked()))) { QuitFromDeath(); return; }
-                if (deadT > 1f && (GameInput.Pressed(Btn.Jump) || (GameInput.Pressed(Btn.Attack) && !hud.ChangeHovered && !hud.DeadQuitHovered))) { NewRun(); return; }
-                if (!TestMode.On && deadT > 1f && (GameInput.Pressed(Btn.Interact) || GameInput.Pressed(Btn.Up) || (hud.ChangeHovered && GameInput.MouseClicked()))) { BeginRun(null, true); music.PlayMenu(); EnterSelect(); return; }
+                // this run's unlocks, one card at a time, over the death screen (they take the input while up)
+                if (deadT > 0.8f && Unlocks.Pending.Count > 0) UnlockPopup.Begin();
+                if (UnlockPopup.Tick(rdt)) deadT = Mathf.Min(deadT, 0.9f);
+                else
+                {
+                    if (deadT > 0.4f && (GameInput.Pressed(Btn.Pause) || (hud.DeadQuitHovered && GameInput.MouseClicked()))) { QuitFromDeath(); return; }
+                    if (deadT > 1f && (GameInput.Pressed(Btn.Jump) || (GameInput.Pressed(Btn.Attack) && !hud.ChangeHovered && !hud.DeadQuitHovered))) { NewRun(); return; }
+                    if (!TestMode.On && deadT > 1f && (GameInput.Pressed(Btn.Interact) || GameInput.Pressed(Btn.Up) || (hud.ChangeHovered && GameInput.MouseClicked()))) { BeginRun(null, true); music.PlayMenu(); EnterSelect(); return; }
+                }
             }
 
             if (pendingVoid) { pendingVoid = false; EnterVoid(); return; }   // (the world is rebuilt between frames, not in the middle of one)
             UpdateAim();
             HoverBlocks();
-            player.Tick(dt);
+            playerShots = 0;
+            for (int i = 0; i < ents.Count; i++) if (!ents[i].dead && ents[i] is Bullet pb && pb.team == Team.Player) playerShots++;
+            if (playerShots > ShotCap) CullShots(playerShots - ShotCap);
+            Sfx.Submerged = world.FluidAtPoint(player.pos + Vector2.up * (Player.Half.y - 0.08f)) == Fluids.Water;   // under water: the muffled takes
+            player.Tick(Hasted(player) ? dt * 2f : dt);   // HASTE: in the white mist everything runs twice as fast
             float py = player.pos.y;
             for (int i = 0; i < ents.Count; i++)
             {
                 var e = ents[i];
                 if (e.dead) continue;
                 if (!e.AlwaysActive && Mathf.Abs(e.pos.y - py) >= 24f) continue;
-                if (e is Enemy sk && sk.Shocked) sk.ShockedTick(dt);
-                else if (e is Enemy fz && fz.Frozen) fz.FrozenTick(dt);
-                else if (e is Enemy ke && ke.Kicked) ke.KickedTick(dt);
-                else e.Tick(dt);
+                int reps = Hasted(e) ? 2 : 1;   // HASTE: a second tick in the same frame (twice as fast, nothing skips through walls)
+                for (int rep = 0; rep < reps && !e.dead; rep++)
+                {
+                    if (e is Enemy sk && sk.Shocked) sk.ShockedTick(dt);
+                    else if (e is Enemy fz && fz.Frozen) fz.FrozenTick(dt);
+                    else if (e is Enemy ke && ke.Kicked) ke.KickedTick(dt);
+                    else if (e is Enemy th && th.thrall) { Enemy.ThrallFiring = true; e.Tick(dt); Enemy.ThrallFiring = false; }
+                    else e.Tick(dt);
+                }
             }
             if (toAdd.Count > 0) { ents.AddRange(toAdd); toAdd.Clear(); }
             ents.RemoveAll(e => e.dead);
@@ -785,6 +866,7 @@ namespace DigDeep
             }
             else if (Time.timeScale != 1f || whiteAlpha > 0f) { Time.timeScale = 1f; whiteAlpha = 0f; }
             if (skyWhite > 0f) { skyWhite = Mathf.Max(0f, skyWhite - dt * 0.5f); whiteAlpha = Mathf.Max(whiteAlpha, skyWhite); }
+            if (holdWhite > 0f) whiteAlpha = Mathf.Max(whiteAlpha, holdWhite);
 
             fluids.Tick(dt, cam.pos.y, cam.halfH);
             Electric.Tick(dt);
@@ -866,6 +948,7 @@ namespace DigDeep
                     GUI.color = Color.white;
                 }
             }
+            UnlockPopup.Draw();   // the unlock cards on top of everything
             if (Settings.ShowFps) PixelFont.Draw(4f, 4f, Mathf.RoundToInt(fps) + " FPS", Mathf.Max(1f, Mathf.Floor(Screen.height / 540f)), new Color(0.6f, 1f, 0.6f));
         }
 
@@ -938,7 +1021,7 @@ namespace DigDeep
             }
 
             foreach (var e in ents)
-                if (!e.dead && !(e is Altar) && lighting.InView(e.pos, 8f)) e.AddLight(lighting);
+                if (!e.dead && !(e is Altar) && (e is BossArena || lighting.InView(e.pos, 8f))) e.AddLight(lighting);
             // altars may light things far from their own position (burning fuse tip, finish flag)
             foreach (var a in altars)
                 if (!a.dead) a.AddLight(lighting);
@@ -972,7 +1055,14 @@ namespace DigDeep
                 revealT -= dt;
                 lighting.AddRect(revealC - revealH, revealC + revealH, RevealFade);
             }
-            lighting.End(dt, (World.SkyMode || player.s.seeAll || VoidStage.Active ? 0f : Darkness(cam.pos.y)) * player.s.darkMul * (1f - Settings.Brightness * 0.6f));   // BRIGHTNESS option
+            float darkV = (World.SkyMode || player.s.seeAll || VoidStage.Active ? 0f : Darkness(cam.pos.y)) * player.s.darkMul * (1f - Settings.Brightness * 0.6f);   // BRIGHTNESS option
+            if (Lighting.Blackout > 0f)
+            {
+                lighting.Dim(1f - 0.93f * Lighting.Blackout);
+                lighting.Add(player.pos, 1.8f, 0.6f * Lighting.Blackout);   // just yourself
+                darkV = Mathf.Lerp(darkV, 0.97f, Lighting.Blackout);
+            }
+            lighting.End(dt, darkV);
             fluids.Render(cam.pos, cam.halfW, cam.halfH, time);
         }
 
@@ -1114,7 +1204,9 @@ namespace DigDeep
                         {
                             // fish in the pools: minnows and biters, and groupers in the big ones (more biters deeper down)
                             float k2 = (float)r.NextDouble();
-                            var kind = fishPool >= 45 && k2 < 0.25f ? Fish.Kind.Grouper : k2 < 0.6f - Mathf.Min(0.25f, depth / 800f) ? Fish.Kind.Minnow : Fish.Kind.Biter;
+                            float k3 = (float)r.NextDouble();
+                            var kind = k3 < 0.1f ? Fish.Kind.Glow : k3 < 0.15f ? Fish.Kind.Gold
+                                     : fishPool >= 45 && k2 < 0.25f ? Fish.Kind.Grouper : k2 < 0.6f - Mathf.Min(0.25f, depth / 800f) ? Fish.Kind.Minnow : Fish.Kind.Biter;
                             Spawn(new Fish(x, y, depth, kind));
                         }
                         else if (liquid == Fluids.Water && roll < pr * 2.5f && Tiles.Solid(world.Peek(x, y - 1))) Spawn(new Slime(x, y, depth));
@@ -1220,13 +1312,13 @@ namespace DigDeep
                     return false;
                 case Biomes.Fungal:
                     if (k < 0.08 && Open(x, y, 3, 4) && FloorUnder(x, y, 3)) { Spawn(new MushroomElite(x, y, depth)); return true; }
-                    if (k < 0.45) { Spawn(new Skeleton(x, y, depth)); return true; }
+                    if (k < 0.45) { var sk = new Skeleton(x, y, depth); Spawn(sk); sk.Bury(); return true; }
                     return false;
                 case Biomes.Crystal:
                     if (k < 0.4 && Open(x, y, 1, 2)) { Spawn(new RockMage(x, y, depth)); return true; }
                     return false;
                 case Biomes.Kingdom:
-                    if (k < 0.5) { Spawn(new Skeleton(x, y, depth)); return true; }
+                    if (k < 0.5) { var sk = new Skeleton(x, y, depth); Spawn(sk); sk.Bury(); return true; }
                     return false;
             }
             return false;
@@ -1252,12 +1344,14 @@ namespace DigDeep
 
         // a shrine now and then, on a wide flat bit of floor with room above
         readonly System.Collections.Generic.List<int> shrineDepths = new System.Collections.Generic.List<int>();
+        bool fuseSpawned;
         void TryShrine(int x, int y, int depth, System.Random r)
         {
             if (depth < 20 || !Open(x, y, 3, 3) || !FloorUnder(x, y, 3)) return;
             foreach (int d in shrineDepths) if (Mathf.Abs(d - depth) < 30) return;
             shrineDepths.Add(depth);
             double k = r.NextDouble();
+            if (k < 0.07 && depth > 60 && !fuseSpawned) { fuseSpawned = true; Spawn(new FuseAltar(x, y)); return; }   // rare: one a run at most
             if (k < 0.3) Spawn(new RandomAltar(x, y));
             else if (k < 0.5 && depth > 60) Spawn(new DeathAltar(x, y));
             else if (k < 0.75) Spawn(new GoldChalice(x, y));
@@ -1394,6 +1488,17 @@ namespace DigDeep
             player.OnKill(e);
             var s = player.s;
             if (s.chainExplode > 0) Spawn(new Blast(e.pos, 0.12f, s.chainExplode >= 2 ? 2.6f : 1.5f, 3, true));
+            // BLACK SUN: every kill bursts into a ring of shots
+            if (s.blackSun && !(e is WormSegment))
+            {
+                float off = Random.value * 45f;
+                for (int k = 0; k < 8; k++)
+                {
+                    float a = (off + k * 45f) * Mathf.Deg2Rad;
+                    Spawn(Bullet.Pet(e.pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 16f, player.Dmg(2f), new Color(0.35f, 0.2f, 0.5f)));
+                }
+                fx.Ring(e.pos, 1.4f, new Color(0.35f, 0.2f, 0.5f));
+            }
             player.MaybeDropPet(e.pos);   // SPIRIT LANTERN
             // CURSE OF LAVA: the fallen leave a pool of lava behind
             if (player.Cursed(Curse.Lava) && !(e is Boss) && !(e is WormSegment))
@@ -1410,9 +1515,9 @@ namespace DigDeep
                 fx.Ring(e.pos, 2.8f, new Color(0.55f, 1f, 0.35f));
                 sfx.Play("splat", 0.5f, 0.6f);
             }
-            if (Random.value < player.Lucky(0.035f)) Spawn(new LootPickup(e.pos, DB.Ale, 0.3f));
+            if (Chance.Roll("aledrop", player.Lucky(0.012f))) Spawn(new LootPickup(e.pos, DB.Ale, 0.3f));
             // CURSE OF THE RESTLESS DEAD: some of the fallen get back up as bats
-            if (player.Cursed(Curse.Restless) && !(e is Bat) && !(e is Boss) && !(e is WormSegment) && Random.value < 0.3f)
+            if (player.Cursed(Curse.Restless) && !(e is Bat) && !(e is Boss) && !(e is WormSegment) && Chance.Roll("restless", 0.3f))
             {
                 var bat = new Bat(Mathf.FloorToInt(e.pos.x), Mathf.FloorToInt(e.pos.y), player.Depth, false);
                 Spawn(bat);
@@ -1427,8 +1532,15 @@ namespace DigDeep
             player.OnBrokeBlock(b);
             var s = player.s;
             var c = new Vector2(x + 0.5f, y + 0.5f);
+            // PROSPECTOR: ore you break bursts into shrapnel
+            if (s.oreShrapnel && (b == Block.Gold || b == Block.Gem || b == Block.Crystal))
+                for (int k = 0; k < 5; k++)
+                {
+                    float a = (k * 72f + Random.value * 30f) * Mathf.Deg2Rad;
+                    Spawn(Bullet.Pet(c, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 14f, player.Dmg(1.2f), new Color(1f, 0.85f, 0.4f)));
+                }
             float lucky = s.luckyChance + Mathf.Max(0f, s.luck) * 0.01f;
-            if (lucky > 0f && Random.value < lucky) SpawnGold(c, 1);
+            if (lucky > 0f && Chance.Roll("luckydig", lucky)) SpawnGold(c, 1);
             if (s.ember > 0)
             {
                 fx.Burst(c, 6, new Color(1f, 0.55f, 0.15f), 5f, 0.35f, 10f);
@@ -1503,9 +1615,17 @@ namespace DigDeep
             lighting.Flash(p, 4f, 0.5f);
             int depth = Mathf.Max(0, -Mathf.FloorToInt(p.y));
             SpawnGold(p, 4 + rng.Next(8) + depth / 15);
-            int n = player.s.clover && Random.value < player.Lucky(0.25f) ? 2 : 1;
+            int n = player.s.clover && Chance.Roll("clover", player.Lucky(0.25f)) ? 2 : 1;
             for (int i = 0; i < n; i++)
             {
+                // 9 chests in 10 hold a trinket, the rest a consumable and more gold
+                if (!Chance.Roll("chest_trinket", 0.9f))
+                {
+                    var it = DB.RollItem(depth, player, rng);
+                    if (it != null) Spawn(new LootPickup(p, it));
+                    SpawnGold(p, 6 + rng.Next(10) + depth / 10);
+                    continue;
+                }
                 var d = DB.RollChest(depth, player, rng);
                 if (d != null) Spawn(new LootPickup(p, d));
             }
@@ -1518,7 +1638,7 @@ namespace DigDeep
             fx.Debris(p, U.C(168, 116, 62), 14);
             int depth = Mathf.Max(0, -Mathf.FloorToInt(p.y));
             SpawnGold(p, 1 + rng.Next(4));
-            int n = 1 + (rng.NextDouble() < player.Lucky(0.3f) ? 1 : 0);
+            int n = 1 + (Chance.Roll("supply2", player.Lucky(0.3f)) ? 1 : 0);
             for (int i = 0; i < n; i++)
             {
                 var d = DB.RollItem(depth, player, rng);
@@ -1615,26 +1735,47 @@ namespace DigDeep
                     Vector2 dir = U.Rot(Vector2.right, a);
                     Spawn(Bullet.Prism(player, c + dir * Mathf.Min(0.4f, r * 0.3f), dir, Mathf.Max(1f, dmg * 0.35f), s.prism >= 2));
                 }
-                sfx.Play("laser", 0.5f, 0.8f, 0.1f);
+                sfx.Play("laserbig", 0.5f, 0.9f, 0.1f);
             }
         }
 
         // byPlayer: a blast you caused (your shots, bombs, chain kills). Those can spray SHRAPNEL PRISM lasers and NAPALM.
-        public void Explode(Vector2 c, float r, float dmg, bool safe = false, bool hurtBosses = true, bool byPlayer = false, bool noPush = false)
+        // mine: a blast that's yours (anything you shot, threw, kicked or set off with an item); null = guess from byPlayer/safe
+        public void Explode(Vector2 c, float r, float dmg, bool safe = false, bool hurtBosses = true, bool byPlayer = false, bool noPush = false, bool? mine = null)
         {
-            r *= player.s.blastMul;
-            dmg *= player.s.blastMul;   // BLACK POWDER and friends make blasts bigger *and* stronger
-            fx.Explosion(c, r);
-            sfx.Play("explode", 0.95f, Random.Range(0.85f, 1.1f), 0.1f);
-            sfx.Play("boom", Mathf.Clamp01(0.45f + r * 0.18f), Random.Range(0.85f, 1.1f), 0.05f);
-            cam.Shake(Mathf.Min(1f, 0.35f + r * 0.15f));
+            // BLACK POWDER and friends make *your* blasts bigger and stronger (not TNT lying about, or the enemies' bombs)
+            if (mine ?? true) { r *= player.s.blastMul; dmg *= player.s.blastMul; }   // (every blast: TNT and enemy bombs too)
+            Fluids.Ripple(c, r + 1.5f);   // and stir up any water nearby
+            // a storm of blasts: past a handful at once, the extras skip the costly show (sound, flashes, sparks)
+            boomLoad += 1f;
+            bool busy = boomLoad > 6f;
+            float calm = 1f / (1f + Mathf.Max(0f, boomLoad - 2f) * 0.5f);
+            if (!busy || Random.value < 0.25f) fx.Explosion(c, r);
+            if (!busy || Random.value < 0.15f)
+            {
+                // which recording: far off, it's a dull distant thud; under water, a deep muffled one (TNT's own); otherwise by size
+                bool wetBoom = world.FluidAtPoint(c) == Fluids.Water;
+                float far = (player.pos - c).magnitude;
+                string key = far > 18f ? "explode_far" : wetBoom ? (r >= 2.9f ? (Random.value < 0.5f ? "explode_tnt_wet" : "explode_big_wet") : "explode_wet")
+                    : r < 1.5f ? "explode_small" : r < 2.6f ? "explode_mid" : "explode_big";
+                float fv = far > 18f ? Mathf.Clamp01(1.2f - far / 40f) : 1f;
+                sfx.Play(key, 0.95f * Mathf.Max(0.4f, calm) * fv, Random.Range(0.85f, 1.1f), 0.1f);
+                sfx.Play("boom", Mathf.Clamp01(0.45f + r * 0.18f) * Mathf.Max(0.4f, calm) * (wetBoom ? 0.6f : 1f) * fv, Random.Range(0.85f, 1.1f) * (wetBoom ? 0.7f : 1f), 0.05f);   // the low thump under it, for weight
+            }
+            cam.Shake(Mathf.Min(1f, 0.35f + r * 0.15f) * calm);
             // explosions in quick succession build up a rumble that lingers (chain reactions!)
-            cam.AddRumble(time - lastBoom < 0.6f ? 0.18f : 0.06f);
+            cam.AddRumble((time - lastBoom < 0.6f ? 0.18f : 0.06f) * calm);
             lastBoom = time;
-            HitStop(Mathf.Min(0.1f, 0.03f + r * 0.015f));
-            lighting.Flash(c, r * 4f, 0.5f);
-            if (r >= 2.4f) hud.ScreenFlash(Mathf.Min(0.8f, r * 0.2f));
-            Fire.Sparks(c, r);   // sparks fly a bit past the blast and light grass, wood and enemies
+            HitStop(Mathf.Min(0.1f, 0.03f + r * 0.015f) * calm);
+            if (!busy) lighting.Flash(c, r * 4f, 0.5f);
+            if (r >= 2.4f && !busy) hud.ScreenFlash(Mathf.Min(0.8f, r * 0.2f));
+            if (!busy) Fire.Sparks(c, r);   // sparks fly a bit past the blast and light grass, wood and enemies
+            // BLACK POWDER: your own blasts launch you (rocket jumps for anything)
+            if (player.s.rocketBoost && byPlayer && player.mode != Player.Mode.Dead)
+            {
+                Vector2 rj = player.pos - c;
+                if (rj.magnitude < r + 0.6f) player.vel += (rj.sqrMagnitude > 0.01f ? rj.normalized : Vector2.up) * 9f + Vector2.up * 7f;
+            }
             Keeper.HitAt(c, new Vector2(r, r), dmg * 2f, c);   // shopkeepers are flesh and blood
 
             // blasts throw boulders around instead of just cracking them
@@ -1664,21 +1805,37 @@ namespace DigDeep
                     }
                     world.PushBoulder(x, y, (dist < 0.1f ? Vector2.up : bd / dist) * Mathf.Lerp(16f, 6f, dist / (r + 1f)) + Vector2.up * 5f);
                 }
-            int x0 = Mathf.FloorToInt(c.x - r), x1 = Mathf.FloorToInt(c.x + r);
-            int y0 = Mathf.FloorToInt(c.y - r), y1 = Mathf.FloorToInt(c.y + r);
+            // BLACK POWDER also blows out a much bigger hole than the blast itself reaches
+            var bigHit = new HashSet<long>();   // (each big vein takes one hit per blast)
+            float digR = r * (1f + Mathf.Max(0f, player.s.blastMul - 1f) * 1.3f), digK = Mathf.Max(1f, player.s.blastMul);
+            int x0 = Mathf.FloorToInt(c.x - digR), x1 = Mathf.FloorToInt(c.x + digR);
+            int y0 = Mathf.FloorToInt(c.y - digR), y1 = Mathf.FloorToInt(c.y + digR);
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
                 {
                     float d = (new Vector2(x + 0.5f, y + 0.5f) - c).magnitude;
-                    if (d > r) continue;
-                    world.Damage(x, y, Mathf.CeilToInt(dmg * 1.5f * (1f - d / r * 0.5f)), false);
+                    if (d > digR) continue;
+                    Block bb0 = world.Peek(x, y);
+                    if (BigOre.Is(bb0))
+                    {
+                        // a big gold vein (2x2, 4x4, 6x6) takes the blast as one: a heavy hit, once, that knocks gold out of it
+                        if (!BigOre.Find(x, -y, out _, out int box, out int bod, out _)) continue;
+                        long bk = ((long)bod << 32) ^ (uint)box;
+                        if (!bigHit.Add(bk)) continue;
+                        world.Damage(x, y, Mathf.CeilToInt(dmg * 4f * digK * (1f - d / digR * 0.4f)), true);
+                        continue;
+                    }
+                    world.Damage(x, y, Mathf.CeilToInt(dmg * 1.5f * digK * (1f - d / digR * 0.5f)), false);
                 }
+            for (int k = 0; k < 6; k++) Fluids.Heat(Mathf.FloorToInt(c.x + Random.Range(-r, r)), Mathf.FloorToInt(c.y + Random.Range(-r, r)), 0.6f);   // the heat of it: poison boils, sand glasses
             // scorch marks on whatever survived
             for (int i = 0; i < 18 + r * 10; i++)
             {
                 Vector2 q = c + Random.insideUnitCircle * (r + 0.6f);
                 world.Stain(q, new Color(0.08f, 0.06f, 0.06f, 0.55f), 2);
             }
+            int outerCount = Unlocks.BlastCount;   // (count this blast's kills on their own, for the FOUR IN ONE unlocks)
+            Unlocks.BlastCount = 0;
             foreach (var e in ents)
             {
                 if (e.dead) continue;
@@ -1694,6 +1851,8 @@ namespace DigDeep
                     if (v.magnitude < r * 1.6f) co.Push(v.normalized * 14f + Vector2.up * 7f);
                 }
             }
+            Unlocks.BlastKills(Unlocks.BlastCount);
+            Unlocks.BlastCount = outerCount;
             HitAltars(c, new Vector2(r, r), Src.Explosion);
             if (byPlayer) PlayerBlastExtras(c, r, dmg);
             float pd = (player.pos - c).magnitude;
@@ -1720,6 +1879,7 @@ namespace DigDeep
         public void OnPlayerDied()
         {
             Records.RunEnded(player, false, player.lastCause, time);
+            Unlocks.RunEnded(false);
             SaveGame.Delete();   // the run is over: nothing to continue
             music.Stop(2.5f);
             state = State.Dead;

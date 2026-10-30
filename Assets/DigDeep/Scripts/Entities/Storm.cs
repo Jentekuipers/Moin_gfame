@@ -200,7 +200,16 @@ namespace DigDeep
         {
             BaseTick(dt);
             if (dead) return;
-            vel = Vector2.zero;
+            // nothing under it: it topples down until it lands
+            vel.x = 0f;
+            if (!Wd.Ground(pos + new Vector2(0f, -0.05f), half * 0.9f)) vel.y = Mathf.Max(vel.y - 38f * dt, -18f);
+            if (vel.y != 0f)
+            {
+                float vy0 = vel.y;
+                Vector2 p = pos;
+                if (Wd.MoveY(ref p, half, vel.y * dt, out _)) { vel.y = 0f; if (vy0 < -8f) { G.cam.Shake(0.08f); G.sfx.Material(Block.Crate, false, 1f); G.fx.Burst(pos - new Vector2(0f, half.y), 6, new Color(0.6f, 0.6f, 0.65f), 3f, 0.3f, 10f); } }
+                pos = p;
+            }
             cycle -= dt;
             bool hot = cycle < 0.7f;
             if (hot)

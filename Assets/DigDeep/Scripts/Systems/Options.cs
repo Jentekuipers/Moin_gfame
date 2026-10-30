@@ -95,6 +95,7 @@ namespace DigDeep
                     Slider("BRIGHTNESS", () => Settings.Brightness, v => Settings.Brightness = v);
                     rows.Add(new Row { label = "UI SCALE", value = () => Pct(Settings.UiScale), get01 = () => (Settings.UiScale - 0.75f) / 0.75f, set01 = v => Settings.UiScale = 0.75f + Mathf.Round(v * 15f) / 20f,
                         change = d => Settings.UiScale = Mathf.Clamp(Settings.UiScale + d * 0.05f, 0.75f, 1.5f) });
+                    rows.Add(new Row { label = "SHOW STATS", value = () => OnOff(Settings.ShowStats), change = d => Settings.ShowStats = !Settings.ShowStats });
                     rows.Add(new Row { label = "AUTO PICK-UP", hint = "OFF: PRESS INTERACT TO TAKE TRINKETS AND ITEMS", value = () => OnOff(Settings.AutoPickup), change = d => Settings.AutoPickup = !Settings.AutoPickup });
                     rows.Add(new Row { label = "PAUSE WHEN UNFOCUSED", value = () => OnOff(Settings.PauseOnFocusLoss), change = d => Settings.PauseOnFocusLoss = !Settings.PauseOnFocusLoss });
                     rows.Add(new Row { label = resetArmT > 0f ? "SURE? PRESS AGAIN TO ERASE" : "RESET ALL PROGRESS", hint = "BEST DEPTH, WINS, UNLOCKS AND THE SAVED RUN",
@@ -203,11 +204,11 @@ namespace DigDeep
                 if (GameInput.Pressed(Btn.Jump)) StartPadRebind(r.padBind, bindSlot);
                 return;
             }
-            if (dir != 0 && r.change != null) { r.change(dir); Settings.Apply(false); sfx.Play("blip", 0.4f, 1.2f); }
+            if (dir != 0 && r.change != null) { r.change(dir); Settings.Apply(false); sfx.Play("ui", 0.4f, 1f); }
             if (GameInput.Pressed(Btn.Jump))
             {
                 if (r.activate != null) r.activate();
-                else if (r.change != null) { r.change(1); Settings.Apply(false); sfx.Play("blip", 0.4f, 1.2f); }
+                else if (r.change != null) { r.change(1); Settings.Apply(false); sfx.Play("ui", 0.4f, 1f); }
             }
         }
 
@@ -221,13 +222,13 @@ namespace DigDeep
         void StartPadRebind(Btn b, int slot)
         {
             padRebinding = b; bindSlot = slot; armed = false;
-            Game.I.sfx.Play("blip", 0.5f, 0.9f);
+            Game.I.sfx.Play("ui", 0.5f, 0.9f);
         }
 
         void StartRebind(Btn b, int slot)
         {
             rebinding = b; bindSlot = slot; armed = false;
-            Game.I.sfx.Play("blip", 0.5f, 0.9f);
+            Game.I.sfx.Play("ui", 0.5f, 0.9f);
         }
 
         // ------------------------------------------------------------------ drawing (and the mouse)
@@ -265,7 +266,7 @@ namespace DigDeep
             {
                 float tx = px + 8f * S + i * tw;
                 var rect = new Rect(tx, ty, tw - 2f * S, 12f * S);
-                bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
+                bool hov = Sfx.HoverUi(rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT, rect);
                 if (hov && click) SetTab(i);
                 bool on = VisTab == i;
                 Box(rect.x, rect.y, rect.width, rect.height, on ? new Color(1f, 0.82f, 0.3f, 0.85f) : new Color(1f, 1f, 1f, hov ? 0.15f : 0.06f));
@@ -280,7 +281,7 @@ namespace DigDeep
                 for (int i = 0; i < 2; i++)
                 {
                     var rect = new Rect(px + 8f * S + i * sw, sy, sw - 2f * S, 11f * S);
-                    bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
+                    bool hov = Sfx.HoverUi(rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT, rect);
                     if (hov && click) SetSub(i == 1);
                     bool on = padSub == (i == 1);
                     Box(rect.x, rect.y, rect.width, rect.height, on ? new Color(0.55f, 0.8f, 1f, 0.8f) : new Color(1f, 1f, 1f, hov ? 0.15f : 0.06f));
@@ -309,7 +310,7 @@ namespace DigDeep
                 var r = rows[i];
                 float y = top + (i - first) * rowH;
                 var rect = new Rect(px + 6f * S, y - 2f * S, pw - 12f * S, rowH - S);
-                bool hov = rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT;
+                bool hov = Sfx.HoverUi(rect.Contains(mouse) && rebinding == Btn.COUNT && padRebinding == Btn.COUNT, rect);
                 if (hov && (click || (Vector2)mouse != lastMouse)) sel = i;
                 bool on = i == sel;
                 if (on) Box(rect.x, rect.y, rect.width, rect.height, new Color(1f, 1f, 1f, 0.08f));
@@ -324,7 +325,7 @@ namespace DigDeep
                     {
                         float cx = vx + s * (vw * 0.5f), cw = vw * 0.5f - 3f * S;
                         var cell = new Rect(cx, y - S, cw, rowH - 3f * S);
-                        bool chov = cell.Contains(mouse) && rebinding == Btn.COUNT;
+                        bool chov = Sfx.HoverUi(cell.Contains(mouse) && rebinding == Btn.COUNT, cell);
                         bool waiting = rebinding == r.bind && bindSlot == s;
                         Box(cell.x, cell.y, cell.width, cell.height, waiting ? new Color(1f, 0.82f, 0.3f, 0.8f) : new Color(1f, 1f, 1f, chov || (on && bindSlot == s) ? 0.2f : 0.07f));
                         string k = waiting ? "PRESS A KEY" : GameInput.KeyLabel(GameInput.binds[(int)r.bind, s]);
@@ -340,7 +341,7 @@ namespace DigDeep
                     {
                         float cx = vx + s * (vw / 3f), cw = vw / 3f - 3f * S;
                         var cell = new Rect(cx, y - S, cw, rowH - 3f * S);
-                        bool chov = cell.Contains(mouse) && padRebinding == Btn.COUNT;
+                        bool chov = Sfx.HoverUi(cell.Contains(mouse) && padRebinding == Btn.COUNT, cell);
                         bool waiting = padRebinding == r.padBind && bindSlot == s;
                         var pb = GameInput.padBinds[(int)r.padBind, s];
                         Color bcol = pb == Pad.None ? new Color(1f, 1f, 1f, chov || (on && bindSlot == s) ? 0.2f : 0.07f) : PadArt.ButtonColor(pb) * new Color(1f, 1f, 1f, chov || (on && bindSlot == s) ? 0.55f : 0.3f);
@@ -373,7 +374,7 @@ namespace DigDeep
                 if (hov && click)
                 {
                     if (r.activate != null) r.activate();
-                    else if (r.change != null) { r.change(mouse.x < vx + vw * 0.5f && mouse.x > vx ? -1 : 1); Settings.Apply(false); Game.I.sfx.Play("blip", 0.4f, 1.2f); }
+                    else if (r.change != null) { r.change(mouse.x < vx + vw * 0.5f && mouse.x > vx ? -1 : 1); Settings.Apply(false); Game.I.sfx.Play("ui", 0.4f, 1f); }
                 }
             }
             lastMouse = mouse;

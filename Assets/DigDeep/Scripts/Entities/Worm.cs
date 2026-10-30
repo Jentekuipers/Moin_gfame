@@ -164,16 +164,21 @@ namespace DigDeep
 
         public override bool AlwaysActive => owner.AlwaysActive;
 
-        public void Follow(Vector2 p, Vector2 towards)
+        public bool hidden;
+        public void Follow(Vector2 p, Vector2 towards, bool show = true)
         {
-            pos = p;
+            pos = p; hidden = !show;
             Vector2 d = towards - p;
             if (go == null) return;
             go.transform.position = new Vector3(U.Snap(p.x), U.Snap(p.y), 0f);
-            if (d.sqrMagnitude > 0.0001f) go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg);
+            if (d.sqrMagnitude > 0.0001f)
+            {
+                go.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg);
+                if (owner is Boss) sr.flipY = d.x < 0f;   // upright either way, like the dragon's head
+            }
             bool inRock = Wd.Solid(Mathf.FloorToInt(p.x), Mathf.FloorToInt(p.y));
             sr.sprite = flash > 0f ? whites[0] : frames[0];
-            sr.color = inRock ? new Color(0.45f, 0.4f, 0.4f, owner is Boss ? 0f : 0.5f) : Color.white;
+            sr.color = !show ? new Color(1f, 1f, 1f, 0f) : inRock ? new Color(0.45f, 0.4f, 0.4f, owner is Boss ? 0f : 0.5f) : Color.white;
         }
 
         // one blast catching several segments only hurts the worm once per frame
@@ -196,7 +201,7 @@ namespace DigDeep
             if (owner.dead) { Kill(); return; }
             var p = G.player;
             bool inRock = Wd.Solid(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y));
-            if (!inRock && p.mode != Player.Mode.Dead && contactCd <= 0f && U.Overlap(pos, half * 0.85f, p.pos, Player.Half))
+            if (!inRock && !hidden && p.mode != Player.Mode.Dead && contactCd <= 0f && U.Overlap(pos, half * 0.85f, p.pos, Player.Half))
             {
                 p.Hurt(dmg, pos);
                 contactCd = 0.5f;

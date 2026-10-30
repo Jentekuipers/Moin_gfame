@@ -120,12 +120,15 @@ namespace DigDeep
 
         public override bool AlwaysActive => true;
         GameObject backdrop;
-        public override void Kill() { base.Kill(); if (backdrop != null) Object.Destroy(backdrop); }
+        public override void Kill() { base.Kill(); All.Remove(this); if (backdrop != null) Object.Destroy(backdrop); }
+        public static readonly List<BossArena> All = new List<BossArena>();
+        public bool Inside(Vector2 p) => p.x > MinX && p.x < MaxX && p.y > FloorY && p.y < CeilY;
 
         public bool IsFinal => room.IsFinal;
 
         public BossArena(ArenaRoom room)
         {
+            All.Add(this);
             this.room = room;
             pos = new Vector2(CenterX, FloorY + ArenaRoom.IH * 0.5f);
             if (room.IsFinal && !World.Void) G.Spawn(new GodDiamond(this));
@@ -156,7 +159,7 @@ namespace DigDeep
             }
             if (started && !cleared && Random.value < 0.3f)
                 foreach (var t in Torches()) G.fx.Burst(t, 1, new Color(1f, 0.6f, 0.2f), 1f, 0.35f, -4f, 1f, false);
-            if (started && !cleared) Confine(p);
+            if (started && !cleared && !VoidStage.Active) Confine(p);   // once the void wipes the hall, the screen's edges hold you instead
         }
 
         // Once the doors seal there is no way out: no dash, blink, grapple, super jump or teleport leaves the hall.
@@ -192,6 +195,7 @@ namespace DigDeep
         void Begin()
         {
             started = true;
+            Unlocks.BossFightStarted();
             SetPerimeter(Block.Seal);
             int kind;   // (remembered in bossKind for the records)
             switch (room.D)
@@ -206,6 +210,7 @@ namespace DigDeep
                 default: kind = 3; break;
             }
             float hpMul = 2f * (0.8f + (room.D + Enemy.VoidDeeper) / Biomes.Stretch / 400f);   // twice as tough as before, and tougher the deeper the arena
+            hpMul *= 1.15f + 0.12f * room.index + (World.Void ? 0.3f : 0f);                          // and tougher still the deeper you are
             var spawnAt = new Vector2(CenterX + (G.player.pos.x < CenterX ? 7f : -7f), FloorY);
             if (room.IsFinal) kind = 4;
             // the dragon worms: the water dragon may rule the crystal depths, the fire dragon the storm caverns;
@@ -223,6 +228,7 @@ namespace DigDeep
             if (room.D == ArenaRoom.A1 && rr.NextDouble() < 0.5) kind = 16;   // the Bone Slime, or the Devourer
             if (room.IsFinal && World.Void) kind = 17;              // the bottom of the void: the Void Archmage
             else if (World.Void && !G.voidDragonDone && rr.NextDouble() < 0.25) { kind = 19; G.voidDragonDone = true; }   // once a void run: the void dragon
+            if (kind == 16 && Biomes.Index(room.D) == Biomes.Magma) kind = 5;   // the Bone Slime has no business in the magma core
             if (ForceKind >= 0) { kind = ForceKind; ForceKind = -1; }
             bossKind = kind;
             switch (kind)
@@ -289,8 +295,10 @@ namespace DigDeep
                 Records.Add("bosses");
                 if (bossKind == 11) { Records.Mark("b", "9"); Records.Mark("b", "10"); }   // the twin dragons count as both
                 else Records.Mark("b", bossKind.ToString());
+                Unlocks.BossBeaten();
             }
             SetPerimeter(Block.Brick);
+            if (G.player.s.adamant && !G.player.NoHealing()) { G.player.s.hp = G.player.s.maxHp; G.sfx.Play("heal", 0.8f); }   // ADAMANT HEART
             if (room.IsFinal && World.Void)
             {
                 G.OnVoidDefeated(new Vector2(CenterX, FloorY + 3f));
@@ -315,11 +323,20 @@ namespace DigDeep
             // A boss that carries something of its own (a dragon's heart) puts it among the three.
             int count = 3 + G.player.s.bossExtra;   // TROPHY CASE: one more to choose from
             var picks = new System.Collections.Generic.List<Def>();
+
             foreach (var b in bosses) { var dd = b.Drop; if (dd != null && picks.Count < count) picks.Add(dd); }
+            if (picks.Count < count && Chance.Roll("ultraboss", G.player.Lucky(0.02f))) { var u = DB.RollUltra(G.player); if (u != null) picks.Add(u); }
             var rng = G.rng;
             for (int tries = 0; picks.Count < count && tries < 16; tries++)
             {
-                var rar = rng.NextDouble() < G.player.Lucky(0.05f) ? Rarity.Relic : Rarity.Rare;
+                // now and then: an upgrade for your ability instead (each once a run)
+                if (Random.value < 0.05f)
+                {
+                    var ups = DB.AbilityChoices(G.player);
+                    ups.RemoveAll(u => picks.Contains(u));
+                    if (ups.Count > 0) { picks.Add(ups[Random.Range(0, ups.Count)]); continue; }
+                }
+                var rar = Chance.Roll("bossmythic", G.player.Lucky(0.05f)) ? Rarity.Relic : Rarity.Rare;
                 var d = DB.RollOfRarity(rar, G.player, rng, picks) ?? DB.RollOfRarity(Rarity.Rare, G.player, rng, picks) ?? DB.RollOfRarity(Rarity.Uncommon, G.player, rng, picks);
                 if (d != null) picks.Add(d);
             }
@@ -339,7 +356,7 @@ namespace DigDeep
                 spots.Add(new Vector2(x, FloorY + 1.7f));
             }
             BossChoice.Offer(spots, picks.ToArray());
-            G.Spawn(new HealOrb(c + Vector2.right * 2f, 100));
+            G.Spawn(new HealOrb(new Vector2(cx + 0.5f, FloorY + 1.3f), 100));   // right over the way down
             G.hud.Banner("VICTORY!", "THE FLOOR CRACKS OPEN", new Color(1f, 0.85f, 0.3f));
             G.music.PlayLevel(3f);
             G.cam.Shake(0.8f);
@@ -355,6 +372,10 @@ namespace DigDeep
             }
             float f = 1f + Mathf.Sin(Time.time * 9f) * 0.05f;
             foreach (var t in Torches()) l.Add(t, 5f * f, 0.85f);
+            // once you're in, the whole hall is lit
+            var p = G.player.pos;
+            if (p.x > MinX - 2f && p.x < MaxX + 2f && p.y > FloorY - 2f && p.y < CeilY + 2f)
+                l.AddRect(new Vector2(MinX - 1f, FloorY - 1f), new Vector2(MaxX + 1f, CeilY + 1f), 1f);
         }
     }
 
@@ -372,6 +393,7 @@ namespace DigDeep
         public bool chills, burns;   // frost shards slow you, embers set you alight
         public int dmgOverride = -1; // (the God above the clouds hits harder than the depth says)
         public Color body = Color.white;   // the shot's own tint once it flies
+        public System.Action<Vector2Int, Vector2Int> onWall;   // it struck rock: (the open cell it came from, the surface's normal)
 
         public override bool AlwaysActive => true;
 
@@ -381,7 +403,9 @@ namespace DigDeep
             rad = 0.24f * scale;
             MakeGO("BossShot", s, 15);
             go.transform.localScale = Vector3.one * scale;
+            halo = Bullet.Threat(go, sr, c);
         }
+        readonly SpriteRenderer halo;
 
         public override void Tick(float dt)
         {
@@ -394,6 +418,7 @@ namespace DigDeep
                 return;
             }
             sr.color = body;
+            Bullet.Pulse(halo);
             life -= dt;
             vel.y -= grav * dt;
             pos += vel * dt;
@@ -402,6 +427,20 @@ namespace DigDeep
             go.transform.rotation = Quaternion.Euler(0, 0, spin);
             if (life <= 0f || Wd.Solid(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y)))
             {
+                if (life > 0f && onWall != null)
+                {
+                    Vector2 prev = pos - vel * dt;
+                    var hit = new Vector2Int(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y));
+                    var from = new Vector2Int(Mathf.FloorToInt(prev.x), Mathf.FloorToInt(prev.y));
+                    if (!Wd.Solid(from.x, from.y) && from != hit)
+                    {
+                        Vector2Int n;
+                        if (from.y == hit.y) n = new Vector2Int(from.x - hit.x, 0);
+                        else if (from.x == hit.x) n = new Vector2Int(0, from.y - hit.y);
+                        else n = Wd.Solid(hit.x, from.y) ? new Vector2Int(from.x - hit.x, 0) : new Vector2Int(0, from.y - hit.y);
+                        onWall(from, n);
+                    }
+                }
                 G.fx.Burst(pos, 8, col, 4f, 0.35f, 15f);
                 Kill();
                 return;
@@ -422,6 +461,9 @@ namespace DigDeep
         }
 
         public override void AddLight(Lighting l) => l.Add(pos, 1.5f, 0.65f);
+
+        // shines over the darkness itself (the void dragon's DARK)
+        public BossShot OverDark() { if (sr != null) sr.sortingOrder = 101; return this; }
     }
 
     // =====================================================================================
@@ -888,6 +930,11 @@ namespace DigDeep
                 case S.Charge:
                     vel.x = facing * (Phase2 ? 17f : 14f);
                     if (Random.value < 0.6f) G.fx.Burst(pos + new Vector2(0f, -half.y + 0.1f), 2, Cry, 3f, 0.3f, 10f);
+                    if (grounded)   // it leaves a slippery sheet of ice behind it
+                    {
+                        int iy = Mathf.FloorToInt(pos.y - half.y + 0.05f);
+                        for (int ix = Mathf.FloorToInt(pos.x - half.x); ix <= Mathf.FloorToInt(pos.x + half.x); ix++) IceSheet.Add(ix, iy);
+                    }
                     if (Move(dt) || stateT <= 0f)
                     {
                         G.sfx.Play("explode", 0.9f, 0.7f);

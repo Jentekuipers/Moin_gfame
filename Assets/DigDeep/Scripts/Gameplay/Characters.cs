@@ -33,6 +33,9 @@ namespace DigDeep
         public static readonly List<CharDef> All = new List<CharDef>();
         static bool inited;
 
+        // FIN is the digger everybody starts with (the others are unlocked, see Unlocks)
+        public static int FinIndex { get { Init(); for (int i = 0; i < All.Count; i++) if (All[i].id == "fin") return i; return 0; } }
+
         public static void Init()
         {
             if (inited) return;
@@ -67,7 +70,7 @@ namespace DigDeep
                 id = "tor", name = "TOR", animal = "BEETLE", title = "THE BEETLE", blurb = "A WALKING WALL IN A HORNED SHELL. KICKS FIRST, ASKS LATER.",
                 trait = "IRON HIDE (TAKES 25% LESS DAMAGE) + THICK SKIN",
                 hp = 200, dmg = 0.95f, swing = 0.85f, speed = 0.9f, mining = 2, jump = 1f, luck = 0f,
-                weapon = "mortar", special = "kick", skills = new[] { "ironhide", "thick" },
+                weapon = "smg", special = "kick", skills = new[] { "ironhide", "thick" },
                 frames = Art.HeroBeetle(),
             });
             All.Add(new CharDef
@@ -75,7 +78,7 @@ namespace DigDeep
                 id = "fin", name = "FIN", animal = "DOLPHIN", title = "THE DOLPHIN", blurb = "AT HOME IN THE WET. BRINGS THE SEA WITH HER.",
                 trait = "GILLS (NEVER DROWNS) + FLIPPERS (FAST SWIMMER, BIG LEAPS OUT OF THE WATER)",
                 hp = 110, dmg = 1f, swing = 1.05f, speed = 1.05f, mining = 1, jump = 1.1f, luck = 0.5f,
-                weapon = "smg", special = "tide", skills = new[] { "gills", "flippers" },
+                weapon = "mortar", special = "tide", skills = new[] { "gills", "flippers" },
                 frames = Art.HeroDolphin(),
             });
             All.Add(new CharDef

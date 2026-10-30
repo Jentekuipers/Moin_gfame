@@ -22,6 +22,7 @@ namespace DigDeep
                 r.weaponAmmo.Add(w != null ? w.ammo : -1);
                 r.weaponCurse.Add(w != null ? (int)w.curse : 0);
                 r.weaponCurseKills.Add(w != null ? w.curseKills : 0);
+                r.weaponAmmoItem.Add(w != null && w.ammoItem != null ? w.ammoItem.id : "");
             }
             r.curWeapon = cur;
             r.special = special != null ? special.id : "";
@@ -64,6 +65,7 @@ namespace DigDeep
                         if (int.TryParse(part, out int m) && m >= 0 && m < (int)Mod.COUNT) w.mods.Add((Mod)m);
                 w.ammo = i < r.weaponAmmo.Count ? r.weaponAmmo[i] : -1;
                 if (i < r.weaponCurse.Count) { w.curse = (Curse)Mathf.Clamp(r.weaponCurse[i], 0, (int)Curse.COUNT - 1); w.curseKills = i < r.weaponCurseKills.Count ? r.weaponCurseKills[i] : 0; }
+                if (r.weaponAmmoItem != null && i < r.weaponAmmoItem.Count && DB.ById.TryGetValue(r.weaponAmmoItem[i], out var ai) && ai is ItemDef aid) w.ammoItem = aid;
                 slots[i] = w;
             }
             cur = Mathf.Clamp(r.curWeapon, 0, slots.Length - 1);

@@ -16,6 +16,13 @@ namespace DigDeep
     //   - paint on a copy of the sheet saved as  SpriteSheet/sheet.png  (same size and layout), and/or
     //   - drop single sprites (any size) into     SpriteSheet/overrides/<name>.png
     // Overrides win over the sheet. Hit-flash (white) frames of foes are rebuilt from your new art.
+    //
+    // overrides/anchors.txt (optional) places a picture that isn't the old size: "name nx ny base ox oy" puts pixel
+    // (nx, ny) of the new picture (from its bottom-left) exactly where pixel (ox, oy) of sprite `base` used to be, so
+    // bigger or smaller redraws stay put (and every frame of an animation lines up).
+    // Extra animation frames: overrides/<Field>.<key>_<n>.png past the end of an animation (Enemy.mimic_2) add a
+    // frame; overrides/Extra.<key>_<n>.png make new animations the game asks for by name (SpriteSheet.Frames).
+    // One picture used in several places is exported once and replaced everywhere it's used.
     public static class SpriteSheet
     {
         static string Root => Path.Combine(Application.streamingAssetsPath, "SpriteSheet");
@@ -100,12 +107,19 @@ namespace DigDeep
             catch { return new Color32[w * h]; }   // (an unreadable texture: blank)
         }
 
-        static Sprite Build(Color32[] px, int w, int h, Sprite like)
+        static Sprite Build(Color32[] px, int w, int h, Sprite like, Anchor? anchor = null, Sprite baseSprite = null)
         {
             var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
             tex.SetPixels32(px); tex.Apply();
             Vector2 pivot = like != null ? new Vector2(like.pivot.x / like.rect.width, like.pivot.y / like.rect.height) : new Vector2(0.5f, 0.5f);
-            float ppu = like != null ? like.pixelsPerUnit : Art.PPU;
+            var bs = baseSprite != null ? baseSprite : like;
+            if (anchor.HasValue && bs != null)
+            {
+                // the new picture's anchor point lands where the base sprite's was: same pivot offset from it
+                Vector2 pp = anchor.Value.n + (bs.pivot - anchor.Value.o);
+                pivot = new Vector2(pp.x / w, pp.y / h);
+            }
+            float ppu = bs != null ? bs.pixelsPerUnit : Art.PPU;
             return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, ppu, 0, SpriteMeshType.FullRect);
         }
 
@@ -118,10 +132,11 @@ namespace DigDeep
             Directory.CreateDirectory(Path.Combine(Root, "overrides"));
             // pack in rows, tallest first
             var items = new List<(Entry e, Color32[] px, int w, int h)>();
+            var exported = new HashSet<Sprite>();
             foreach (var e in list)
             {
                 var s = e.get();
-                if (s == null) continue;
+                if (s == null || !exported.Add(s)) continue;   // the same picture used in several places: once on the sheet
                 var px = Pixels(s);
                 int w = Mathf.RoundToInt(s.textureRect.width), h = Mathf.RoundToInt(s.textureRect.height);
                 if (w <= 0 || h <= 0) continue;
@@ -196,17 +211,38 @@ namespace DigDeep
             string ovr = Path.Combine(root, "overrides");
             bool anyOvr = Directory.Exists(ovr);
             if (sheet == null && !anyOvr) return;
+            var anchors = anyOvr ? ReadAnchors(Path.Combine(ovr, "anchors.txt")) : new Dictionary<string, Anchor>();
+            var all = Collect(defsOnly);
+            // every sprite as it was before anything was replaced (anchors measure against these)
+            var before = new Dictionary<string, Sprite>();
+            foreach (var e in all) before[e.name] = e.get();
             int n = 0;
-            foreach (var e in Collect(defsOnly))
+            var done = new HashSet<string>();
+            foreach (var e in all)
             {
                 bool isDef = e.name.StartsWith("icon_") || e.name.StartsWith("digger_");
                 if (isDef != defsOnly) continue;
-                var old = e.get();
+                var old = before[e.name];
                 string file = anyOvr ? Path.Combine(ovr, e.name + ".png") : null;
                 if (file != null && File.Exists(file))
                 {
+                    done.Add(e.name);
                     var t = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                    if (t.LoadImage(File.ReadAllBytes(file))) { try { e.set(Build(t.GetPixels32(), t.width, t.height, old)); n++; } catch { } }
+                    if (t.LoadImage(File.ReadAllBytes(file)))
+                    {
+                        try
+                        {
+                            Anchor? an = null; Sprite bs = null;
+                            if (anchors.TryGetValue(e.name, out var a0)) { an = a0; before.TryGetValue(a0.baseName, out bs); }
+                            var ns = Build(t.GetPixels32(), t.width, t.height, old, an, bs);
+                            e.set(ns); n++;
+                            // the same picture used elsewhere (that has no override of its own) changes with it
+                            if (old != null)
+                                foreach (var o in all)
+                                    if (o.name != e.name && before[o.name] == old && !File.Exists(Path.Combine(ovr, o.name + ".png"))) o.set(ns);
+                        }
+                        catch { }
+                    }
                     Object.Destroy(t);
                     continue;
                 }
@@ -225,7 +261,97 @@ namespace DigDeep
                     if (changed) { try { e.set(Build(px, r.w, r.h, old)); n++; } catch { } }
                 }
             }
+            if (anyOvr && !defsOnly) n += ExtraFrames(ovr, anchors, before, done);
             if (n > 0) Debug.Log("MOIN: " + n + " sprites replaced from StreamingAssets/SpriteSheet");
+        }
+
+        // ------------------------------------------------------------------ anchors and extra frames
+
+        struct Anchor { public Vector2 n, o; public string baseName; }
+
+        static Dictionary<string, Anchor> ReadAnchors(string path)
+        {
+            var d = new Dictionary<string, Anchor>();
+            if (!File.Exists(path)) return d;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (var line in File.ReadAllLines(path))
+            {
+                if (line.StartsWith("#")) continue;
+                var p = line.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+                if (p.Length < 6) continue;
+                try
+                {
+                    d[p[0]] = new Anchor
+                    {
+                        n = new Vector2(float.Parse(p[1], ci), float.Parse(p[2], ci)),
+                        baseName = p[3],
+                        o = new Vector2(float.Parse(p[4], ci), float.Parse(p[5], ci)),
+                    };
+                }
+                catch { }
+            }
+            return d;
+        }
+
+        // new animations made only of override files (Extra.<key>_<n>.png), for the game to ask for by name
+        static readonly Dictionary<string, Sprite[]> extra = new Dictionary<string, Sprite[]>();
+        public static Sprite[] Frames(string key) => extra.TryGetValue(key, out var f) ? f : null;
+
+        // frames past the end of an existing animation (Enemy.mimic_2.png), and Extra.* animations
+        static int ExtraFrames(string ovr, Dictionary<string, Anchor> anchors, Dictionary<string, Sprite> before, HashSet<string> done)
+        {
+            int n = 0;
+            var rx = new System.Text.RegularExpressions.Regex(@"^(\w+)\.(.+)_(\d+)$");
+            var files = new List<string>(Directory.GetFiles(ovr, "*.png"));
+            files.Sort(System.StringComparer.Ordinal);
+            foreach (var f in files)
+            {
+                string name = Path.GetFileNameWithoutExtension(f);
+                if (done.Contains(name)) continue;
+                var m = rx.Match(name);
+                if (!m.Success) continue;
+                string field = m.Groups[1].Value, key = m.Groups[2].Value;
+                int i = int.Parse(m.Groups[3].Value);
+                var t = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!t.LoadImage(File.ReadAllBytes(f))) { Object.Destroy(t); continue; }
+                Anchor? an = null; Sprite bs = null;
+                if (anchors.TryGetValue(name, out var a0)) { an = a0; before.TryGetValue(a0.baseName, out bs); }
+                if (bs == null) before.TryGetValue(field + "." + key + "_0", out bs);
+                Sprite s = null;
+                try { s = Build(t.GetPixels32(), t.width, t.height, bs, an, bs); } catch { }
+                Object.Destroy(t);
+                if (s == null) continue;
+                if (field == "Extra")
+                {
+                    extra.TryGetValue(key, out var arr);
+                    extra[key] = Put(arr, i, s);
+                    n++;
+                    continue;
+                }
+                var fi = typeof(Art).GetField(field, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (fi == null || !(fi.GetValue(null) is Dictionary<string, Sprite[]> dict) || !dict.TryGetValue(key, out var cur) || cur == null) continue;
+                dict[key] = Put(cur, i, s);
+                n++;
+                // foes need a hit-flash frame to match every new frame
+                if (field == "Enemy" && Art.EnemyWhite.TryGetValue(key, out var wh) && wh != null)
+                {
+                    var px = Pixels(s);
+                    for (int k = 0; k < px.Length; k++) if (px[k].a > 0) px[k] = new Color32(255, 255, 255, px[k].a);
+                    Art.EnemyWhite[key] = Put(wh, i, Build(px, (int)s.rect.width, (int)s.rect.height, s));
+                }
+            }
+            return n;
+        }
+
+        // arr with s at index i (grown if needed; any gap filled with the frame before it)
+        static Sprite[] Put(Sprite[] arr, int i, Sprite s)
+        {
+            int len = Mathf.Max(arr != null ? arr.Length : 0, i + 1);
+            var o = new Sprite[len];
+            for (int k = 0; k < len; k++) o[k] = arr != null && k < arr.Length ? arr[k] : null;
+            o[i] = s;
+            for (int k = 0; k < len; k++) if (o[k] == null) o[k] = k > 0 ? o[k - 1] : s;
+            return o;
         }
 
         static bool Same(Color32 a, Color32 b) => a.a == 0 && b.a == 0 || (a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a);

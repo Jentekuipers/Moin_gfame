@@ -11,18 +11,44 @@ namespace DigDeep
 
         void Tide()
         {
-            const float r = 2.6f;
+            float r = s.tideBig ? 3.8f : 2.6f;   // GREAT WAVE
+            // in (or right by) water: a ball of new water appears around you at once, driving the water that was there outwards
+            int wetN = 0;
+            for (int yy = Mathf.FloorToInt(pos.y - r); yy <= Mathf.FloorToInt(pos.y + r); yy++)
+                for (int xx = Mathf.FloorToInt(pos.x - r); xx <= Mathf.FloorToInt(pos.x + r); xx++)
+                    if (Wd.LiquidType(xx, yy) == Fluids.Water && Wd.LiquidAmount(xx, yy) > 0.3f) wetN++;
+            bool nearWater = wetN >= 3 || Wd.FluidAtPoint(pos) == Fluids.Water;
+            if (nearWater) Fluids.CreateBall(pos, r * (s.tideMore ? 1.12f : 1f));   // the new water shoves the old aside
+            else
+            {
+            // a ball of water's worth, spread out from you through open space only (never through a wall): in a pool
+            // the water already around you is passed through and the new water lands where there's room, so the level rises
+            float budget = Mathf.PI * r * r * (s.tideMore ? 1.25f : 1f);   // UNDERTOW: a little more
             int cx = Mathf.FloorToInt(pos.x), cy = Mathf.FloorToInt(pos.y);
-            for (int y = cy - 3; y <= cy + 3; y++)
-                for (int x = cx - 3; x <= cx + 3; x++)
+            var seen = new System.Collections.Generic.HashSet<long>();
+            var q = new System.Collections.Generic.Queue<Vector2Int>();
+            q.Enqueue(new Vector2Int(cx, cy)); seen.Add(((long)cy << 32) ^ (uint)cx);
+            while (q.Count > 0 && budget > 0.01f && seen.Count < 900)
+            {
+                var c = q.Dequeue();
+                if (Wd.Solid(c.x, c.y)) continue;
+                byte lt = Wd.LiquidType(c.x, c.y);
+                if (lt != Fluids.None && lt != Fluids.Water && lt != Fluids.Steam) continue;   // lava and the like stop it
+                float have = lt == Fluids.Water ? Wd.LiquidAmount(c.x, c.y) : 0f;
+                float add = Mathf.Min(1f - have, budget);
+                if (add > 0.01f) { Wd.SetLiquid(c.x, c.y, Fluids.Water, have + add); budget -= add; }
+                foreach (var d in new[] { new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1) })
                 {
-                    if ((new Vector2(x + 0.5f, y + 0.5f) - pos).magnitude > r) continue;
-                    if (Wd.Solid(x, y) || Wd.LiquidType(x, y) == Fluids.Lava) continue;
-                    Wd.SetLiquid(x, y, Fluids.Water, 1f);
+                    var n = c + d;
+                    if (Mathf.Abs(n.x - cx) > 14 || Mathf.Abs(n.y - cy) > 14) continue;
+                    long key = ((long)n.y << 32) ^ (uint)n.x;
+                    if (seen.Add(key)) q.Enqueue(n);
                 }
+            }
+            }
             foreach (var e in G.ents)
                 if (!e.dead && e is Enemy en && !en.Intangible && (en.pos - pos).sqrMagnitude < (r + 0.8f) * (r + 0.8f))
-                    en.TakeShot(Dmg(0.5f), (en.pos - pos).normalized * 9f + Vector2.up * 3f);
+                    en.TakeShot(Dmg(s.tideHeavy ? 2f : 0.5f), (en.pos - pos).normalized * (s.tideHeavy ? 13f : 9f) + Vector2.up * 3f);   // UNDERTOW
             G.fx.Burst(pos, 40, new Color(0.6f, 0.9f, 1f), 8f, 0.6f, 15f);
             G.fx.Ring(pos, r, new Color(0.6f, 0.9f, 1f));
             G.sfx.Play("splat", 0.8f, 0.7f);
@@ -39,7 +65,8 @@ namespace DigDeep
             if (dir.sqrMagnitude < 0.01f) dir = new Vector2(facing, 0f);
             dir.Normalize();
             Vector2 best = new Vector2(float.NaN, 0f);
-            for (float t = 0.5f; t <= 6f; t += 0.25f)
+            float far = s.phaseFar ? 9f : 6f;   // LONG SHADOW
+            for (float t = 0.5f; t <= far; t += 0.25f)
             {
                 Vector2 p = pos + dir * t;
                 // nothing passes the void (or a sealed arena)
@@ -52,7 +79,7 @@ namespace DigDeep
                 G.Popup(pos + Vector2.up, "BLOCKED", new Color(0.7f, 0.45f, 1f));
                 return false;
             }
-            G.Spawn(new Decoy(this, pos));
+            G.Spawn(new Decoy(this, pos) { boom = s.decoyBoom ? Dmg(6f) : 0f });   // BOOBY DECOY
             G.fx.Burst(pos, 20, new Color(0.55f, 0.4f, 0.9f), 5f, 0.5f, 0f);
             G.fx.Smoke(pos, 6, 0.8f);
             pos = best;
@@ -68,10 +95,12 @@ namespace DigDeep
         float backstabPopT;
         public float Backstab(Enemy en)
         {
-            if (!s.backstab || en == null) return 1f;
-            if ((pos.x - en.pos.x) * en.facing >= 0f) return 1f;
+            if (en == null) return 1f;
+            float perk = PerkHit(en);
+            if (!s.backstab) return perk;
+            if ((pos.x - en.pos.x) * en.facing >= 0f) return perk;
             if (Time.time > backstabPopT) { backstabPopT = Time.time + 0.4f; G.Popup(en.pos + Vector2.up * 0.9f, "AMBUSH!", new Color(0.75f, 0.55f, 1f)); }
-            return 1.5f;
+            return 1.5f * perk;
         }
 
         // ================================================================== PARRY (black cat)
@@ -83,7 +112,7 @@ namespace DigDeep
         void StartParry()
         {
             mode = Mode.Parry;
-            parryT = 1f; parryTotal = 0f; parryHits = 0;
+            parryT = s.parryLong ? 1.5f : 1f; parryTotal = 0f; parryHits = 0;   // LONG GUARD
             vel.x = 0f;
             CancelReload();
             G.sfx.Play("sword", 0.6f, 1.6f);
@@ -111,7 +140,7 @@ namespace DigDeep
                 G.sfx.Play("swing", 0.4f, 1.2f);
                 return;
             }
-            if (parryT <= 0f || parryTotal >= 2f)
+            if (parryT <= 0f || parryTotal >= (s.parryLong ? 3f : 2f))
             {
                 mode = Mode.Normal;
                 invuln = Mathf.Max(invuln, 0.8f);   // a short grace afterwards, as if you'd just been hit
@@ -122,7 +151,7 @@ namespace DigDeep
         // every parried shot or countered blow stretches the parry (2 seconds at most)
         void ParryExtend()
         {
-            parryT = Mathf.Min(parryT + 0.4f, 2f - parryTotal);
+            parryT = Mathf.Min(parryT + 0.4f, (s.parryLong ? 3f : 2f) - parryTotal);
             parryHits++;
             G.HitStop(0.06f);
             G.cam.Shake(0.15f);
@@ -145,7 +174,7 @@ namespace DigDeep
             Vector2 dir = from - pos;
             dir = dir.sqrMagnitude < 0.01f ? new Vector2(facing, 0f) : dir.normalized;
             facing = dir.x >= 0f ? 1 : -1;
-            float dmg = Dmg(4f) * s.meleeMul;
+            float dmg = Dmg(4f) * s.meleeMul * (s.parryHard ? 2.5f : 1f);   // RIPOSTE
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en) || en.Intangible) continue;
@@ -166,7 +195,7 @@ namespace DigDeep
 
         void StartCamo()
         {
-            camoT = 6f;
+            camoT = s.camoLong ? 10f : 6f;   // INK CLOUD
             G.fx.Smoke(pos, 8, 1f);
             G.fx.Burst(pos, 20, new Color(0.6f, 0.4f, 0.7f), 4f, 0.5f, 0f);
             G.sfx.Play("fizz", 0.4f, 1.6f);
@@ -176,6 +205,7 @@ namespace DigDeep
         public void EndCamo()
         {
             if (camoT <= 0f) return;
+            if (s.camoStrike && camoT > 0.05f) nextShotCrit = true;   // FROM THE DARK: the shot that breaks it crits
             camoT = 0f;
             G.fx.Burst(pos, 14, new Color(0.7f, 0.5f, 0.8f), 4f, 0.4f, 0f);
             G.sfx.Play("blip", 0.3f, 0.7f);
@@ -289,6 +319,7 @@ namespace DigDeep
     {
         public static Decoy Active;
         float life = 1.5f;
+        public float boom;   // BOOBY DECOY: it blows up when it fades
 
         public override bool AlwaysActive => true;
 
@@ -304,7 +335,13 @@ namespace DigDeep
         public override void Tick(float dt)
         {
             life -= dt;
-            if (life <= 0f) { G.fx.Smoke(pos, 5, 0.8f); Kill(); return; }
+            if (life <= 0f)
+            {
+                G.fx.Smoke(pos, 5, 0.8f);
+                Kill();
+                if (boom > 0f) G.Explode(pos, 2.4f, boom, true, true, true);
+                return;
+            }
             sr.color = new Color(0.75f, 0.65f, 1f, 0.45f + 0.25f * Mathf.Sin(life * 20f));
         }
 

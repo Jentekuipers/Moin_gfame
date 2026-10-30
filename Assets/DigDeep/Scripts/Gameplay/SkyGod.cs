@@ -33,6 +33,7 @@ namespace DigDeep
         int move = -1, lastMove = -1, left;
         float shotT, idleShotT = 2f, spin;
         int pointSide = 1, sweepDir = 1;
+        float sweepY;
         float clapY;
         readonly Vector2[] hand = new Vector2[2];
         readonly GameObject[] handGo = new GameObject[2];
@@ -112,8 +113,10 @@ namespace DigDeep
                 case Pose.Down: return h + new Vector2(s * 4.5f, -5.5f);
                 case Pose.SweepL: case Pose.SweepR:
                     {
+                        // one hand above where you fly, one below: the curtain of light between them closes on you
                         float sx = pose == Pose.SweepL ? -1f : 1f;
-                        return new Vector2(Center.x + sx * (HalfW - 2f), Center.y + (i == 0 ? 2.5f : -3.5f));
+                        float y = Mathf.Clamp(sweepY + (i == 0 ? 3f : -3f), Center.y - HalfH + 1f, Center.y + HalfH - 1f);
+                        return new Vector2(Center.x + sx * (HalfW - 2f), y);
                     }
                 default: return h + new Vector2(s * 4.2f, -3.6f + Mathf.Sin(t * 1.5f + i * 2f) * 0.3f);
             }
@@ -228,7 +231,7 @@ namespace DigDeep
                 case Judgment: pose = Pose.Point; pointSide = P.pos.x < pos.x ? -1 : 1; break;
                 case Clap: pose = Pose.ClapOpen; clapY = P.pos.y; break;
                 case Tremor: pose = Pose.Down; break;
-                case Sweep: sweepDir = P.pos.x < Center.x ? 1 : -1; pose = sweepDir > 0 ? Pose.SweepL : Pose.SweepR; tele += 0.4f; break;
+                case Sweep: sweepDir = P.pos.x < Center.x ? 1 : -1; sweepY = P.pos.y; pose = sweepDir > 0 ? Pose.SweepL : Pose.SweepR; tele += 0.4f; break;
                 case Spiral: pose = Pose.Offer; break;
                 case Rift: pose = Pose.Spread; break;
                 case Vortex: pose = Pose.Offer; vortexAt = new Vector2(Center.x + (P.pos.x < Center.x ? 1f : -1f) * Random.Range(4f, HalfW - 3f), Center.y + Random.Range(-HalfH + 3f, HalfH - 3f)); break;
@@ -349,7 +352,7 @@ namespace DigDeep
                     if (shotT <= 0f)
                     {
                         shotT = Phase3 ? 0.06f : 0.08f;
-                        for (int i = 0; i < 2; i++) Fire(hand[i], new Vector2(0f, -1.5f), Light, 5f, 0f, 0.5f);
+                        for (int i = 0; i < 2; i++) Fire(hand[i], new Vector2(0f, i == 0 ? -2.2f : 2.2f), Light, i == 0 ? 5f : -5f, 0f, 0.5f);   // (the lower hand's light rises)
                     }
                     if (stateT <= 0f) Done(1.2f);
                     break;

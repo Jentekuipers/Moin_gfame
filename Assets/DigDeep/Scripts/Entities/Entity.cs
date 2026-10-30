@@ -48,7 +48,15 @@ namespace DigDeep
         public float swing = 1f;         // multiplies fire rate (like Isaac's tears)
         public float speedMul = 1f;      // move speed (SPD)
         public int digPower = 1;         // mining strength (MINE)
-        public bool pickpocket, slam, wallJump, stillCrit;   // diggers' own skills
+        public bool pickpocket, slam, wallJump, stillCrit;   // diggers' own skills (PICKPOCKET: poison and fire bites drop coins)
+        public bool waterHurt, dotGoldX2;
+        public bool blackSun, loadedDie;   // BLACK SUN, LOADED DIE
+        public bool glassBody;            // GLASS CANNON: you take 3x damage
+        // what the reworked stat trinkets do (see PlayerPerks.cs)
+        public bool fullPierce, firstCrit, spinUp, sparkTrail, landWave, critCoin, jerkyDrop, killRush, longShots, lanternShots;
+        public bool hitRing, reloadPush, goldReload, rageLow, lastShots, ventNova, specialZap, moveCharge, streakRate, readyCrit;
+        public bool raiseDead, specialGhost, specialBlast, specialVolley, rocketBoost, critPierce, rockEater, adamant, oreShrapnel, meleeBoom, clawBleed, burnSpread;           // HEART OF UNDA: water hurts foes
+        public bool softHoming;          // HUNTER'S HUNCH: weak homing that can miss
         public float armor;              // fraction of incoming damage ignored (IRON HIDE)
         public float jumpMul = 1f;       // jump height (JMP)
         public float luck;               // crit / proc chances, better chest loot (LUCK)
@@ -97,12 +105,12 @@ namespace DigDeep
         public float heatMul = 1f;       // heat per shot multiplier for energy weapons
         public float coolMul = 1f;       // how fast energy weapons cool down
         public float reloadArmor;        // fraction of damage blocked while reloading
-        public bool reloadGhost;         // untouchable while reloading an EMPTY weapon
+        public bool reloadGhost;         // untouchable while reloading (or venting)
         public bool tactical;            // first shot after a reload deals double damage
 
         // ---- Isaac-style shot effects, multipliers and flight (see Items in Loot.cs and README)
         public bool shotExplode, shotPoison, shotFire, shotFrost, shotLaser, shotHoming;   // "all shots are ..."
-        public int multiShot = 1;        // DOUBLE / TRIPLE / QUAD BARREL: the best one you own counts
+        public int multiShot = 1;        // DOUBLE / TRIPLE / QUAD BARREL: they add up (2 + 3 = 5)
         public float multiPenalty = 1f;  // how hard multi-shots slow your fire rate (GUNSLINGER halves it)
         public float dmgMult = 1f;       // multiplies DMG on top of everything (OGRE'S SKULL, MAGIC TRUFFLE...)
         public float rateMult = 1f;      // multiplies fire rate on top of everything (HUMMINGBIRD HEART, SNAIL SHELL)
@@ -132,6 +140,9 @@ namespace DigDeep
         // ---- diggers' own kits
         public float fireChance, poisonChance;   // KINDLING (fox), TOXIC SKIN (frog)
         public bool gills, flippers;             // the dolphin
+        // ABILITY UPGRADES (a choice after every third boss): one set per special
+        public bool digDeep, digQuake, dashLong, sjHigh, sjBlast, kickWide, tideHeavy, tideBig, phaseFar, decoyBoom, parryHard, parryLong, camoLong, camoStrike, hookFar, hookFast;
+        public bool dashGuard, dashThrough, sjStick, kickBoom, tideMore, swimShots, camoGhost, hookSafe;
         public bool backstab;                    // AMBUSH (owl)
         public bool tentacles;                   // the octopus     // MAGIC TRUFFLE / BEHEMOTH: you grow (looks only)
     }

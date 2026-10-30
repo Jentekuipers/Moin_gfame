@@ -161,6 +161,10 @@ namespace DigDeep
             }
         }
 
+        // the void dragon's DARK: 0 normal, 1 almost nothing to see
+        public static float Blackout;
+        public void Dim(float m) { if (lum == null) return; for (int k = 0; k < lum.Length; k++) lum[k] *= m; }
+
         public void Flash(Vector2 p, float r, float t) => flashes.Add(new FlashL { p = p, r = r, t = t, max = t });
 
         public void End(float dt, float darkness)

@@ -20,8 +20,8 @@ namespace DigDeep
     public class Dragon : Boss
     {
         public enum Elem { Fire, Water, Jungle, Void, Storm }
-        public enum Atk { None, Inferno, Volley, Breath, Dashes, Flood, Geysers, IceRing, Bubbles }
-        enum S { Roam, Hide, Rise, Slam, Hover, Breath, WarnDash, Dash, Dive, Flooded }
+        public enum Atk { None, Inferno, Volley, Breath, Dashes, Flood, Geysers, IceRing, Bubbles, Prey, Dark }
+        enum S { Roam, Hide, Rise, Slam, Hover, Breath, WarnDash, Dash, Dive, Flooded, Exit, Prey, Dark }
 
         public readonly Elem elem;
         public DragonDuo duo;
@@ -33,6 +33,13 @@ namespace DigDeep
         int dashN, volleyN;
         float dashDir, dashY, fireT, roamT = 2.5f, shotT;
         bool keepWater;              // the duo's flood stays for the fire dragon to boil away
+        // PREY: it circles you at a distance, snapping its head aside from your shots, breathing at you
+        float preyAng = 90f, preyDir = 1f, dodgeT, dodgeCd, bubbleT;
+        Vector2 dodgeV;
+        // bursts of breath (prey, fly-bys, the void's dark)
+        int burstN; float burstT, burstGap, burstSpread, burstSpd;
+        bool darkShots;
+        float exitY; float exitD;
         int solo;
         static readonly Color FireC = new Color(1f, 0.55f, 0.2f), WaterC = new Color(0.55f, 0.85f, 1f);
 
@@ -76,7 +83,8 @@ namespace DigDeep
         }
 
         bool InRock => Wd.Solid(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y));
-        public bool enraged;                    // its partner died: redder, faster, angrier
+        bool InHall(Vector2 p) => p.x > arena.MinX - 0.3f && p.x < arena.MaxX + 0.3f && p.y > arena.FloorY - 0.3f && p.y < arena.CeilY + 0.3f;
+        public new bool enraged;                    // its partner died: redder, faster, angrier
         float Rage => enraged ? 1.35f : 1f;
         public bool mixHeights;                 // the fire dragon's dashes after the water dragon's: other heights, to mix you up
         float dashY2;
@@ -100,16 +108,24 @@ namespace DigDeep
                     dashDir = zone != 0 ? zone : (P.pos.x < arena.CenterX ? 1f : -1f);   // breathes from the wall at the far side
                     goal = new Vector2(dashDir > 0 ? arena.MaxX - 1.5f : arena.MinX + 1.5f, arena.FloorY + 4.5f);
                     fireT = 0f; Go(S.Breath, 4.2f); break;
-                case Atk.Dashes:   // right to left low, then left to right high... or, after the water dragon's, at other heights
+                case Atk.Dashes:   // low then high... or, after the water dragon's, at other heights. It flies out of the hall first
                     dashN = 0;
                     if (mixHeights)
                     {
                         float[] hs = { arena.FloorY + 1.3f, arena.FloorY + ArenaRoom.IH * 0.45f, arena.FloorY + ArenaRoom.IH * 0.85f };
                         int a0 = Random.Range(0, 3), a1 = (a0 + Random.Range(1, 3)) % 3;
                         dashY2 = hs[a1];
-                        StartDash(Random.value < 0.5f ? -1f : 1f, hs[a0]);
+                        ExitFor(pos.x > arena.CenterX ? -1f : 1f, hs[a0]);
                     }
-                    else { dashY2 = H2; StartDash(-1f, H1); }
+                    else { dashY2 = H2; ExitFor(pos.x > arena.CenterX ? -1f : 1f, H1); }
+                    break;
+                case Atk.Prey:
+                    preyAng = pos.x < P.pos.x ? 150f : 30f; preyDir = Random.value < 0.5f ? -1f : 1f; shotT = 1f; dodgeCd = 0f;
+                    Go(S.Prey, Phase2 ? 8f : 6.5f); break;
+                case Atk.Dark:
+                    preyAng = 90f; preyDir = 1f; shotT = 1.4f; volleyN = 0;
+                    Go(S.Dark, Phase2 ? 7.5f : 6.5f);
+                    G.sfx.Play("rumble", 1f, 0.5f);
                     break;
                 case Atk.Flood: goal = new Vector2(arena.CenterX, arena.FloorY - 2.5f); Go(S.Dive, 2.5f); break;
                 case Atk.Geysers: Geysers(); goal = new Vector2(midX, arena.CeilY - 2f); Go(S.Hover, 2f); volleyN = 0; break;
@@ -138,6 +154,11 @@ namespace DigDeep
             BaseTick(dt);
             if (dead) return;
             t += dt; stateT -= dt;
+            // watchdogs: its partner is gone (however it went) -> it fights on alone; and no move ever hangs on forever
+            if (duo != null && duo.dead) { duo = null; if (!enraged) Enrage(); }
+            if (duo == null && (S)state == S.Hide) Roam(1f);
+            if (duo == null && (S)state == S.Roam && roamT > 10f) roamT = 2f;
+            if ((S)state != S.Roam && (S)state != S.Hide && stateT < -4f) { burstN = 0; Done(); }
             switch ((S)state)
             {
                 case S.Roam:
@@ -204,10 +225,10 @@ namespace DigDeep
                         fireT += dt;
                         Vector2 mouth = pos + dir * 1.4f;
                         if (fireT < 0.7f) { if (Random.value < 0.5f) G.fx.Smoke(mouth, 1, 0.6f); break; }   // the telegraph: smoke curls from its jaws
-                        float k = (fireT - 0.7f) / 1.6f;
+                        float k = (fireT - 0.7f) / 1.2f;
                         if (k > 1f) { Done(); break; }
                         // sweep from the floor up through the hall
-                        float ang = Mathf.Lerp(-35f, 30f, k) * (dashDir > 0 ? -1f : 1f);
+                        float ang = Mathf.Lerp(-35f, 12f, k) * (dashDir > 0 ? -1f : 1f);
                         if (Random.value < 0.75f)
                         {
                             Vector2 v = U.Rot(dir, ang + Random.Range(-5f, 5f)) * Random.Range(10f, 13f);
@@ -224,7 +245,7 @@ namespace DigDeep
                         G.cam.Shake(0.04f);
                         if (stateT <= 0f)
                         {
-                            float sp = (elem == Elem.Water ? (Phase2 ? 7.5f : 6.5f) : elem == Elem.Void ? (Phase2 ? 13f : 11f) : (Phase2 ? 12f : 10f)) * Rage;
+                            float sp = (elem == Elem.Water ? (Phase2 ? 9.5f : 8.5f) : elem == Elem.Void ? (Phase2 ? 16f : 14f) : (Phase2 ? 15f : 13f)) * Rage;
                             vel = new Vector2(dashDir * sp, 0f);
                             dir = vel.normalized;
                             G.sfx.Play("dash", 1f, elem == Elem.Water ? 0.5f : 0.7f);
@@ -237,11 +258,36 @@ namespace DigDeep
                     if (elem == Elem.Fire)
                     {
                         // it boils the water it rushes through
+                        // the heat comes from inside it: head and every piece of its body boil the water they pass through
                         var aw = ArenaWater.For(arena);
-                        if (aw != null) aw.BoilAround(pos, 2.2f);
+                        if (aw != null) aw.BoilAt(pos, 1.3f, dt);
                         if (Random.value < 0.6f) G.fx.Burst(pos - dir, 2, FireC, 3f, 0.4f, -4f);
+                        foreach (var sg in segs)
+                        {
+                            if (!InHall(sg.pos)) continue;
+                            if (aw != null) aw.BoilAt(sg.pos, 1.1f, dt);
+                            if (Random.value < (aw != null ? 0.45f : 0.15f)) G.fx.Burst(sg.pos + Random.insideUnitCircle * 0.5f, 1, new Color(1f, Random.Range(0.35f, 0.8f), 0.15f), 2.5f, 0.35f, -6f);
+                        }
                     }
                     else if (Random.value < 0.5f) G.fx.Burst(pos - dir, 1, Col, 2f, 0.5f, -3f, 1f, false);
+                    bool inHall = pos.x > arena.MinX + 1f && pos.x < arena.MaxX - 1f;
+                    // the fire and void dragons breathe at you as they tear past
+                    if ((elem == Elem.Fire || elem == Elem.Void) && inHall && burstN == 0)
+                    {
+                        shotT -= dt;
+                        if (shotT <= 0f) { shotT = Phase2 ? 0.45f : 0.6f; Burst(elem == Elem.Fire ? 4 : 3, 0.06f, 7f, elem == Elem.Fire ? 11f : 9f); }
+                    }
+                    // swimming along the bottom of its flood, it blows bubbles up through the water
+                    if (elem == Elem.Water && atk == Atk.Flood && inHall)
+                    {
+                        bubbleT -= dt;
+                        if (bubbleT <= 0f)
+                        {
+                            bubbleT = Phase2 ? 0.2f : 0.26f;
+                            Shot(pos + Vector2.up * 0.7f, new Vector2(Random.Range(-0.5f, 0.5f), Random.Range(2f, 3f)), Art.Circle, WaterC, -2.5f, 0f, Random.Range(0.9f, 1.3f));
+                            if (Random.value < 0.4f) G.sfx.Play("blip", 0.3f, Random.Range(0.6f, 0.9f));
+                        }
+                    }
                     if ((dashDir < 0 && pos.x < arena.MinX - 3f) || (dashDir > 0 && pos.x > arena.MaxX + 3f) || stateT <= 0f)
                     {
                         dashN++;
@@ -266,9 +312,37 @@ namespace DigDeep
                         Go(S.Flooded, 1.6f);
                     }
                     break;
-                case S.Flooded:
-                    if (stateT <= 0f) { dashN = 0; dashY2 = H2; StartDash(-1f, H1); }
+                case S.Flooded:   // it swims along the bottom, both ways, blowing bubbles up at you
+                    if (stateT <= 0f) { dashN = 0; dashY2 = arena.FloorY + 1.1f; StartDash(-1f, arena.FloorY + 1.1f); }
                     break;
+                case S.Exit:   // out through the wall it will burst back from: it never just vanishes
+                    {
+                        var to = new Vector2(exitD < 0 ? arena.MaxX + 3.5f : arena.MinX - 3.5f, exitY);
+                        Steer(to, Spd * 1.7f, 420f, dt);
+                        if ((exitD < 0 && pos.x > arena.MaxX + 2.5f) || (exitD > 0 && pos.x < arena.MinX - 2.5f) || stateT <= 0f) StartDash(exitD, exitY);
+                        break;
+                    }
+                case S.Prey: PreyTick(dt, false); break;
+                case S.Dark: PreyTick(dt, true); break;
+            }
+            if (burstN > 0)
+            {
+                burstT -= dt;
+                if (burstT <= 0f && !InRock)
+                {
+                    burstT = burstGap; burstN--;
+                    var b = ElemShot(pos + dir * 1.2f, U.Rot(ToPlayer, Random.Range(-burstSpread, burstSpread)) * burstSpd, 0f, 0f, 0.8f);
+                    if (darkShots) b.OverDark();
+                    if (elem == Elem.Fire || elem == Elem.Jungle) G.sfx.Play("flame", 0.35f, 0.9f, 0.1f);
+                    else G.sfx.Play("shoot", 0.35f, elem == Elem.Void ? 0.6f : 1.2f, 0.1f);
+                }
+            }
+            // (it slides through the walls like a worm: nothing pushes it back)
+            var st0 = (S)state;
+            if (elem == Elem.Void)
+            {
+                float bt = st0 == S.Dark && stateT > 0.6f ? 1f : 0f;
+                Lighting.Blackout = Mathf.MoveTowards(Lighting.Blackout, bt, dt * (bt > 0f ? 1.4f : 1.1f));
             }
             if ((trail[0] - pos).sqrMagnitude > 0.02f) trail.Insert(0, pos);
             while (trail.Count > 140) trail.RemoveAt(trail.Count - 1);
@@ -277,9 +351,9 @@ namespace DigDeep
             if (dead) return;
             if (sr != null)
             {
-                int fi = (atk == Atk.Breath && fireT > 0.7f) || (S)state == S.Dash || (S)state == S.Slam ? 1 : 0;   // jaws open to attack
+                int fi = (atk == Atk.Breath && fireT > 0.7f) || (S)state == S.Dash || (S)state == S.Slam || burstN > 0 ? 1 : 0;   // jaws open to attack
                 sr.sprite = flash > 0f ? whites[fi] : frames[fi];
-                sr.enabled = !InRock;
+                sr.enabled = !InRock && InHall(pos);
                 sr.flipX = false;
                 sr.flipY = dir.x < 0f;
             }
@@ -293,7 +367,7 @@ namespace DigDeep
         }
 
         // the partner is dead: it burns red with rage and fights on faster
-        public void Enrage()
+        public new void Enrage()
         {
             enraged = true; duo = null; mixHeights = false;
             tint = new Color(1f, 0.45f, 0.4f);
@@ -310,56 +384,62 @@ namespace DigDeep
             solo++;
             if (elem == Elem.Fire)
             {
-                switch (solo % 4)
+                switch (solo % 5)
                 {
                     case 1: Order(Atk.Inferno); break;
                     case 2: Order(Atk.Volley); break;
-                    case 3: Order(Atk.Breath); break;
+                    case 3: Order(Atk.Prey); break;
+                    case 4: Order(Atk.Breath); break;
                     default: Order(Phase2 ? Atk.Dashes : Atk.Volley); break;
                 }
             }
             else if (elem == Elem.Jungle)
             {
                 // thorns from the floor, a hail of poison seeds, a breath of spores, a ring of pollen, and dashes
-                switch (solo % 5)
+                switch (solo % 6)
                 {
                     case 1: Order(Atk.Geysers); break;
                     case 2: Order(Atk.Volley); break;
-                    case 3: Order(Atk.Breath); break;
-                    case 4: Order(Atk.IceRing); break;
+                    case 3: Order(Atk.Prey); break;
+                    case 4: Order(Atk.Breath); break;
+                    case 5: Order(Atk.IceRing); break;
                     default: Order(Atk.Dashes); break;
                 }
             }
             else if (elem == Elem.Storm)
             {
                 // lightning from the ceiling, crackling dashes, a spray of sparks, a ring of ball lightning
-                switch (solo % 5)
+                switch (solo % 6)
                 {
                     case 1: Order(Atk.Geysers); break;
                     case 2: Order(Atk.Dashes); break;
-                    case 3: Order(Atk.Volley); break;
-                    case 4: Order(Atk.IceRing); break;
+                    case 3: Order(Atk.Prey); break;
+                    case 4: Order(Atk.Volley); break;
+                    case 5: Order(Atk.IceRing); break;
                     default: Order(Atk.Breath); break;
                 }
             }
             else if (elem == Elem.Void)
             {
-                switch (solo % 5)
+                switch (solo % 7)
                 {
                     case 1: Order(Atk.Dashes); break;
                     case 2: Order(Atk.Geysers); break;
-                    case 3: Order(Atk.Breath); break;
-                    case 4: Order(Atk.IceRing); break;
+                    case 3: Order(Atk.Prey); break;
+                    case 4: Order(Atk.Breath); break;
+                    case 5: Order(Atk.Dark); break;
+                    case 6: Order(Atk.IceRing); break;
                     default: Order(Atk.Volley); break;
                 }
             }
             else
             {
-                switch (solo % 4)
+                switch (solo % 5)
                 {
                     case 1: Order(Atk.Flood); break;
                     case 2: Order(Atk.Geysers); break;
-                    case 3: Order(Atk.IceRing); break;
+                    case 3: Order(Atk.Prey); break;
+                    case 4: Order(Atk.IceRing); break;
                     default: Order(Atk.Bubbles); break;
                 }
             }
@@ -376,12 +456,104 @@ namespace DigDeep
 
         void ResetTrail() { trail.Clear(); for (int i = 0; i < 90; i++) trail.Add(pos); }
 
+        // fly out through the wall the dash comes back from (already out of sight: straight to the warning)
+        void ExitFor(float d, float y)
+        {
+            if (!InHall(pos) || InRock) { StartDash(d, y); return; }
+            exitD = d; exitY = y;
+            Go(S.Exit, 2.5f);
+        }
+
+        void Burst(int n, float gap, float spread, float spd) { burstN = n; burstT = 0f; burstGap = gap; burstSpread = spread; burstSpd = spd; }
+
+        // ---------------------------------------------------------------- PREY (and the void's DARK)
+        // It circles you, never closer than its ring, ducking its head out of the way of your shots and breathing at you.
+        // Each dragon hunts its own way. In the DARK the void dragon puts out every light and only its shots shine.
+        void PreyTick(float dt, bool dark)
+        {
+            float R, orbit, dodge;
+            switch (elem)
+            {
+                case Elem.Fire: R = 4.5f; orbit = 75f; dodge = 0.5f; break;
+                case Elem.Water: R = 6f; orbit = 40f; dodge = 0.35f; break;
+                case Elem.Jungle: R = 5f; orbit = 55f; dodge = 0.45f; break;
+                case Elem.Storm: R = 6.5f; orbit = 95f; dodge = 0.7f; break;
+                default: R = 7f; orbit = 38f; dodge = 0.55f; break;
+            }
+            orbit *= Rage;
+            preyAng += preyDir * orbit * dt;
+            if (preyAng > 165f) { preyAng = 165f; preyDir = -1f; }
+            if (preyAng < 15f) { preyAng = 15f; preyDir = 1f; }
+            if (elem == Elem.Storm && Random.value < dt * 0.8f) preyDir = -preyDir;   // the storm dragon darts back and forth
+            float ra = preyAng * Mathf.Deg2Rad;
+            Vector2 want = P.pos + new Vector2(Mathf.Cos(ra), Mathf.Sin(ra)) * R;
+            want.x = Mathf.Clamp(want.x, arena.MinX + 1.2f, arena.MaxX - 1.2f);
+            want.y = Mathf.Clamp(want.y, arena.FloorY + 1.2f, arena.CeilY - 1.2f);
+            Steer(want, Spd * 1.2f, 420f, dt);
+            // never inside its ring
+            Vector2 off = pos - P.pos; float d = off.magnitude;
+            if (d < R * 0.8f && d > 0.01f) pos += off / d * (R * 0.8f - d) * Mathf.Min(1f, 8f * dt);
+            // the head snaps aside from your shots (the body can't)
+            dodgeCd -= dt;
+            if (dodgeT > 0f) { dodgeT -= dt; pos += dodgeV * dt; }
+            else if (dodgeCd <= 0f && !dark)
+            {
+                dodgeCd = 0.1f;
+                foreach (var e in G.ents)
+                {
+                    if (e.dead || !(e is Bullet b) || b.team != Team.Player) continue;
+                    Vector2 rel = pos - b.pos;
+                    if (rel.sqrMagnitude > 10f || Vector2.Dot(b.vel, rel) <= 0f) continue;
+                    dodgeCd = 0.45f;
+                    if (Random.value < dodge)
+                    {
+                        Vector2 perp = Vector2.Perpendicular(b.vel.normalized);
+                        float side = Vector2.Dot(perp, rel) >= 0f ? 1f : -1f;
+                        dodgeV = perp * side * 13f; dodgeT = 0.22f;
+                    }
+                    break;
+                }
+            }
+            darkShots = dark;
+            shotT -= dt;
+            if (shotT > 0f || InRock) { if (stateT <= 0f) { darkShots = false; Done(); } return; }
+            if (dark)
+            {
+                // only its shots shine in the dark: aimed fans and slow rings, turn about
+                volleyN++;
+                shotT = Phase2 ? 0.75f : 0.95f;
+                if (volleyN % 2 == 1) for (int i = -2; i <= 2; i++) ElemShot(pos, U.Rot(ToPlayer, i * 14f) * 5.5f).OverDark();
+                else { int rn = Phase2 ? 12 : 10; float o = Random.value * 30f; for (int i = 0; i < rn; i++) { float a = (o + i * 360f / rn) * Mathf.Deg2Rad; ElemShot(pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 4f).OverDark(); } }
+                G.sfx.Play("shoot", 0.5f, 0.5f);
+            }
+            else switch (elem)
+            {
+                case Elem.Fire: shotT = Phase2 ? 0.85f : 1.1f; Burst(6, 0.05f, 10f, 11f); break;          // gouts of flame
+                case Elem.Water: shotT = Phase2 ? 1.1f : 1.4f; Bubbles(); break;                          // slow bubbles
+                case Elem.Jungle:                                                                          // lobbed poison seeds
+                    shotT = Phase2 ? 1f : 1.25f;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float tf = 0.9f + i * 0.12f;
+                        Vector2 to = P.pos + new Vector2((i - 1) * 1.4f, 0f);
+                        ElemShot(pos, new Vector2((to.x - pos.x) / tf, (to.y - pos.y + 7f * tf * tf) / tf), 14f, 0f, 0.9f);
+                    }
+                    G.sfx.Play("launcher", 0.5f, 1f);
+                    break;
+                case Elem.Storm: shotT = Phase2 ? 0.55f : 0.7f; Burst(2, 0.08f, 3f, 15f); break;            // quick crackling bolts
+                default: shotT = Phase2 ? 1f : 1.3f; Burst(5, 0.1f, 18f, 7f); break;                       // a spray of void orbs
+            }
+            if (stateT <= 0f) { darkShots = false; Done(); }
+        }
+
         void Steer(Vector2 to, float spd, float turnDeg, float dt)
         {
             Vector2 want = to - pos;
             if (want.sqrMagnitude < 0.04f) return;
             dir = Vector3.RotateTowards(dir, want.normalized, turnDeg * Mathf.Deg2Rad * dt, 0f);
             float s = Mathf.Min(spd, want.magnitude * 4f);
+            float al = Vector2.Dot(dir, want.normalized);
+            s *= Mathf.Lerp(0.3f, 1f, Mathf.Clamp01((al + 0.2f) / 1.2f));   // slows to turn, rather than circling its goal
             pos += dir * s * dt;
         }
 
@@ -447,8 +619,10 @@ namespace DigDeep
                     acc += (trail[ti + 1] - trail[ti]).magnitude;
                     ti++;
                 }
+                bool laid = ti < trail.Count - 1;   // a fresh trail (after slipping through the rock) is short: the rest stays hidden
+                Vector2 at = trail[Mathf.Min(ti, trail.Count - 1)];
                 Vector2 prev = s == 0 ? pos : segs[s - 1].pos;
-                segs[s].Follow(trail[Mathf.Min(ti, trail.Count - 1)], prev);
+                segs[s].Follow(at, prev, laid && InHall(at));
             }
         }
 
@@ -456,6 +630,7 @@ namespace DigDeep
         {
             if (dead) return;
             foreach (var s in segs) s.Burst();
+            if (elem == Elem.Void) Lighting.Blackout = 0f;
             if (duo != null) duo.OnDragonDied(this);
             base.Die();
         }
@@ -463,10 +638,11 @@ namespace DigDeep
         public override void Kill()
         {
             base.Kill();
+            if (elem == Elem.Void) Lighting.Blackout = 0f;
             foreach (var s in segs) s.Kill();
         }
 
-        public override void AddLight(Lighting l) { if (!InRock) l.Add(pos, 3.5f, 0.7f); }
+        public override void AddLight(Lighting l) { if (!InRock && (S)state != S.Dark) l.Add(pos, 3.5f, 0.7f); }
     }
 
     // =====================================================================================
@@ -521,8 +697,9 @@ namespace DigDeep
                         case 2: case 0:   // turns: one attacks, the other hides
                             turnA = step % 8 < 4 ? fire : water; turnB = turnA == fire ? water : fire;
                             turnB.HideAway();
-                            turnA.Order(turnA == fire ? (Random.value < 0.5f ? Dragon.Atk.Volley : Dragon.Atk.Breath)
-                                                       : (Random.value < 0.5f ? Dragon.Atk.Geysers : Dragon.Atk.IceRing));
+                            float r = Random.value;
+                            turnA.Order(r < 0.3f ? Dragon.Atk.Prey : turnA == fire ? (r < 0.65f ? Dragon.Atk.Volley : Dragon.Atk.Breath)
+                                                       : (r < 0.65f ? Dragon.Atk.Geysers : Dragon.Atk.IceRing));
                             ph = Phase.Turn;
                             break;
                         default:  // split: both at once, each on its own half
@@ -686,7 +863,8 @@ namespace DigDeep
         static readonly List<ArenaWater> All = new List<ArenaWater>();
         public static void ClearAll() => All.Clear();
         readonly BossArena arena;
-        enum S { Rising, Full, Draining, Steam }
+        enum S { Rising, Full, Draining, Boil, Steam }
+        bool boiled;   // the fire dragon has been through it: it isn't topped up any more
         S st = S.Rising;
         float level, steamT;
         int bottom, top;
@@ -704,7 +882,7 @@ namespace DigDeep
         {
             var w = For(a);
             if (w == null) G.Spawn(new ArenaWater(a));
-            else { w.st = S.Rising; }
+            else { w.st = S.Rising; w.level = 0f; w.boiled = false; }   // it rises again from the floor, never all at once
         }
 
         ArenaWater(BossArena a)
@@ -730,29 +908,33 @@ namespace DigDeep
 
         public void Drain() { if (st != S.Steam) st = S.Draining; }
 
-        // the fire dragon boils it all: the water is gone, steam hangs under the ceiling for a while
+        // the fire dragon boils it all away: the level sinks steadily, steam pouring off the surface
         public void Vaporize()
         {
-            for (int y = bottom; y <= top; y++) SetRow(y, false);
-            for (int y = top - 1; y <= top; y++)
-                for (int x = X0; x <= X1; x++) if (!Wd.Solid(x, y)) Wd.AddSteam(x, y, 0.8f);
-            G.fx.Smoke(pos, 30, 2f);
+            if (st == S.Steam || st == S.Boil) return;
+            level = top - bottom + 1;
+            st = S.Boil; boiled = true;
             G.sfx.Play("fizz", 1f, 0.7f);
-            st = S.Steam; steamT = 5f; level = 0f;
         }
 
-        public void BoilAround(Vector2 p, float r)
+        // the heat inside the fire dragon's body: the water around it boils off a little at a time
+        public void BoilAt(Vector2 p, float r, float dt)
         {
             if (st == S.Steam) return;
+            boiled = true;
             int x0 = Mathf.FloorToInt(p.x - r), x1 = Mathf.FloorToInt(p.x + r), y0 = Mathf.FloorToInt(p.y - r), y1 = Mathf.FloorToInt(p.y + r);
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
-                    if (x >= X0 && x <= X1 && y >= bottom && y <= top && Wd.LiquidType(x, y) == Fluids.Water)
-                    {
-                        Wd.SetLiquid(x, y, Fluids.None, 0f);
-                        if (Random.value < 0.3f) G.fx.Smoke(new Vector2(x + 0.5f, y + 0.5f), 1, 0.6f);
-                    }
-            if (Random.value < 0.2f) G.sfx.Play("fizz", 0.4f, 1f);
+                {
+                    if (x < X0 || x > X1 || y < bottom || y > top || Wd.LiquidType(x, y) != Fluids.Water) continue;
+                    float dx = x + 0.5f - p.x, dy = y + 0.5f - p.y;
+                    if (dx * dx + dy * dy > r * r) continue;   // a round bubble of heat, not a square
+                    float a = Wd.LiquidAmount(x, y) - dt * 2.2f;
+                    if (a <= 0.08f) Wd.SetLiquid(x, y, Fluids.None, 0f);
+                    else Wd.SetLiquid(x, y, Fluids.Water, a);
+                    if (Random.value < dt * 6f) G.fx.Smoke(new Vector2(x + 0.5f, y + 0.5f), 1, 0.5f);
+                }
+            if (Random.value < dt * 3f) G.sfx.Play("fizz", 0.35f, 1f);
         }
 
         public override void Tick(float dt)
@@ -767,8 +949,24 @@ namespace DigDeep
                     if (level >= rows) st = S.Full;
                     break;
                 case S.Full:
-                    if (Random.value < dt * 2f) for (int y = bottom; y <= top; y++) SetRow(y, true);   // keep it topped up
+                    if (!boiled && Random.value < dt * 2f) for (int y = bottom; y <= top; y++) SetRow(y, true);   // keep it topped up
                     break;
+                case S.Boil:
+                    {
+                        level = Mathf.Max(0f, level - dt * rows / 2.6f);
+                        for (int y = bottom + Mathf.CeilToInt(level); y <= top; y++) SetRow(y, false);
+                        float sy = arena.FloorY + level;
+                        for (int k = 0; k < 3; k++) G.fx.Smoke(new Vector2(Random.Range(arena.MinX, arena.MaxX), sy + 0.2f), 1, 0.8f);
+                        if (Random.value < dt * 4f) G.sfx.Play("fizz", 0.4f, Random.Range(0.8f, 1.1f));
+                        if (level <= 0f)
+                        {
+                            for (int y = bottom; y <= top; y++) SetRow(y, false);
+                            for (int y = top - 1; y <= top; y++)
+                                for (int x = X0; x <= X1; x++) if (!Wd.Solid(x, y)) Wd.AddSteam(x, y, 0.8f);
+                            st = S.Steam; steamT = 4f;
+                        }
+                        break;
+                    }
                 case S.Draining:
                     level = Mathf.Max(0f, level - dt * rows / 1.6f);
                     for (int y = bottom + Mathf.CeilToInt(level); y <= top; y++) SetRow(y, false);

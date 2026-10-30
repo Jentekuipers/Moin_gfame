@@ -61,7 +61,7 @@ namespace DigDeep
             while (size > 1f && PixelFont.Width(s, size) > maxW) size -= 1f;
             return size;
         }
-        static readonly string[] Tabs = { "WEAPONS", "MODS", "TRINKETS", "ITEMS", "BOSSES", "CHEATS" };
+        static readonly string[] Tabs = { "WEAPONS", "MODS", "TRINKETS", "ITEMS", "BOSSES", "CHEATS", "DIGGER", "ABILITY" };
         static string hoverName, hoverDesc;
         static Vector2 lastMouse;
 
@@ -129,7 +129,7 @@ namespace DigDeep
             for (int i = 0; i < Tabs.Length; i++)
             {
                 var r = new Rect(px + 4f * S + i * tw, ty, tw - 2f * S, 11f * S);
-                bool hov = r.Contains(mouse);
+                bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                 if (hov && click) { tab = i; scroll = 0; }
                 Box(r.x, r.y, r.width, r.height, tab == i ? new Color(0.5f, 1f, 0.5f, 0.85f) : new Color(1f, 1f, 1f, hov ? 0.15f : 0.06f));
                 PixelFont.Draw(r.center.x, ty + 2.5f * S, Tabs[i], sm, tab == i ? Color.black : Color.white, 1);
@@ -137,10 +137,18 @@ namespace DigDeep
 
             float top = ty + 15f * S, bottom = py + ph - 20f * S;
             hoverName = null; hoverDesc = null;
-            if (tab <= 3)
+            if (tab <= 3 || tab == 7)
             {
                 // a grid of everything in this category; click to get it
                 var list = new List<Def>();
+                if (tab == 7)
+                {
+                    // ability upgrades: the ones for the special you carry first, then the ones for any special, then the rest
+                    string sid = p.special != null ? p.special.id : "";
+                    foreach (var d in DB.AbilityUps) if (d.forSpecial == sid) list.Add(d);
+                    foreach (var d in DB.AbilityUps) if (d.forSpecial == "*") list.Add(d);
+                    foreach (var d in DB.AbilityUps) if (d.forSpecial != sid && d.forSpecial != "*") list.Add(d);
+                }
                 if (tab == 0) foreach (var d in DB.Attacks) list.Add(d);
                 if (tab == 1) foreach (var d in DB.ModDefs) list.Add(d);
                 if (tab == 2) foreach (var d in DB.Trinkets) list.Add(d);
@@ -156,7 +164,7 @@ namespace DigDeep
                     int li = i - scroll * cols;
                     float cx = px + 4f * S + (li % cols) * cell, cy = top + (li / cols) * cell;
                     var r = new Rect(cx, cy, cell - 2f * S, cell - 2f * S);
-                    bool hov = r.Contains(mouse);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Color rc = DB.ColorOf(d);
                     // what you've got is lit up: modifiers on the weapon in hand, weapons you carry, trinkets you have
                     int have = 0;
@@ -198,7 +206,7 @@ namespace DigDeep
                 {
                     float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
                     var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
-                    bool hov = r.Contains(mouse);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(1f, 0.4f, 0.35f, hov ? 0.4f : 0.15f));
                     PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, BossArena.BossKinds[i], sm, Color.white);
                     if (hov && click) { g.sfx.Play("rumble", 0.8f); Setup = false; g.TestFightBoss(i); return; }
@@ -208,7 +216,7 @@ namespace DigDeep
                     int i = BossArena.BossKinds.Length;
                     float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
                     var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
-                    bool hov = r.Contains(mouse);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(1f, 0.85f, 0.3f, hov ? 0.45f : 0.2f));
                     PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, "THE GOD (FROM ORNIN'S HALL)", FitSize(sm, "THE GOD (FROM ORNIN'S HALL)", r.width - 6f * S), Color.white);
                     if (hov && click) { g.sfx.Play("rumble", 0.8f); g.TestGodRoute(); return; }
@@ -218,7 +226,7 @@ namespace DigDeep
                     int i = BossArena.BossKinds.Length + 1;
                     float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
                     var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
-                    bool hov = r.Contains(mouse);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(0.7f, 0.4f, 1f, hov ? 0.5f : 0.25f));
                     PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, "THE VOID (FROM ORNIN'S HALL)", FitSize(sm, "THE VOID (FROM ORNIN'S HALL)", r.width - 6f * S), Color.white);
                     if (hov && click) { g.sfx.Play("rumble", 0.8f); g.TestVoidRoute(); return; }
@@ -228,12 +236,31 @@ namespace DigDeep
                     int i = BossArena.BossKinds.Length + 2;
                     float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
                     var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
-                    bool hov = r.Contains(mouse);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(0.5f, 1f, 0.5f, hov ? 0.6f : 0.3f));
                     PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, Setup ? "START A RUN WITH THIS GEAR" : "BACK TO THE RUN", sm, Color.white);
                     if (hov && click) { Open = false; Setup = false; g.sfx.Play("buy", 0.7f); return; }
                 }
                 PixelFont.Draw(px + pw * 0.5f, bottom - 6f * S, "YOU'RE DROPPED INTO THE NEXT UNUSED ARENA (8 FIGHTS PER TEST RUN)", sm, new Color(0.75f, 0.75f, 0.8f), 1);
+            }
+            else if (tab == 6)
+            {
+                // which digger: the test run starts over with them (everything you picked comes along)
+                var all = Chars.All;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 16f * S;
+                    var r = new Rect(bx, by, pw * 0.5f - 12f * S, 14f * S);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
+                    bool cur = g.charIndex == i;
+                    Box(r.x, r.y, r.width, r.height, new Color(0.5f, 1f, 0.5f, cur ? 0.55f : hov ? 0.3f : 0.1f));
+                    if (all[i].frames != null && all[i].frames.Length > 0) Icon(all[i].frames[0], r.x + 2f * S, r.y + S, 12f * S);
+                    string sp = DB.ById.TryGetValue(all[i].special, out var spd) ? spd.name : "";
+                    PixelFont.Draw(r.x + 16f * S, r.y + 2f * S, all[i].name + " THE " + all[i].animal, sm, cur ? Color.black : Color.white);
+                    PixelFont.Draw(r.x + 16f * S, r.y + 8.5f * S, sp, Mathf.Max(1f, sm - 1f), cur ? new Color(0.1f, 0.2f, 0.1f) : new Color(0.6f, 0.85f, 1f));
+                    if (hov && click && !cur) { g.sfx.Play("buy", 0.7f); g.TestSetDigger(i); return; }
+                }
+                PixelFont.Draw(px + pw * 0.5f, bottom - 6f * S, "THE TEST RUN STARTS OVER WITH THAT DIGGER, KEEPING YOUR PICKS", sm, new Color(0.75f, 0.75f, 0.8f), 1);
             }
             else
             {
@@ -283,11 +310,11 @@ namespace DigDeep
                     float colW = (pw - 16f * S) / cc;
                     float bx = px + 8f * S + (i % cc) * colW, by = top + (i / cc) * 13f * S;
                     var r = new Rect(bx, by, colW - 4f * S, 11f * S);
-                    bool hov = r.Contains(mouse);
+                    bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(0.5f, 1f, 0.5f, hov ? 0.35f : 0.12f));
                     float fs = sm; while (fs > 1f && PixelFont.Width(cheats[i].Item1, fs) > r.width - 6f * S) fs -= 1f;
                     PixelFont.Draw(r.x + 4f * S, r.y + 2.5f * S, cheats[i].Item1, fs, Color.white);
-                    if (hov && click) { cheats[i].Item2(); g.sfx.Play("blip", 0.5f, 1.2f); }
+                    if (hov && click) { cheats[i].Item2(); g.sfx.Play("ui", 0.5f, 1f); }
                 }
             }
             // what's under the mouse

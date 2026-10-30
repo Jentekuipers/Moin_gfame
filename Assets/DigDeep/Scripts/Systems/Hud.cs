@@ -110,12 +110,22 @@ namespace DigDeep
             foreach (var l in lines) if (!string.IsNullOrEmpty(l.Item1)) tipLines.Add(l);
         }
 
-        // the thing being hovered: its combo partners light up among your trinkets (drawn next frame)
+        // the thing being hovered: its combo partners light up among your trinkets (drawn next frame);
+        // a hovered combo lights up every trinket that makes it
         Def focusDef, focusNext;
+        ComboDef focusCombo, focusComboNext;
 
-        void ComboPop(Def k, Player p, float x, float y, float sz, float S)
+        bool Lit(SkillDef k, Player p)
         {
-            if (focusDef == null || !DB.KnownPartners(focusDef, k, p)) return;
+            if (focusDef != null && DB.KnownPartners(focusDef, k, p)) return true;
+            if (focusCombo == null) return false;
+            if (focusCombo.IsTransform) return k.tags != null && System.Array.IndexOf(k.tags, focusCombo.tag) >= 0;
+            return System.Array.IndexOf(focusCombo.needs, k.id) >= 0;
+        }
+
+        void ComboPop(SkillDef k, Player p, float x, float y, float sz, float S)
+        {
+            if (!Lit(k, p)) return;
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 9f);
             var c = Color.Lerp(DB.ComboColor, Color.white, pulse * 0.6f);
             float g = S * (1f + pulse);
@@ -183,13 +193,12 @@ namespace DigDeep
                 lines.Add(((d.Melee ? "MELEE  " : "") + "DMG " + dmg.ToString("0.#", ci) + (perPull > 1 ? " X" + perPull : "") + "   RATE " + rate.ToString("0.0", ci) + "/S" + ammo, TipStat));
             }
             else lines.Add((Armoury.Stats(d), TipStat));
-            foreach (var m in w.mods) lines.Add(("+ " + Mods.Names[(int)m] + ": " + Mods.Desc[(int)m], Mods.Ui));
+            foreach (var m in w.mods) lines.Add(("+ " + Mods.Names[(int)m], Mods.Ui));
             if (w.curse != Curse.None)
             {
-                lines.Add((Curses.Name(w.curse) + ": " + Curses.Desc[(int)w.curse], Curses.Col(w.curse)));
+                lines.Add((Curses.Name(w.curse) + ": " + Curses.Desc[(int)w.curse] + Curses.Skull, Curses.Col(w.curse)));
                 lines.Add(("LIFTS AFTER " + (Curses.KillsToLift - w.curseKills) + " MORE KILLS", new Color(1f, 0.95f, 0.45f)));   // what you can do about it stands out
             }
-            if (current) lines.Add(("IN HAND", new Color(0.6f, 0.6f, 0.6f)));
             Tip(w.def.name, w.Color, lines.ToArray());
         }
 
@@ -301,6 +310,22 @@ namespace DigDeep
             GUI.color = old;
         }
 
+        static Color Ink(float a) => new Color(Pal.Night.r / 255f, Pal.Night.g / 255f, Pal.Night.b / 255f, a);
+
+        // an icon with a dark outline all round (or, flash: a white glow), the way Nuclear Throne draws its HUD
+        static void IconO(Sprite s, float x, float y, float size, float o, Color c, float inkA = 0.95f, bool flash = false)
+        {
+            if (s == null) return;
+            if (flash) { var w = new Color(1f, 1f, 1f, c.a); for (int i = 0; i < 4; i++) Icon(s, x + (i == 0 ? o : i == 1 ? -o : 0f), y + (i == 2 ? o : i == 3 ? -o : 0f), size, w); return; }
+            if (o > 0f && inkA > 0f)
+            {
+                var k = Ink(inkA * c.a);
+                Icon(s, x - o, y, size, k); Icon(s, x + o, y, size, k);
+                Icon(s, x, y - o, size, k); Icon(s, x, y + o, size, k);
+            }
+            Icon(s, x, y, size, c);
+        }
+
         public void Draw(Game g)
         {
             if (Event.current.type != EventType.Repaint) return;
@@ -331,25 +356,31 @@ namespace DigDeep
 
             if (dmgFlash > 0f) Box(0, 0, Screen.width, Screen.height, new Color(1f, 0f, 0f, dmgFlash * 0.6f));
 
-            // ----- health bar: grows a little with max HP, a white trail shows the chunk you just lost
+            // ===== Nuclear Throne style: one tight cluster in the top-left, chunky outlines, icons without boxes =====
+            Color ink = Ink(0.95f);
+            float hx = pad, hy = pad;
+            float hpW = Mathf.Clamp(60f + p.s.maxHp * 0.12f, 70f, 140f) * S, hpH = 10f * S;
+            // ----- health bar: a white trail shows the chunk you just lost
             {
-                float bw = Mathf.Clamp(60f + p.s.maxHp * 0.12f, 70f, 150f) * S, bh = 9f * S;
-                float hx = pad, hy = pad;
-                if (hurtShake > 0f) { hx += Random.Range(-2f, 2f) * S * hurtShake; hy += Random.Range(-2f, 2f) * S * hurtShake; }
+                float sx0 = 0f, sy0 = 0f;
+                if (hurtShake > 0f) { sx0 = Random.Range(-2f, 2f) * S * hurtShake; sy0 = Random.Range(-2f, 2f) * S * hurtShake; }
+                float bx = hx + sx0, byy = hy + sy0;
                 float k = Mathf.Clamp01(p.s.hp / (float)Mathf.Max(1, p.s.maxHp));
                 hpTrail = Mathf.Max(k, Mathf.MoveTowards(hpTrail, k, Time.unscaledDeltaTime * 0.6f));
                 bool low = k <= 0.25f;
-                Box(hx - S, hy - S, bw + 2f * S, bh + 2f * S, hpFlashT > 0f ? Color.Lerp(Color.white, new Color(1f, 0.5f, 0.5f), Mathf.Abs(Mathf.Sin(Time.unscaledTime * 10f))) : new Color(0.9f, 0.85f, 0.85f));
-                Box(hx, hy, bw, bh, new Color(0.12f, 0.04f, 0.06f));
-                Box(hx, hy, bw * hpTrail, bh, new Color(1f, 0.92f, 0.85f));
-                Color fill = low ? Color.Lerp(new Color(0.75f, 0.08f, 0.1f), new Color(1f, 0.35f, 0.3f), 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f)) : new Color(0.86f, 0.16f, 0.2f);
-                Box(hx, hy, bw * k, bh, fill);
-                Box(hx, hy, bw * k, Mathf.Max(1f, S), new Color(1f, 0.5f, 0.5f));   // highlight
-                PixelFont.Draw(hx + bw * 0.5f, hy + (bh - 7f * sm) * 0.5f, p.s.hp + " / " + p.s.maxHp, sm, Color.white, 1);
-                if (Hover(hx, hy, bw, bh))
+                var edge = hpFlashT > 0f ? Color.Lerp(ink, new Color(1f, 0.55f, 0.55f), Mathf.Abs(Mathf.Sin(Time.unscaledTime * 10f))) : ink;
+                Box(bx - 2f * S, byy - 2f * S, hpW + 4f * S, hpH + 4f * S, edge);
+                Box(bx, byy, hpW, hpH, new Color(0.2f, 0.05f, 0.07f));
+                Box(bx, byy, hpW * hpTrail, hpH, new Color(1f, 0.92f, 0.85f));
+                Color fill = low ? Color.Lerp(new Color(0.75f, 0.08f, 0.1f), new Color(1f, 0.35f, 0.3f), 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f)) : new Color(0.9f, 0.18f, 0.18f);
+                Box(bx, byy, hpW * k, hpH, fill);
+                Box(bx, byy + hpH - 3f * S, hpW * k, 3f * S, fill * new Color(0.72f, 0.72f, 0.72f, 1f));   // shade
+                Box(bx, byy, hpW * k, S, new Color(1f, 0.55f, 0.5f));                                     // shine
+                PixelFont.Draw(bx + hpW * 0.5f, byy + (hpH - 7f * S) * 0.5f + 0.5f * S, p.s.hp + "/" + p.s.maxHp, S, Color.white, 1);
+                if (Hover(bx, byy, hpW, hpH))
                     Tip("HEALTH " + p.s.hp + "/" + p.s.maxHp, new Color(1f, 0.45f, 0.45f), ("ALE, KEGS AND SOME TRINKETS HEAL YOU", TipGrey), ("HEART TRINKETS RAISE YOUR MAX HP", TipGrey));
                 if (hpFlashT > 0f)
-                    PixelFont.Draw(hx + bw + 4f * S, hy + 1f * S, "+" + hpGain + " MAX HP", sm, new Color(1f, 0.5f, 0.5f, Mathf.Clamp01(hpFlashT)));
+                    PixelFont.Draw(bx + hpW + 5f * S, byy + 1.5f * S, "+" + hpGain + " MAX HP", sm, new Color(1f, 0.5f, 0.5f, Mathf.Clamp01(hpFlashT)));
                 // air: bubbles that pop one by one while you're under water or in steam
                 if (p.breath < Player.BreathMax - 0.01f)
                 {
@@ -357,80 +388,155 @@ namespace DigDeep
                     bool out0 = p.breath <= 0f;
                     for (int i = 0; i < 8; i++)
                     {
-                        float bx = hx + bw + 4f * S + i * 6f * S, byb = hy + 1f * S;
+                        float bxx = bx + hpW + 5f * S + i * 6f * S, byb = byy + 2f * S;
                         var bc = i < bubbles ? new Color(0.7f, 0.92f, 1f) : new Color(0.25f, 0.3f, 0.35f, 0.6f);
                         if (out0 && ((int)(Time.unscaledTime * 6f)) % 2 == 0) bc = new Color(1f, 0.4f, 0.4f);
                         var old = GUI.color; GUI.color = bc;
-                        GUI.DrawTexture(new Rect(bx, byb, 5f * S, 5f * S), Art.Circle.texture);
+                        GUI.DrawTexture(new Rect(bxx, byb, 5f * S, 5f * S), Art.Circle.texture);
                         GUI.color = old;
                     }
                 }
             }
 
-            // ----- gold + power
-            float y = pad + 14f * S;
-            float gp = 1f + goldPop * 0.3f;
-            Icon(Art.Icons["coin"], pad, y - goldPop * S, 8f * S * gp, Color.white);
-            PixelFont.Draw(pad + 11f * S, y + 0.5f * S - goldPop * 2f * S, p.s.gold.ToString(), S * (goldPop > 0.5f ? 1.25f : 1f), Color.Lerp(new Color(1f, 0.85f, 0.3f), Color.white, goldPop));
-            // the void key: its parts, or the whole key
-            if (p.voidShards != 0)
+            // ----- the gun in your hands, its ammo, and the other one
+            float small = Mathf.Max(1f, sm - (sm > 2f ? 1f : 0f));
+            float wy = hy + hpH + 6f * S;
+            float wsz = 14f * S;
             {
-                float kx = pad + 11f * S + PixelFont.Width(p.s.gold.ToString(), S * 1.25f) + 8f * S;
-                if (p.voidShards == 3 && Art.VoidKey != null) Icon(Art.VoidKey, kx, y - 2f * S, 11f * S, Color.white);
-                else if (Art.KeyShine != null)
-                    for (int i = 0; i < 2; i++)
-                        Icon(Art.KeyShine[0], kx + i * 7f * S, y - 1f * S, 9f * S, (p.voidShards & (1 << i)) != 0 ? new Color(0.85f, 0.6f, 1f) : new Color(0.3f, 0.3f, 0.35f, 0.6f));
-                if (Hover(kx, y - 2f * S, 16f * S, 11f * S))
-                    Tip(p.voidShards == 3 ? "THE VOID KEY" : "PART OF THE VOID KEY", new Color(0.8f, 0.55f, 1f),
-                        (p.voidShards == 3 ? "BEAT ORNIN WITH IT AND A DOOR TO THE VOID OPENS" : "BEAT THE SECOND BOSS WITHIN 6 MINUTES FOR THE OTHER PART", TipGrey));
+                var w = p.weapon;
+                float kx = -wKick * 2f * S, ky = wKick * 1.5f * S;
+                float tx = hx + wsz + 5f * S;
+                if (w != null)
+                {
+                    IconO(w.def.icon, hx + kx, wy + ky, wsz, S, Color.white);
+                    if (Hover(hx, wy, wsz, wsz)) TipWeapon(w, true);
+                    if (p.ChargeFrac01 > 0f) { Box(hx, wy + wsz + S, wsz, 2f * S, ink); Box(hx, wy + wsz + S, wsz * p.ChargeFrac01, 2f * S, w.def.col); }
+                    float ty = wy + (wsz - 7f * S) * 0.5f;
+                    if (w.def.UsesHeat)
+                    {
+                        var hc = w.overheated ? (((int)(Time.unscaledTime * 8f)) % 2 == 0 ? new Color(1f, 0.3f, 0.2f) : new Color(1f, 0.8f, 0.3f))
+                                              : Color.Lerp(new Color(0.4f, 0.9f, 1f), new Color(1f, 0.4f, 0.2f), w.heat);
+                        float hw = 26f * S;
+                        Box(tx - S, ty + 1f * S, hw + 2f * S, 5f * S, ink);
+                        Box(tx, ty + 2f * S, hw * w.heat, 3f * S, hc);
+                        if (w.overheated) PixelFont.Draw(tx, ty - 7f * sm, "HOT", sm, hc);
+                        tx += hw + 6f * S;
+                    }
+                    else if (p.MagSize(w) > 0)
+                    {
+                        int mag = p.MagSize(w), am = Mathf.Max(0, w.ammo);
+                        bool lowA = am <= Mathf.Max(1, mag / 4);
+                        var ac = lowA ? (((int)(Time.unscaledTime * 6f)) % 2 == 0 ? new Color(1f, 0.35f, 0.3f) : Color.white) : Color.white;
+                        string at = am.ToString();
+                        PixelFont.Draw(tx, ty, at, S, ac);
+                        float aw = PixelFont.Width(at, S);
+                        PixelFont.Draw(tx + aw + 2f * S, ty + 7f * S - 7f * small, "/" + mag, small, new Color(0.65f, 0.65f, 0.7f));
+                        if (p.reloading)
+                        {
+                            Box(tx - S, ty + 8f * S, 24f * S + 2f * S, 3f * S, ink);
+                            Box(tx, ty + 9f * S, 24f * S * p.ReloadFrac, S, new Color(1f, 0.9f, 0.5f));
+                        }
+                        tx += Mathf.Max(aw + 2f * S + PixelFont.Width("/" + mag, small), 24f * S) + 6f * S;
+                    }
+                    if (w.curse != Curse.None)
+                    {
+                        var cc = Curses.Col(w.curse);
+                        float pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 4f);
+                        IconO(Curses.Icon(w.curse), hx + wsz - 6f * S, wy - 2f * S, 7f * S, S * 0.5f, new Color(1f, 1f, 1f, pulse));
+                        if (Hover(hx + wsz - 6f * S, wy - 2f * S, 7f * S, 7f * S))
+                            Tip(Curses.Name(w.curse) + Curses.Skull, cc, (Curses.Desc[(int)w.curse] + Curses.Skull, TipGrey), ("KILL " + (Curses.KillsToLift - w.curseKills) + " MORE FOES TO LIFT IT (" + w.curseKills + "/" + Curses.KillsToLift + ")", TipStat));
+                    }
+                }
+                // the other gun, smaller and dimmer
+                var o = p.slots[1 - p.cur];
+                if (o != null)
+                {
+                    float os = 10f * S;
+                    IconO(o.def.icon, tx, wy + (wsz - os) * 0.5f, os, S * 0.5f, new Color(1f, 1f, 1f, 0.55f));
+                    if (Hover(tx, wy, os, wsz)) TipWeapon(o, false);
+                    PixelFont.Draw(tx + os * 0.5f, wy + wsz - S, GameInput.Prompt(Btn.Swap), small, new Color(0.6f, 0.6f, 0.65f), 1);
+                }
             }
-            y += 12f * S;
-            DrawStats(p, pad, y, S, sm);
 
-            // ----- depth
+            // ----- ability and item: bottom left, each with the key that uses it
+            float isz = 12f * S;
+            float ry = Screen.height - pad - isz - 5f * S;
+            float rx = hx;
+            if (p.special != null)
+            {
+                bool ready = p.charges > 0;
+                IconO(p.special.icon, rx, ry, isz, S, new Color(1f, 1f, 1f, ready ? 1f : 0.4f));
+                if (spFlash > 0f) IconO(p.special.icon, rx, ry, isz, S, new Color(1f, 1f, 1f, spFlash * 0.6f), 0f, true);   // flashes when a charge comes back
+                // charges as pips, the next one filling
+                int max = p.MaxCharges;
+                float pw = Mathf.Max(S, (isz - (max - 1) * S) / Mathf.Max(1, max));
+                for (int i = 0; i < max; i++)
+                {
+                    float px = rx + i * (pw + S);
+                    Box(px - S * 0.5f, ry + isz + S * 0.5f, pw + S, 3f * S, ink);
+                    float f = i < p.charges ? 1f : i == p.charges ? p.ChargeFrac : 0f;
+                    var pc = i < p.charges ? new Color(0.55f, 0.95f, 0.45f) : new Color(0.45f, 0.85f, 1f);
+                    Box(px, ry + isz + S, pw * f, 2f * S, pc);
+                }
+                PixelFont.Draw(rx + isz + 3f * S, ry + (isz - 7f * sm) * 0.5f, GameInput.Prompt(Btn.Special), sm, new Color(0.6f, 0.8f, 0.95f));
+                if (Hover(rx, ry, isz, isz + 4f * S))
+                {
+                    TipDef(p.special, p);
+                    tipLines.Add(("CHARGES: " + p.charges + "/" + p.MaxCharges + "   RECHARGES OVER TIME, KILLS SPEED IT UP", TipStat));
+                }
+                rx += isz + 3f * S + PixelFont.Width(GameInput.Prompt(Btn.Special), sm) + 8f * S;
+            }
+            ItemStack st = p.items.Count > 0 ? p.items[Mathf.Clamp(p.sel, 0, p.items.Count - 1)] : null;
+            if (st != null)
+            {
+                IconO(st.def.icon, rx, ry, isz, S, Color.white);
+                PixelFont.Draw(rx + isz + S, ry + isz - 7f * small, st.count.ToString(), small, Color.white, 2);
+                string ik = GameInput.Prompt(Btn.Item);
+                PixelFont.Draw(rx + isz + 3f * S, ry + (isz - 7f * sm) * 0.5f, ik, sm, new Color(0.65f, 0.9f, 0.65f));
+                if (p.items.Count > 1) PixelFont.Draw(rx + isz + 3f * S, ry + isz + S, GameInput.Prompt(Btn.Cycle) + ": NEXT", small, new Color(0.55f, 0.65f, 0.55f));
+                if (Hover(rx, ry, isz, isz))
+                {
+                    TipDef(st.def, p);
+                    tipLines.Add(("CARRYING " + st.count + " (" + p.ItemTotal + "/" + p.s.itemCap + ")   C TO USE, V TO CYCLE", TipStat));
+                }
+                rx += isz + 5f * S + PixelFont.Width(ik, sm) + 6f * S;
+            }
+            // gold, and the void key's parts beside it: just under the gun and its ammo
+            {
+                rx = hx; ry = wy + wsz + 5f * S; isz = 10f * S;
+                float gp = 1f + goldPop * 0.3f;
+                float gsz = 8f * S * gp;
+                IconO(Art.Icons["coin"], rx, ry + (isz - gsz) * 0.5f, gsz, S * 0.5f, Color.white);
+                string gs = p.s.gold.ToString();
+                PixelFont.Draw(rx + gsz + 2f * S, ry + (isz - 7f * S) * 0.5f - goldPop * 2f * S, gs, S * (goldPop > 0.5f ? 1.25f : 1f), Color.Lerp(new Color(1f, 0.85f, 0.3f), Color.white, goldPop));
+                float kx = rx + gsz + 2f * S + PixelFont.Width(gs, S * 1.25f) + 6f * S;
+                if (p.voidShards != 0)
+                {
+                    if (p.voidShards == 3 && Art.VoidKey != null) IconO(Art.VoidKey, kx, ry - S, 11f * S, S * 0.5f, Color.white);
+                    else if (Art.KeyShine != null)
+                        for (int i = 0; i < 2; i++)
+                            Icon(Art.KeyShine[0], kx + i * 7f * S, ry, 9f * S, (p.voidShards & (1 << i)) != 0 ? new Color(0.85f, 0.6f, 1f) : new Color(0.3f, 0.3f, 0.35f, 0.6f));
+                    if (Hover(kx, ry - S, 16f * S, 11f * S))
+                        Tip(p.voidShards == 3 ? "THE VOID KEY" : "PART OF THE VOID KEY", new Color(0.8f, 0.55f, 1f),
+                            (p.voidShards == 3 ? "BEAT ORNIN WITH IT AND A DOOR TO THE VOID OPENS" : "BEAT THE SECOND BOSS WITHIN 6 MINUTES FOR THE OTHER PART", TipGrey));
+                }
+            }
+            if (Settings.ShowStats) DrawStats(p, pad, ry + isz + 6f * S, S, sm);
+
+            // ----- depth, top middle
             if (World.SkyMode) PixelFont.Draw(Screen.width * 0.5f, pad, "ABOVE THE CLOUDS", S, new Color(1f, 0.85f, 0.4f), 1);
             else
             {
-                PixelFont.Draw(Screen.width * 0.5f, pad, "DEPTH: -" + (p.Depth + Enemy.VoidDeeper), S, new Color(0.85f, 0.7f, 0.35f), 1);
                 var bio = Biomes.Cur[Biomes.Index(p.Depth)];
-                PixelFont.Draw(Screen.width * 0.5f, pad + 10f * S, bio.name, sm, (Color)bio.rim, 1);
+                PixelFont.Draw(Screen.width * 0.5f, pad, "-" + (p.Depth + Enemy.VoidDeeper), S, new Color(0.95f, 0.85f, 0.55f), 1);
+                PixelFont.Draw(Screen.width * 0.5f, pad + 9f * S, bio.name, small, (Color)bio.rim, 1);
             }
 
-            // ----- best
-            PixelFont.Draw(Screen.width - pad, pad, "BEST -" + g.best, sm, new Color(0.7f, 0.7f, 0.75f), 2);
-
-            // ----- trinkets: little icons stacking up on the right, Isaac-style
+            // ----- trinkets: outlined icons along the top-right, Nuclear Throne mutation-style
             DrawTrinkets(p, S, sm, pad);
-
-            // ----- weapon panel (bottom left): current weapon big, the other one small, modifiers listed
-            float bs = 18f * S;
-            float by = Screen.height - pad - bs - 9f * S;
-            DrawWeapons(p, pad, by, bs, S, sm);
-            float sx = pad + bs * 1.6f + 4f * S + bs * 0.9f + 6f * S;
-            Slot(sx, by, bs, S, sm, p.special != null ? p.special.icon : null, GameInput.Prompt(Btn.Special), null, p.charges > 0 ? 1f : 0.35f, new Color(0.45f, 0.85f, 1f));
-            if (spFlash > 0f) Box(sx - S, by - S, bs + 2f * S, bs + 2f * S, new Color(0.6f, 0.9f, 1f, spFlash * 0.7f));   // flashes when a charge comes back
-            if (p.special != null && Hover(sx, by, bs + 6f * S, bs))
-            {
-                TipDef(p.special, p);
-                tipLines.Add(("CHARGES: " + p.charges + "/" + p.MaxCharges + "   RECHARGES OVER TIME, KILLS SPEED IT UP", TipStat));
-            }
-            float barX = sx + bs + S;
-            if (p.special != null) ChargeBar(p, barX, by, 4f * S, bs, S, sm, sx, bs);
-            float ix = barX + 4f * S + 4f * S;
-            ItemStack st = p.items.Count > 0 ? p.items[Mathf.Clamp(p.sel, 0, p.items.Count - 1)] : null;
-            Slot(ix, by, bs, S, sm, st != null ? st.def.icon : null, GameInput.Prompt(Btn.Item), st != null ? "x" + st.count : null, 1f, new Color(0.55f, 1f, 0.55f));
-            if (st != null && Hover(ix, by, bs, bs))
-            {
-                TipDef(st.def, p);
-                tipLines.Add(("CARRYING " + st.count + "   C TO USE, V TO CYCLE", TipStat));
-            }
-            PixelFont.Draw(ix + bs + 3f * S, by + bs - 7f * sm, p.ItemTotal + "/" + p.s.itemCap + (p.items.Count > 1 ? "  V:SWAP" : ""), sm, new Color(0.7f, 0.7f, 0.7f));
-            float small = Mathf.Max(1f, sm - (sm > 2f ? 1f : 0f));
-            if (p.special != null) PixelFont.Draw(sx, by - 10f * S, p.special.name, FitSize(p.special.name, small, ix - sx - 4f * S), new Color(0.45f, 0.85f, 1f));
-            if (st != null) PixelFont.Draw(ix, by - 10f * S, st.def.name, FitSize(st.def.name, small, Screen.width * 0.5f - ix - 4f * S), new Color(0.55f, 1f, 0.55f));
             if (p.CurrentBuff != Player.Buff.None)
             {
-                string b = p.CurrentBuff == Player.Buff.Speed ? "HUNTED: +SPEED" : p.CurrentBuff == Player.Buff.Damage ? "HUNTED: +DAMAGE" : "HUNTED: +FIRE RATE";
+                string b = p.CurrentBuff == Player.Buff.Speed ? "+SPEED" : p.CurrentBuff == Player.Buff.Damage ? "+DAMAGE" : "+FIRE RATE";
                 PixelFont.Draw(Screen.width * 0.5f, Screen.height - pad - 30f * S, b + " " + p.BuffTime.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), S, Mods.Col(Mod.Hunter), 1);
             }
 
@@ -493,6 +599,7 @@ namespace DigDeep
             }
             hoverDef = null; hoverWeapon = null;
             focusDef = focusNext; focusNext = null;
+            focusCombo = focusComboNext; focusComboNext = null;
             if (whiteFlash > 0f) Box(0, 0, Screen.width, Screen.height, new Color(1f, 1f, 1f, Mathf.Clamp01(whiteFlash)));
 
             // ----- pause / game over
@@ -504,12 +611,12 @@ namespace DigDeep
                 float a = Mathf.Clamp01(g.deadT * 1.5f);
                 Box(0, 0, Screen.width, Screen.height, new Color(0f, 0f, 0f, 0.6f * a));
                 float cy = Screen.height * 0.3f;
-                PixelFont.Draw(Screen.width * 0.5f, cy, "YOU DIED", S * 3f, new Color(1f, 0.3f, 0.3f, a), 1);
-                PixelFont.Draw(Screen.width * 0.5f, cy + 22f * S, "KILLED BY " + p.lastCause, sm, new Color(1f, 0.6f, 0.55f, a), 1);
-                PixelFont.Draw(Screen.width * 0.5f, cy + 30f * S, "DEPTH REACHED: -" + g.maxDepth, S, new Color(0.9f, 0.8f, 0.5f, a), 1);
-                PixelFont.Draw(Screen.width * 0.5f, cy + 41f * S, "GOLD: " + p.s.gold + "    KILLS: " + p.s.kills, S, new Color(1f, 0.85f, 0.3f, a), 1);
-                PixelFont.Draw(Screen.width * 0.5f, cy + 52f * S, "TRINKETS: " + p.skillOrder.Count + "    COMBOS: " + p.comboOrder.Count, S, new Color(0.75f, 0.55f, 1f, a), 1);
-                PixelFont.Draw(Screen.width * 0.5f, cy + 63f * S, "BEST: -" + g.best + (g.newBest ? "  NEW RECORD!" : ""), S, new Color(0.8f, 0.8f, 0.9f, a), 1);
+                PixelFont.Draw(Screen.width * 0.5f, cy - 16f * S, "YOU DIED", S * 3f, new Color(1f, 0.3f, 0.3f, a), 1);
+                PixelFont.Draw(Screen.width * 0.5f, cy + 10f * S, "KILLED BY " + p.lastCause, sm, new Color(1f, 0.6f, 0.55f, a), 1);
+                PixelFont.Draw(Screen.width * 0.5f, cy + 20f * S, "DEPTH -" + g.maxDepth + "    GOLD " + p.s.gold + "    KILLS " + p.s.kills, S, new Color(0.9f, 0.8f, 0.5f, a), 1);
+                PixelFont.Draw(Screen.width * 0.5f, cy + 31f * S, "BEST -" + g.best + (g.newBest ? "  NEW RECORD!" : ""), sm, new Color(0.8f, 0.8f, 0.9f, a), 1);
+                // what you carried: trinkets and combos, hover for details
+                DeathLoot(p, cy + 42f * S, S, sm, a);
                 bool test = TestMode.On;
                 if (g.deadT > 1f && ((int)(Time.unscaledTime * 2f)) % 2 == 0)
                 {
@@ -529,40 +636,87 @@ namespace DigDeep
                     float bx2 = Screen.width * 0.5f - total * 0.5f;
                     if (!test)
                     {
-                        ChangeHovered = new Rect(bx2, by2, cbw, bh).Contains(mouse);
+                        ChangeHovered = Sfx.HoverUi(new Rect(bx2, by2, cbw, bh).Contains(mouse), new Rect(bx2, by2, cbw, bh));
                         Box(bx2, by2, cbw, bh, ChangeHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
                         PixelFont.Draw(bx2 + cbw * 0.5f, by2 + 2f * sm, ch, sm, ChangeHovered ? Color.black : Color.white, 1);
                         bx2 += cbw + gap;
                     }
                     else ChangeHovered = false;
-                    DeadQuitHovered = new Rect(bx2, by2, qbw, bh).Contains(mouse);
+                    DeadQuitHovered = Sfx.HoverUi(new Rect(bx2, by2, qbw, bh).Contains(mouse), new Rect(bx2, by2, qbw, bh));
                     Box(bx2, by2, qbw, bh, DeadQuitHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
                     PixelFont.Draw(bx2 + qbw * 0.5f, by2 + 2f * sm, qt, sm, DeadQuitHovered ? Color.black : Color.white, 1);
                 }
+                DrawTooltip(S, sm);
+            }
+        }
+
+        // the death screen's record of the run: every trinket as an icon, combos as names under them (hover either)
+        void DeathLoot(Player p, float y, float S, float sm, float a)
+        {
+            tipTitle = null;
+            float sz = 9f * S, gap = 2f * S;
+            int n = p.skillOrder.Count;
+            int cols = Mathf.Max(1, Mathf.Min(n, Mathf.FloorToInt(Screen.width * 0.6f / (sz + gap))));
+            int rows = Mathf.Min(2, (n + cols - 1) / cols);
+            for (int i = 0; i < Mathf.Min(n, cols * rows); i++)
+            {
+                var k = p.skillOrder[i];
+                int inRow = Mathf.Min(cols, n - (i / cols) * cols);
+                float x0 = Screen.width * 0.5f - (inRow * (sz + gap) - gap) * 0.5f;
+                float x = x0 + (i % cols) * (sz + gap), yy = y + (i / cols) * (sz + gap);
+                bool pop = Lit(k, p);
+                float ps = pop ? sz * 0.25f * (0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 9f)) : 0f;
+                Icon(k.icon, x - ps * 0.5f, yy - ps * 0.5f, sz + ps, new Color(1f, 1f, 1f, a));
+                ComboPop(k, p, x, yy, sz, S * 0.5f);
+                Box(x, yy + sz, sz, Mathf.Max(1f, S * 0.5f), DB.RarityColor(k.rarity));
+                int cnt = p.SkillCount(k.id);
+                if (cnt > 1) PixelFont.Draw(x + sz, yy + sz - 6f * sm, cnt.ToString(), sm, Color.white, 2);
+                if (Hover(x, yy, sz, sz)) { TipDef(k, p); if (cnt > 1) tipLines.Insert(0, ("x" + cnt, Color.white)); }
+            }
+            float cy = y + rows * (sz + gap) + 3f * S;
+            if (p.comboOrder.Count == 0) return;
+            // combos: one centred line of names
+            float total = 0f;
+            foreach (var c in p.comboOrder) total += PixelFont.Width(c.name, sm) + 8f * sm;
+            float cx = Screen.width * 0.5f - total * 0.5f;
+            foreach (var c in p.comboOrder)
+            {
+                float w = PixelFont.Width(c.name, sm);
+                bool hov = Hover(cx - 2f * sm, cy - sm, w + 4f * sm, 10f * sm);
+                if (hov)
+                {
+                    focusComboNext = c;
+                    Box(cx - 2f * sm, cy - sm, w + 4f * sm, 10f * sm, new Color(1f, 1f, 1f, 0.12f));
+                    string parts = "";
+                    if (c.needs != null) foreach (var nd in c.needs) parts += (parts.Length > 0 ? " + " : "") + DB.Name(nd);
+                    Tip(c.name, DB.ColorOfCombo(c), (c.desc, TipGrey), (parts, new Color(0.7f, 0.7f, 0.7f)));
+                }
+                var col = DB.ColorOfCombo(c); col.a = a;
+                PixelFont.Draw(cx, cy, c.name, sm, col);
+                cx += w + 8f * sm;
             }
         }
 
         void DrawTrinkets(Player p, float S, float sm, float pad)
         {
-            const int cols = 6;
-            float sz = 10f * S, gap = 1f * S;
-            float top = pad + 10f * S;
+            const int cols = 8;
+            float sz = 10f * S, gap = 2f * S;
+            float top = pad;
             float right = Screen.width - pad;
             int n = p.skillOrder.Count;
             for (int i = 0; i < n; i++)
             {
                 var k = p.skillOrder[i];
                 int col = i % cols, row = i / cols;
-                float x = right - cols * (sz + gap) + gap + col * (sz + gap);   // oldest top-left, newest bottom-right
+                float x = right - (col + 1) * (sz + gap) + gap;   // newest furthest left, rows wrap downwards
                 float y = top + row * (sz + gap);
-                Box(x - S * 0.5f, y - S * 0.5f, sz + S, sz + S, new Color(0f, 0f, 0f, 0.45f));
-                bool pop = focusDef != null && DB.KnownPartners(focusDef, k, p);
+                bool pop = Lit(k, p);
                 float ps = pop ? sz * 0.25f * (0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 9f)) : 0f;   // partners pop out
-                Icon(k.icon, x - ps * 0.5f, y - ps * 0.5f, sz + ps, Color.white);
+                IconO(k.icon, x - ps * 0.5f, y - ps * 0.5f, sz + ps, S, Color.white);
                 ComboPop(k, p, x, y, sz, S * 0.5f);
                 int cnt = p.SkillCount(k.id);
                 if (Hover(x, y, sz, sz)) { TipDef(k, p); if (cnt > 1) tipLines.Insert(0, ("x" + cnt, Color.white)); }
-                if (cnt > 1) PixelFont.Draw(x + sz, y + sz - 6f * sm, cnt.ToString(), sm, Color.white, 2);
+                if (cnt > 1) PixelFont.Draw(x + sz + S, y + sz - 6f * sm, cnt.ToString(), sm, Color.white, 2);
             }
             // (combos are listed in the pause menu only)
         }
@@ -589,7 +743,7 @@ namespace DigDeep
                 string label = GameInput.UsingStick ? "OPTIONS (X)" : "OPTIONS (E)";
                 float bw = PixelFont.Width(label, sm) + 10f * sm, bh = 11f * sm;
                 float bx = pad * 2f, by = pad * 2f;
-                OptionsHovered = new Rect(bx, by, bw, bh).Contains(Event.current.mousePosition);
+                OptionsHovered = Sfx.HoverUi(new Rect(bx, by, bw, bh).Contains(Event.current.mousePosition), new Rect(bx, by, bw, bh));
                 Box(bx, by, bw, bh, OptionsHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
                 PixelFont.Draw(bx + bw * 0.5f, by + 2f * sm, label, sm, OptionsHovered ? Color.black : Color.white, 1);
             }
@@ -598,7 +752,7 @@ namespace DigDeep
                 string label = GameInput.UsingStick ? "SAVE & QUIT (Y)" : "SAVE & QUIT (Q)";
                 float bw = PixelFont.Width(label, sm) + 10f * sm, bh = 11f * sm;
                 float bx = Screen.width - pad * 2f - bw, by = pad * 2f;
-                QuitHovered = new Rect(bx, by, bw, bh).Contains(Event.current.mousePosition);
+                QuitHovered = Sfx.HoverUi(new Rect(bx, by, bw, bh).Contains(Event.current.mousePosition), new Rect(bx, by, bw, bh));
                 Box(bx, by, bw, bh, QuitHovered ? new Color(1f, 0.82f, 0.3f, 0.9f) : new Color(1f, 1f, 1f, 0.12f));
                 PixelFont.Draw(bx + bw * 0.5f, by + 2f * sm, label, sm, QuitHovered ? Color.black : Color.white, 1);
             }
@@ -621,9 +775,16 @@ namespace DigDeep
                 if (w == null) continue;
                 Box(gx, y, isz * 1.5f, isz, new Color(1f, 1f, 1f, i == p.cur ? 0.12f : 0.05f));
                 Icon(w.def.icon, gx + 1f * S, y + 1f * S, isz - 2f * S, Color.white);
-                for (int m = 0; m < w.mods.Count; m++) Box(gx + 1f * S + m * 3f * S, y + isz - 2f * S, 2f * S, 2f * S, Mods.Ui);
+                // its modifiers: tiny runes down the right-hand side, each with its own popup
+                float ms = isz / 3f;
+                for (int m = 0; m < w.mods.Count; m++)
+                {
+                    float mx = gx + isz * 1.5f + S * 0.5f, my = y + m * ms;
+                    Icon(Mods.Icon(w.mods[m]), mx, my, ms, Color.white);
+                    if (Hover(mx, my, ms, ms)) Tip(Mods.Names[(int)w.mods[m]], Mods.Signature, (Mods.Desc[(int)w.mods[m]], TipGrey));
+                }
                 if (Hover(gx, y, isz * 1.5f, isz)) TipWeapon(w, i == p.cur);
-                gx += isz * 1.5f + 3f * S;
+                gx += isz * 1.5f + (w.mods.Count > 0 ? ms + S : 0f) + 3f * S;
             }
             if (p.special != null)
             {
@@ -641,25 +802,6 @@ namespace DigDeep
                 gx += isz + 3f * S;
             }
             y += isz + 4f * S;
-            for (int i = 0; i < 2; i++)
-            {
-                var w = p.slots[i];
-                if (w == null) continue;
-                float wx = x;
-                PixelFont.Draw(wx, y, w.def.name, sm, w.Color);
-                wx += PixelFont.Width(w.def.name, sm) + 6f * sm;
-                foreach (var m in w.mods)
-                {
-                    string mn = Mods.Names[(int)m];
-                    float mw = PixelFont.Width(mn, sm);
-                    if (wx + mw + 12f * sm > x + colW) break;
-                    Box(wx - sm, y - 2f * sm, mw + 2f * sm, 11f * sm, new Color(Mods.Signature.r, Mods.Signature.g, Mods.Signature.b, 0.28f));
-                    PixelFont.Draw(wx, y, mn, sm, Mods.Ui);
-                    if (Hover(wx - sm, y - 2f * sm, mw + 2f * sm, 11f * sm)) Tip(mn, Mods.Signature, (Mods.Desc[(int)m], TipGrey));
-                    wx += mw + 6f * sm;
-                }
-                y += 12f * sm;
-            }
             y += 4f * S;
 
             // ---- left: trinkets as an icon grid
@@ -687,7 +829,7 @@ namespace DigDeep
                 int li = i - pausePage * perPage;
                 float cx = x + (li % cols) * cell, cy = y + (li / cols) * cell;
                 Box(cx, cy, isz, isz, new Color(1f, 1f, 1f, 0.06f));
-                bool pop = focusDef != null && DB.KnownPartners(focusDef, k, p);
+                bool pop = Lit(k, p);
                 float ps = pop ? isz * 0.25f * (0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 9f)) : 0f;
                 Icon(k.icon, cx + 1f * S - ps * 0.5f, cy + 1f * S - ps * 0.5f, isz - 2f * S + ps, Color.white);
                 ComboPop(k, p, cx, cy, isz, S * 0.5f);
@@ -708,6 +850,7 @@ namespace DigDeep
                 PixelFont.Draw(rx, ry, cn, sm, DB.ColorOfCombo(c));
                 if (hov)
                 {
+                    focusComboNext = c;
                     string parts = "";
                     if (c.needs != null) foreach (var nd in c.needs) parts += (parts.Length > 0 ? " + " : "") + DB.Name(nd);
                     Tip((c.IsTransform ? "TRANSFORMATION: " : "COMBO: ") + c.name, DB.ColorOfCombo(c), (c.desc, TipGrey), (parts, new Color(0.7f, 0.7f, 0.7f)));
@@ -789,32 +932,6 @@ namespace DigDeep
             }
         }
 
-        // Isaac-style active item charge bar: one segment per charge step, fills from the bottom.
-        static void ChargeBar(Player p, float x, float y, float w, float h, float S, float sm, float slotX, float slotW)
-        {
-            var sp = p.special;
-            int segs = Mathf.Max(1, sp.segs);
-            bool full = p.charges >= p.MaxCharges;
-            float frac = p.ChargeFrac;
-            Box(x, y, w, h, new Color(0f, 0f, 0f, 0.75f));
-            float inner = h - 2f * S;
-            float fillH = inner * frac;
-            Color fc = full ? Color.Lerp(new Color(1f, 1f, 0.6f), Color.white, 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f))
-                            : p.charges > 0 ? new Color(0.55f, 0.95f, 0.45f) : new Color(0.45f, 0.85f, 1f);
-            Box(x + S, y + S + inner - fillH, w - 2f * S, fillH, fc);
-            if (segs > 1)
-                for (int i = 1; i < segs; i++)
-                    Box(x + S, y + S + inner * i / segs - Mathf.Max(1f, S * 0.5f) * 0.5f, w - 2f * S, Mathf.Max(1f, S * 0.5f), new Color(0f, 0f, 0f, 0.9f));
-            Box(x, y, w, S, Color.white); Box(x, y + h - S, w, S, Color.white);
-            Box(x, y, S, h, Color.white); Box(x + w - S, y, S, h, Color.white);
-
-            // stored uses as pips above the slot
-            int max = p.MaxCharges;
-            float pw = Mathf.Min(4f * S, (slotW + w + S) / Mathf.Max(1, max) - S);
-            for (int i = 0; i < max; i++)
-                Box(slotX + i * (pw + S), y - 4f * S, pw, 2f * S, i < p.charges ? new Color(0.55f, 0.95f, 0.45f) : new Color(0.2f, 0.25f, 0.3f));
-        }
-
         // Stacked label above a pickup / shop item: action, combo hint, name, description, stats or charge info.
         const float LabelGap = 0.58f;   // world units between stacked label lines (they overlapped at 0.4)
 
@@ -843,7 +960,7 @@ namespace DigDeep
                 Label(at + Vector2.up * y, "COMPLETES " + cc.name + "!", Color.Lerp(DB.ComboColor, Color.white, hovered ? k : k * 0.4f)); y += LabelGap;
             }
             Label(at + Vector2.up * y, d.name, DB.ColorOf(d)); y += LabelGap;
-            if (action != null) Label(at + Vector2.up * y, action, Color.white);
+            if (!string.IsNullOrEmpty(action)) Label(at + Vector2.up * y, action, Color.white);
         }
 
         // ================================================================== character select
@@ -862,6 +979,17 @@ namespace DigDeep
             float bandH = 90f * S;
             Box(0, 0, W, bandH, new Color(0f, 0f, 0f, 0.78f));
             Box(0, bandH, W, S, new Color(gold.r, gold.g, gold.b, 0.6f));
+            if (!Unlocks.CharOpen(c))
+            {
+                // locked: a black shape and what it takes to free them
+                PixelFont.Draw(W * 0.5f, 6f * S, "LOCKED", S * 2f, new Color(0.6f, 0.6f, 0.66f), 1);
+                string how = Unlocks.How("char:" + c.id) ?? "";
+                PixelFont.Draw(W * 0.5f, 26f * S, "TO UNLOCK:", sm, gold, 1);
+                PixelFont.Draw(W * 0.5f, 36f * S, how, FitSize(how, sm, W * 0.9f), Color.white, 1);
+                string lh = GameInput.UsingStick ? "LEFT / RIGHT: CHOOSE     B: BACK" : "A / D OR CLICK: CHOOSE     ESC: BACK";
+                PixelFont.Draw(W * 0.5f, H - pad - 10f * S, lh, FitSize(lh, sm, W * 0.94f), Color.white, 1);
+                return;
+            }
             PixelFont.Draw(W * 0.5f, 6f * S, c.name + "  THE " + c.animal, S * 2f, gold, 1);
             PixelFont.Draw(W * 0.5f, 24f * S, Short(c.title, 50), sm, Color.white, 1);
             if (!string.IsNullOrEmpty(c.blurb)) PixelFont.Draw(W * 0.5f, 33f * S, Short(c.blurb, 64), FitSize(Short(c.blurb, 64), sm, W * 0.9f), new Color(0.85f, 0.85f, 0.9f), 1);
@@ -869,10 +997,10 @@ namespace DigDeep
             // loadout cards: icon and name, hover for the details
             var cards = new List<(Def d, string label, Color col)>();
             if (DB.ById.TryGetValue(c.weapon, out var wd)) cards.Add((wd, "WEAPON", DB.KindColor(Kind.Attack)));
-            if (DB.ById.TryGetValue(c.special, out var spd)) cards.Add((spd, "SHIFT", DB.KindColor(Kind.Special)));
+            if (DB.ById.TryGetValue(c.special, out var spd)) cards.Add((spd, "ABILITY", DB.KindColor(Kind.Special)));
             if (c.skills != null)
                 for (int i = 0; i < c.skills.Length; i++)
-                    if (DB.ById.TryGetValue(c.skills[i], out var sd)) cards.Add((sd, i == 0 ? "OWN SKILL" : "SKILL", i == 0 ? new Color(1f, 0.8f, 0.4f) : DB.KindColor(Kind.Skill)));
+                    if (DB.ById.TryGetValue(c.skills[i], out var sd)) cards.Add((sd, "SKILL", i == 0 ? new Color(1f, 0.8f, 0.4f) : DB.KindColor(Kind.Skill)));
             float isz = 12f * S, cw = Mathf.Min(70f * S, (W - 20f * S) / Mathf.Max(1, cards.Count));
             float cx0 = W * 0.5f - cards.Count * cw * 0.5f, cy = 44f * S;
             for (int i = 0; i < cards.Count; i++)
@@ -963,71 +1091,6 @@ namespace DigDeep
         }
 
         // The weapon panel. It jolts on every shot.
-        void DrawWeapons(Player p, float x, float y, float bs, float S, float sm)
-        {
-            var w = p.weapon;
-            float k = wKick;
-            float big = bs * 1.6f;
-            float ox = -k * 2f * S, oy = k * 1.5f * S;
-            Color border = w != null ? w.Color : Color.grey;
-            Box(x + ox, y + oy, big, bs, new Color(0f, 0f, 0f, 0.65f));
-            if (w != null && Hover(x, y, big, bs)) TipWeapon(w, true);
-            Box(x + ox, y + oy, big, S, border); Box(x + ox, y + oy + bs - S, big, S, border);
-            Box(x + ox, y + oy, S, bs, border); Box(x + ox + big - S, y + oy, S, bs, border);
-            if (w != null)
-            {
-                float isz = bs - 4f * S + k * 3f * S;
-                Icon(w.def.icon, x + ox + (big - isz) * 0.5f, y + oy + (bs - isz) * 0.5f, isz, Color.white);
-                if (p.ChargeFrac01 > 0f) Box(x + ox + S, y + oy + bs - 3f * S, (big - 2f * S) * p.ChargeFrac01, 2f * S, w.def.col);
-                // ammo / heat
-                if (w.def.UsesHeat)
-                {
-                    var hc = w.overheated ? (((int)(Time.unscaledTime * 8f)) % 2 == 0 ? new Color(1f, 0.3f, 0.2f) : new Color(1f, 0.8f, 0.3f))
-                                          : Color.Lerp(new Color(0.4f, 0.9f, 1f), new Color(1f, 0.4f, 0.2f), w.heat);
-                    Box(x + ox + S, y + oy + bs - 3f * S, (big - 2f * S) * w.heat, 2f * S, hc);
-                    if (w.overheated) PixelFont.Draw(x + ox + big * 0.5f, y + oy + 2f * S, "HOT", sm, hc, 1);
-                }
-                else if (p.MagSize(w) > 0)
-                {
-                    int mag = p.MagSize(w), am = Mathf.Max(0, w.ammo);
-                    bool lowA = am <= Mathf.Max(1, mag / 4);
-                    var ac = lowA ? (((int)(Time.unscaledTime * 6f)) % 2 == 0 ? new Color(1f, 0.35f, 0.3f) : Color.white) : Color.white;
-                    if (p.reloading)
-                    {
-                        Box(x + ox + S, y + oy + bs - 3f * S, (big - 2f * S) * p.ReloadFrac, 2f * S, new Color(1f, 0.9f, 0.5f));
-                        PixelFont.Draw(x + ox + big * 0.5f, y + oy + 2f * S, "RELOAD", sm, new Color(1f, 0.9f, 0.5f), 1);
-                    }
-                    PixelFont.Draw(x + ox + big - 2f * S, y + oy + bs - 9f * sm, am + "/" + mag, sm, ac, 2);
-                }
-                float ty = y - 10f * S;
-                // just the name (modifiers show when you hover the weapon, and in the pause menu), fitted to its slot
-                float avail = big + 3f * S + bs * 0.9f;
-                string wn = w.def.name;
-                PixelFont.Draw(x, ty, wn, FitSize(wn, Mathf.Max(1f, sm - (sm > 2f ? 1f : 0f)), avail), w.Color);
-                if (w.curse != Curse.None)
-                {
-                    // the curse rides above the weapon's name: its lantern, its name and the kills still needed
-                    float cy = ty - 11f * sm;
-                    var cc = Curses.Col(w.curse);
-                    float pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 4f);
-                    Icon(Curses.Icon(w.curse), x, cy - 2f * sm, 10f * sm, Color.white);
-                    string cn = Curses.Name(w.curse) + "  " + w.curseKills + "/" + Curses.KillsToLift;
-                    PixelFont.Draw(x + 12f * sm, cy, cn, sm, new Color(cc.r, cc.g, cc.b, pulse));
-                    if (Hover(x, cy - 2f * sm, 12f * sm + PixelFont.Width(cn, sm), 10f * sm))
-                        Tip(Curses.Name(w.curse), cc, (Curses.Desc[(int)w.curse], TipGrey), ("KILL " + (Curses.KillsToLift - w.curseKills) + " MORE FOES TO LIFT IT", TipStat));
-                }
-            }
-            PixelFont.Draw(x + big * 0.5f, y + bs + 2f * S, GameInput.Prompt(Btn.Attack), sm, new Color(0.8f, 0.8f, 0.8f), 1);
-            // the other slot, smaller
-            var o = p.slots[1 - p.cur];
-            float sx = x + big + 3f * S, ss = bs * 0.75f;
-            var other = p.slots[1 - p.cur];
-            if (other != null && Hover(sx, y + bs - ss, ss * 1.2f, ss)) TipWeapon(other, false);
-            Box(sx, y + bs - ss, ss * 1.2f, ss, new Color(0f, 0f, 0f, 0.5f));
-            if (o != null) Icon(o.def.icon, sx + 2f * S, y + bs - ss + 2f * S, ss - 4f * S, new Color(1f, 1f, 1f, 0.6f));
-            PixelFont.Draw(sx + ss * 0.6f, y + bs + 2f * S, GameInput.Prompt(Btn.Swap), sm, new Color(0.6f, 0.6f, 0.6f), 1);
-        }
-
         void DrawCrosshair(Game g, Player p, float S)
         {
             if (GameInput.UsingStick)
@@ -1074,7 +1137,7 @@ namespace DigDeep
             // short: modifiers and curse by name only, one line of description. Hover it for the numbers.
             if (hovered) hoverWeapon = w;
             float y = 0f;
-            if (w.curse != Curse.None) { Label(at + Vector2.up * y, Curses.Name(w.curse), Curses.Col(w.curse)); y += LabelGap; }
+            if (w.curse != Curse.None) { Label(at + Vector2.up * y, Curses.Name(w.curse) + Curses.Skull, Curses.Col(w.curse)); y += LabelGap; }
             if (w.mods.Count > 0)
             {
                 string ms = "";
@@ -1084,7 +1147,7 @@ namespace DigDeep
             }
             Label(at + Vector2.up * y, Short(w.def.desc), new Color(0.85f, 0.85f, 0.85f)); y += LabelGap;
             Label(at + Vector2.up * y, w.def.name + (w.mods.Count >= 3 ? "  ***" : ""), w.Color); y += LabelGap;
-            if (action != null) Label(at + Vector2.up * y, action, Color.white);
+            if (!string.IsNullOrEmpty(action)) Label(at + Vector2.up * y, action, Color.white);
         }
 
         float bossTrail = 1f;
@@ -1100,21 +1163,11 @@ namespace DigDeep
             trail = Mathf.Max(k, Mathf.MoveTowards(trail, k, Time.unscaledDeltaTime * 0.35f));
             if (second) bossTrail2 = trail; else bossTrail = trail;
             PixelFont.Draw(Screen.width * 0.5f, y - 9f * sm, b.title, sm, new Color(1f, 0.45f, 0.4f), 1);
-            Box(x - S, y - S, w + 2f * S, h + 2f * S, Color.white);
-            Box(x, y, w, h, new Color(0.08f, 0.02f, 0.03f));
+            Box(x - 2f * S, y - 2f * S, w + 4f * S, h + 4f * S, Ink(0.95f));
+            Box(x, y, w, h, new Color(0.2f, 0.05f, 0.07f));
             Box(x, y, w * trail, h, new Color(1f, 0.9f, 0.75f));
             Box(x, y, w * k, h, Color.Lerp(new Color(0.75f, 0.1f, 0.1f), new Color(0.95f, 0.25f, 0.2f), 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f)));
             Box(x + w * 0.5f - S * 0.5f, y, S, h, new Color(0f, 0f, 0f, 0.5f));   // phase 2 marker
-        }
-
-        static void Slot(float x, float y, float bs, float S, float sm, Sprite icon, string key, string extra, float alpha, Color border)
-        {
-            Box(x, y, bs, bs, new Color(0f, 0f, 0f, 0.65f));
-            Box(x, y, bs, S, border); Box(x, y + bs - S, bs, S, border);
-            Box(x, y, S, bs, border); Box(x + bs - S, y, S, bs, border);
-            if (icon != null) Icon(icon, x + 3f * S, y + 3f * S, bs - 6f * S, new Color(1f, 1f, 1f, alpha));
-            PixelFont.Draw(x + bs * 0.5f, y + bs + 2f * S, key, sm, new Color(0.8f, 0.8f, 0.8f), 1);
-            if (extra != null) PixelFont.Draw(x + bs - S, y + bs - 8f * sm, extra, sm, Color.white, 2);
         }
     }
 }

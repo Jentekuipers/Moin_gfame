@@ -272,6 +272,12 @@ namespace DigDeep
                     break;
             }
             DrawBoss(0f);
+            // diving, she's a spear: her own picture
+            if ((S)state == S.Dive && !dead && sr != null)
+            {
+                var dv = SpriteSheet.Frames("queendive");
+                if (dv != null && dv.Length > 0) { sr.sprite = dv[0]; sr.flipX = diveV.x < 0f; }
+            }
             animT += dt * 3f;   // wings
         }
 

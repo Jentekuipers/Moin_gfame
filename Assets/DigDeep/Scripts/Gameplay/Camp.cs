@@ -151,7 +151,7 @@ namespace DigDeep
                 float bob = on ? Mathf.Abs(Mathf.Sin(t * 5f)) * 0.12f : 0f;
                 g.transform.position = new Vector3(U.Snap(feet.x), U.Snap(feet.y + bob), 0f);
                 float k = !choosing ? 0.85f : on ? 1f : i == Hover ? 0.8f : 0.45f;
-                r.color = new Color(k, k, k * (on ? 1f : 1.05f), 1f);
+                r.color = Unlocks.CharOpen(Chars.All[i]) ? new Color(k, k, k * (on ? 1f : 1.05f), 1f) : new Color(0f, 0f, 0f, 1f);   // a locked digger is a black shape
                 r.sprite = Chars.All[i].frames[on && ((int)(t * 3f)) % 4 == 0 ? 3 : 0];
                 g.transform.localScale = on ? new Vector3(1.12f, 1.12f, 1f) : Vector3.one;
             }

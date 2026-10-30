@@ -22,7 +22,7 @@ namespace DigDeep
             if (d.sqrMagnitude < 0.01f) d = new Vector2(facing, 0f);
             quickDir = d.normalized;
             mode = Mode.Quick;
-            modeT = 0.14f;
+            modeT = s.dashLong ? 0.21f : 0.14f;   // LONG DASH
             ghostT = 0f;
             squash = -0.2f;
             robbed.Clear();
@@ -32,10 +32,10 @@ namespace DigDeep
             G.cam.Kick(quickDir * 0.25f);
         }
 
-        // PICKPOCKET: dashing through a foe lifts some gold off it
+        // (PICKPOCKET used to work on dashes; it now makes poison and fire bites drop coins, see Enemy.DotGold)
         void Pickpocket()
         {
-            if (!s.pickpocket) return;
+            if (robbed.Count >= 0) return;
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en) || en is Boss || en is WormSegment || robbed.Contains(en)) continue;
@@ -140,7 +140,7 @@ namespace DigDeep
         {
             if (mode == Mode.Grapple) EndGrapple();
             mode = Mode.Dig;
-            modeT = 0.45f;
+            modeT = s.digDeep ? 0.7f : 0.45f;
             digFrom = pos.y;
             pos.x = Mathf.FloorToInt(pos.x) + 0.5f;   // line up with one column
             vel = Vector2.zero;
@@ -161,9 +161,10 @@ namespace DigDeep
             pos = p;
             G.fx.Burst(pos + Vector2.up * 0.4f, 2, new Color(1f, 0.6f, 0.2f), 1.5f, 0.25f, 0f);
             if (Random.value < 0.5f) G.fx.Ghost(sr.sprite, go.transform.position, sr.flipX, new Color(1f, 0.6f, 0.3f, 0.5f));
-            bool deepEnough = pos.y <= digFrom - 6f;   // quick dig goes 6 blocks down
+            bool deepEnough = pos.y <= digFrom - (s.digDeep ? 10f : 6f);   // quick dig goes 6 blocks down (DEEP DRILL: 10)
             if (blocked || hit || deepEnough || modeT <= 0f)
             {
+                if (s.digQuake) { Shockwave(pos, 2.8f, Dmg(4f), 2, Src.Shockwave); G.cam.Shake(0.35f); }   // DRILL QUAKE
                 if (blocked) { G.sfx.Play("clank", 0.5f); G.cam.Shake(0.1f); }
                 mode = Mode.Normal;
                 vel = new Vector2(0f, -3f);
@@ -281,15 +282,16 @@ namespace DigDeep
             float dir = Mathf.Abs(aimDir.x) > 0.1f ? Mathf.Sign(aimDir.x) : facing;
             facing = (int)dir;
             // a long boot: it reaches well past arm's length, so you can kick foes before they touch you
-            Vector2 c = pos + new Vector2(dir * 1.35f, -0.05f), h = new Vector2(1.25f, 0.7f);
+            float wk = s.kickWide ? 1.4f : 1f;   // WIDE KICK
+            Vector2 c = pos + new Vector2(dir * 1.35f * wk, -0.05f), h = new Vector2(1.25f * wk, 0.7f * wk);
             float km = s.meleeMul * s.kickMul;   // BRASS KNUCKLES, STEEL TOE CAPS
             bool any = false;
             foreach (var e in G.ents)
             {
-                if (e.dead || !(e is Enemy en) || en.Intangible || !U.Overlap(c, h, en.pos, en.half)) continue;
+                if (e.dead || !(e is Enemy en) || en.Intangible || en.thrall || !U.Overlap(c, h, en.pos, en.half)) continue;
                 any = true;
                 en.TakeShot(Dmg(2.5f) * km * Backstab(en), new Vector2(dir * 4f, 2f));
-                if (!en.dead) en.Launch(new Vector2(dir * 20f, 7f) * Mathf.Min(1.5f, Mathf.Sqrt(s.kickMul)), Dmg(2f) * km);
+                if (!en.dead) { en.Launch(new Vector2(dir * 20f, 7f) * Mathf.Min(1.5f, Mathf.Sqrt(s.kickMul)), Dmg(2f) * km); en.kickBoom = s.kickBoom; }   // DYNAMITE BOOT
             }
             for (int i = BoulderBody.All.Count - 1; i >= 0; i--)
             {
@@ -300,6 +302,25 @@ namespace DigDeep
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
                     if (Wd.PushBoulder(x, y, new Vector2(dir * 16f, 3f))) any = true;
+            // TNT in front of the boot goes flying (nose first) instead of going off
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                    if (Wd.Get(x, y) == Block.TNT)
+                    {
+                        Wd.Set(x, y, Block.Air);
+                        G.Spawn(new TntBody(x, y, new Vector2(dir * 17f, 6f)));
+                        any = true;
+                    }
+            // the boot bats away enemy shots that are about to hit you
+            foreach (var e in G.ents)
+            {
+                if (e.dead) continue;
+                bool foeShot = (e is Bullet bl && bl.team != Team.Player) || e is BossShot;
+                if (!foeShot || (e.pos - pos).sqrMagnitude > 2.4f * 2.4f) continue;
+                G.fx.Burst(e.pos, 6, new Color(1f, 0.95f, 0.7f), 4f, 0.2f, 0f);
+                e.Kill();
+                any = true;
+            }
             // the boot smashes the blocks in front of you too (never the floor you stand on)
             Vector2 bc = pos + new Vector2(dir * (Half.x + 0.9f), 0.04f), bh = new Vector2(0.9f, Half.y - 0.06f);
             bool blockedK = false;
@@ -398,8 +419,34 @@ namespace DigDeep
         }
 
         // Damage over time: no knockback or mercy time, just health ticking away.
+        // ACID burns you a little while you're in it; strong POISON poisons you; FUMES sting your lungs
+        float acidT, fumeT;
+        void TickChem(float dt)
+        {
+            acidT -= dt; fumeT -= dt;
+            Vector2 feet = pos - new Vector2(0f, Half.y - 0.1f), headP = pos + new Vector2(0f, Half.y - 0.08f);
+            byte body = Wd.FluidAtPoint(pos), fe = Wd.FluidAtPoint(feet);
+            bool acid = (body == Fluids.Acid && Fluids.Concentration(pos, Fluids.Acid) > 0.5f) || (fe == Fluids.Acid && Fluids.Concentration(feet, Fluids.Acid) > 0.5f);
+            if (acid && acidT <= 0f)
+            {
+                acidT = 0.45f;
+                DotDamage(Mathf.RoundToInt(3f + Depth * 0.02f), new Color(0.85f, 1f, 0.3f));
+                G.fx.Burst(pos, 4, new Color(0.85f, 1f, 0.3f), 2f, 0.4f, -3f, 1f, false);
+                G.sfx.Play("fizz", 0.4f, 1.5f);
+            }
+            if ((body == Fluids.Poison && Fluids.Concentration(pos, Fluids.Poison) >= 0.6f) || (fe == Fluids.Poison && Fluids.Concentration(feet, Fluids.Poison) >= 0.6f)) Poison(2.5f);
+            int hx = Mathf.FloorToInt(headP.x), hy = Mathf.FloorToInt(headP.y);
+            if (Wd.LiquidType(hx, hy) == Fluids.Fumes && Wd.LiquidAmount(hx, hy) > 0.12f && fumeT <= 0f)
+            {
+                fumeT = 0.8f;
+                DotDamage(Mathf.RoundToInt(2f + Depth * 0.01f), new Color(0.6f, 0.9f, 0.4f), false);
+                if (Random.value < 0.4f) G.Popup(pos + Vector2.up, "*COUGH*", new Color(0.6f, 0.9f, 0.4f));
+            }
+        }
+
         void TickBurnAndPoison(float dt)
         {
+            TickChem(dt);
             if (chillT > 0f)
             {
                 chillT -= dt;
@@ -416,24 +463,35 @@ namespace DigDeep
                     burnTick -= dt;
                     if (burnTick <= 0f) { burnTick = 0.5f; DotDamage(Mathf.RoundToInt(4f + Depth * 0.05f), new Color(1f, 0.55f, 0.2f)); }
                     Fire.IgniteBox(pos, Half + new Vector2(0.08f, 0.08f));   // you set alight whatever you touch
+                    foreach (var e in G.ents)
+                        if (!e.dead && e is Enemy en && !en.Burning && !en.Intangible && U.Overlap(pos, Half + new Vector2(0.08f, 0.08f), en.pos, en.half)) en.Ignite(2f);   // foes included
                     Fire.MeltAround(pos, 1.2f);
                     if (Random.value < 0.6f) G.fx.Burst(pos + new Vector2(Random.Range(-0.3f, 0.3f), Random.Range(-0.3f, 0.3f)), 1, new Color(1f, Random.Range(0.4f, 0.9f), 0.15f), 1.5f, 0.4f, -6f, 1f, false);
                     if (burnT <= 0f) { G.sfx.Play("fizz", 0.4f, 1.3f); G.fx.Smoke(pos, 3, 0.7f); }
                 }
             }
+            if (poisonT > 0f && Wd.FluidAtPoint(pos + new Vector2(0f, Half.y - 0.08f)) == Fluids.Water)
+            {
+                // ducking right under (clean) water washes the poison off
+                poisonT = 0f;
+                G.Popup(pos + Vector2.up, "CLEANSED", new Color(0.6f, 0.9f, 1f));
+                G.sfx.Play("fizz", 0.4f, 1.5f);
+                G.fx.Burst(pos, 8, new Color(0.5f, 1f, 0.35f), 2f, 0.6f, -4f, 1f, false);
+            }
             if (poisonT > 0f)
             {
                 poisonT -= dt;
                 poisonTick -= dt;
-                if (poisonTick <= 0f) { poisonTick = 0.5f; DotDamage(Mathf.RoundToInt(3f + Depth * 0.03f), new Color(0.5f, 1f, 0.35f)); }
+                if (poisonTick <= 0f) { poisonTick = 0.5f; DotDamage(Mathf.RoundToInt(3f + Depth * 0.03f), new Color(0.5f, 1f, 0.35f), false); }   // poison never kills: it stops at 1
                 if (Random.value < 0.25f) G.fx.Burst(pos, 1, new Color(0.5f, 1f, 0.35f), 1f, 0.5f, -3f, 1f, false);
             }
         }
 
-        void DotDamage(int d, Color c)
+        void DotDamage(int d, Color c, bool canKill = true)
         {
             if (mode == Mode.Dead) return;
             if (s.armor > 0f) d = Mathf.Max(1, Mathf.RoundToInt(d * (1f - s.armor)));
+            if (!canKill) { d = Mathf.Min(d, s.hp - 1); if (d <= 0) return; }
             s.hp -= d;
             EndCamo();
             G.Popup(pos + Vector2.up * 0.9f, "-" + d, c);
