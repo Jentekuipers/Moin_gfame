@@ -58,6 +58,7 @@ Enemy.turtle_1 0 0 Enemy.turtle_1 0 0
 Enemy.turtle_2 0 0 Enemy.turtle_2 0 0
 Enemy.turtle_3 0 0 Enemy.turtle_3 0 1
 Enemy.glider_0 0 0 Enemy.glider_0 0 0
+Enemy.glider_1 2 0 Enemy.glider_0 0 0
 Enemy.wolf_0 0 0 Enemy.wolf_0 0 0
 Enemy.wolf_1 0 0 Enemy.wolf_1 0 0
 Enemy.mushelite_0 0 0 Enemy.mushelite_0 2 0

@@ -44,6 +44,8 @@ namespace DigDeep
         public List<ChunkSave> chunks = new List<ChunkSave>();
         public List<float> doneAltarX = new List<float>();
         public List<float> doneAltarY = new List<float>();
+        public List<float> burntCapX = new List<float>();   // giant mushrooms that burnt away (they don't grow back)
+        public List<float> burntCapY = new List<float>();
         public List<int> clearedArenas = new List<int>();
     }
 

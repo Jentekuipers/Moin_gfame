@@ -69,7 +69,7 @@ namespace DigDeep
                 slots[i] = w;
             }
             cur = Mathf.Clamp(r.curWeapon, 0, slots.Length - 1);
-            if (slots[cur] == null) cur = 1 - cur;
+            if (slots[cur] == null) for (int i = 0; i < slots.Length; i++) if (slots[i] != null) { cur = i; break; }
 
             special = !string.IsNullOrEmpty(r.special) && DB.ById.TryGetValue(r.special, out var sd) ? sd as SpecialDef : special;
             charges = Mathf.Clamp(r.charges, 0, MaxCharges);

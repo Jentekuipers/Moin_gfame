@@ -75,10 +75,12 @@ namespace DigDeep
         public const int W = 84;   // ~3 screens wide, bedrock walls at both sides
         const int MaxDepth = ArenaRoom.Final;   // the world ends under Ornin's throne
         static float o1, o2, o3, o4, o5;
+        public static float Off => o1;   // (the newer biomes' noise is offset by the seed too)
         static int seed;
         public static int Seed => seed;
         public static readonly List<Carve> Carves = new List<Carve>();
         public static readonly List<ShopRoom> Shops = new List<ShopRoom>();
+        public static readonly List<int> CrateChunks = new List<int>();   // the chunks that get a weapon crate (one entry per crate)
         static readonly Dictionary<int, List<Carve>> buckets = new Dictionary<int, List<Carve>>();
 
         public static void Init(int s)
@@ -92,15 +94,48 @@ namespace DigDeep
             // boss arenas first: one at the end of each biome, then every 100 depth
             int bi = 0;
             foreach (int bd in ArenaRoom.Depths(MaxDepth)) Add(new ArenaRoom(bd, bi++));
-            int d = 30;
-            while (d < MaxDepth)
+            // at most one shop in each biome (and now and then a biome has none)
+            for (int slot = 0; slot < Biomes.Slots; slot++)
             {
-                var shop = new ShopRoom(6 + r.Next(W - 12 - ShopRoom.Wd), d);
-                if (!TryAdd(shop)) { d += 6; continue; }
-                Shops.Add(shop);
-                d += 50 + r.Next(-6, 12);
+                if (r.NextDouble() < 0.25) continue;
+                int lo = Biomes.SlotStart(slot) + (slot == 0 ? 30 : 15), hi = Biomes.SlotStart(slot) + Biomes.Len - 30;
+                for (int tries = 0; tries < 12; tries++)
+                {
+                    var shop = new ShopRoom(6 + r.Next(W - 12 - ShopRoom.Wd), lo + r.Next(Mathf.Max(1, hi - lo)));
+                    if (TryAdd(shop)) { Shops.Add(shop); break; }
+                }
             }
             EventGen.Build(r, MaxDepth);
+            // weapon crates and supply crates are planned per biome, when you near it (so your luck then counts)
+            CrateChunks.Clear(); SupplyChunks.Clear(); Shelter.Reset();
+            for (int i = 0; i < planned.Length; i++) planned[i] = false;
+        }
+
+        public static readonly List<int> SupplyChunks = new List<int>();   // the chunks that get a supply crate (one entry per crate)
+        static readonly bool[] planned = new bool[Biomes.Slots];
+        static float Luck => Game.I != null && Game.I.player != null ? Mathf.Clamp(Game.I.player.s.luck, -3f, 12f) : 0f;
+        public static float LuckMul => 1f + 0.12f * Luck;   // more chests (and buried treasure) the luckier you are
+
+        // Weapon crates: usually one or two a biome, now and then none, three only rarely (more likely with luck).
+        // Supply crates: one to four a biome, more the luckier you are.
+        public static void PlanSlot(int slot)
+        {
+            if (slot < 0 || slot >= planned.Length || planned[slot]) return;
+            planned[slot] = true;
+            var cr = new System.Random(seed * 4243 + slot * 31 + (World.Void ? 77 : 0));
+            float luck = Luck;
+            double k = cr.NextDouble() - luck * 0.03;
+            int n = k < 0.3 ? 0 : k < 0.72 ? 1 : k < 0.93 ? 2 : 3;
+            if (luck > 4f && n == 0) n = 1;
+            for (int i = 0; i < n; i++) CrateChunks.Add(PlanChunk(slot, cr));
+            int ns = Mathf.Clamp(1 + (int)(cr.NextDouble() * 1.6 + luck * 0.35f), 1, 4);
+            for (int i = 0; i < ns; i++) SupplyChunks.Add(PlanChunk(slot, cr));
+        }
+
+        static int PlanChunk(int slot, System.Random cr)
+        {
+            int depth = Mathf.Max(24, Biomes.SlotStart(slot) + 10 + cr.Next(Biomes.Len - 30));
+            return U.FloorDiv(-depth, World.CH);
         }
 
         static void Add(Carve c)
@@ -146,7 +181,22 @@ namespace DigDeep
 
         public static bool InCarve(int x, int depth) => CarveAt(x, depth) >= 0;
 
-        static bool Open(int x, int y, int depth)
+        // is this cell in (or right around) a shop? nothing grows or gets built there
+        public static bool InShop(int x, int depth)
+        {
+            foreach (var s in Shops)
+                if (x >= s.x0 - 5 && x <= s.x0 + ShopRoom.Wd + 4 && depth >= s.top - 4 && depth <= s.top + ShopRoom.Ht) return true;
+            return false;
+        }
+
+        // is this cell open cave? (the newer biomes shape their own: see BiomeGen)
+        static bool OpenAt(int x, int y, int depth)
+        {
+            int bi = Biomes.Index(depth);
+            return bi >= Biomes.Cloud && depth > 3 ? BiomeGen.Open(x, y, depth, bi) : Open(x, y, depth);
+        }
+
+        public static bool Open(int x, int y, int depth)
         {
             if (depth <= 3) return false;
             float n = U.Fbm(x * 0.075f + o1, y * 0.11f + o1 * 0.7f);
@@ -192,7 +242,7 @@ namespace DigDeep
             int t = CarveAt(x, d);
             if (t >= 0) return Tiles.Solid((Block)t);
             if (BigOre.Find(x, d, out _, out _, out _, out _)) return true;
-            return !Open(x, y, d);
+            return !OpenAt(x, y, d);
         }
 
         static Block Material(int x, int y, int depth)
@@ -210,7 +260,7 @@ namespace DigDeep
                 if (s > 0.74f) return Block.Sand;
             }
             // the forgotten kingdom: chunks of ancient dwarf masonry everywhere
-            if (Biomes.Index(depth) >= Biomes.Kingdom && m != Block.Dirt && U.H01(x >> 2, y >> 1, 91) > 0.5f) return Block.Brick;
+            if (Biomes.Index(depth) == Biomes.Kingdom && m != Block.Dirt && U.H01(x >> 2, y >> 1, 91) > 0.5f) return Block.Brick;
             return m;
         }
 
@@ -230,8 +280,10 @@ namespace DigDeep
 
             float r = U.H01(x, y, seed + 11);
 
-            if (Open(x, y, depth))
+            int nbi = Biomes.Index(depth);
+            if (OpenAt(x, y, depth))
             {
+                if (nbi >= Biomes.Cloud && BiomeGen.OpenFill(x, y, depth, nbi, r, out var fill)) return fill;   // (water, the odd treasure: their own way)
                 // pools of water settle in the bottoms of caves (frozen solid in the Crystal Depths, none in the Magma Core)
                 int wbi = Biomes.Index(depth);
                 if (depth > 18 && wbi != Biomes.Magma && Mathf.PerlinNoise(x * 0.11f + o5 * 2f, y * 0.11f + 7.3f) > (wbi == Biomes.Jungle ? 0.55f : wbi == Biomes.Storm ? 0.5f : 0.62f) &&
@@ -239,9 +291,8 @@ namespace DigDeep
                     return wbi == Biomes.Crystal ? Block.Ice : Block.Water;
                 if (RawSolid(x, y - 1))
                 {
-                    if (depth > 6 && r < 0.0065f) return Block.Chest;   // fewer chests: loot should feel earned
-                    if (depth > 8 && r < 0.01f) return Block.Crate;
-                    if (depth > 6 && r < 0.014f) return Block.Supply;   // wooden supply crates: bombs, potions and other consumables
+                    float vk = World.Void ? 0.5f : 1f;   // the void is stingier with treasure (but what it has is deep-run loot)
+                    if (depth > 6 && r < 0.004f * vk * LuckMul) return Block.Chest;   // fewer chests: loot should feel earned (luck finds more)
                     int bi = Biomes.Index(depth);
                     if (bi == Biomes.Magma && Mathf.PerlinNoise(x * 0.2f + o5, y * 0.2f) > 0.6f) return Block.Lava;   // the Magma Core: plenty
                     if (bi != Biomes.Magma && bi != Biomes.Jungle && bi != Biomes.Storm && depth > 40 && Mathf.PerlinNoise(x * 0.09f + o4, y * 0.09f + 3.1f) > 0.8f) return Block.Lava;   // rare pockets elsewhere
@@ -251,6 +302,7 @@ namespace DigDeep
                 return Block.Air;
             }
 
+            if (nbi >= Biomes.Cloud && BiomeGen.Solid(x, y, depth, nbi, r, out var own)) return own;   // (clouds, coral, sand: their own way)
             Block m = Material(x, y, depth);
             if (m == Block.Dirt || m == Block.Stone || m == Block.HardStone)
             {
@@ -261,10 +313,10 @@ namespace DigDeep
                 float tnt = depth < 18 ? 0f : Mathf.Min(0.003f + depth * 0.00002f, 0.011f) * (World.Void ? 2f : 1f);
                 if (r < gold + gem + tnt) return Block.TNT;
                 // buried treasure only where something solid holds it up (never in a cave ceiling)
-                if (r > 0.9982f && depth > 5 && RawSolid(x, y - 1)) return Block.Chest;
-                if (r > 0.9978f && depth > 20 && RawSolid(x, y - 1)) return Block.Crate;
+                if (r > 1f - (World.Void ? 0.00055f : 0.0011f) * LuckMul && depth > 5 && RawSolid(x, y - 1)) return Block.Chest;
                 float r2 = U.H01(x, y, seed + 23);
-                if (Biomes.Index(depth) >= Biomes.Crystal)
+                int cbi = Biomes.Index(depth);
+                if (cbi >= Biomes.Crystal && cbi <= Biomes.Kingdom)
                 {
                     if (r2 < 0.035f) return Block.Crystal;
                     if (depth > 250 && r2 < 0.035f + Mathf.Min((depth - 250) * 0.0001f, 0.02f)) return Block.Volatile;

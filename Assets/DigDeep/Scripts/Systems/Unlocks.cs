@@ -134,7 +134,7 @@ namespace DigDeep
         public static void RunStarted(bool fresh)
         {
             runKillsBiome1 = fresh ? 0 : 1; hurtBiome1 = !fresh; bossHit = false; Src = 0; BlastCount = -1;
-            lastBiome = fresh || Game.I == null ? 0 : Biomes.Index(Game.I.maxDepth);
+            lastBiome = fresh || Game.I == null ? 0 : Biomes.SlotOf(Game.I.maxDepth);
         }
 
         public static void Kill(Enemy e, Player p)
@@ -179,7 +179,7 @@ namespace DigDeep
 
         public static void Depth(int d)
         {
-            int bi = Biomes.Index(d);
+            int bi = Biomes.SlotOf(d);   // (how many biomes in: the order changes from run to run)
             if (bi > lastBiome)
             {
                 if (lastBiome == 0 && bi >= 1)
@@ -243,7 +243,7 @@ namespace DigDeep
         {
             if (Unlocks.Pending.Count == 0 || on) return;
             on = true; t = 0f; closeT = -1f;
-            Game.I.sfx.Play("unlockcard", 0.7f, 1f, 0f);
+            Game.I.sfx.Play("unlock", 0.8f, 1f, 0f);   // the same fanfare as unlocking it mid-run
         }
 
         // true while the cards are up (they take all the input)
@@ -259,7 +259,7 @@ namespace DigDeep
                     Unlocks.Pending.RemoveAt(0);
                     closeT = -1f; t = 0f;
                     if (Unlocks.Pending.Count == 0) { on = false; return true; }
-                    Game.I.sfx.Play("unlockcard", 0.7f, 1f, 0f);
+                    Game.I.sfx.Play("unlock", 0.8f, 1f, 0f);   // the same fanfare as unlocking it mid-run
                 }
                 return true;
             }
@@ -345,8 +345,7 @@ namespace DigDeep
                     PixelFont.Draw(W * 0.5f, cy + 90f * S * sc + 9f * z, a2, z, hc, 1);
                 }
             }
-            string more = Unlocks.Pending.Count > 1 ? "1 / " + Unlocks.Pending.Count + "   " : "";
-            PixelFont.Draw(W * 0.5f, cy + ch - 10f * S * sc, more + "CLICK TO CONTINUE", Mathf.Max(1f, ts - 1f), new Color(0.55f, 0.55f, 0.62f, alpha * (0.6f + 0.4f * Mathf.Sin(t * 5f))), 1);
+            PixelFont.Draw(W * 0.5f, cy + ch - 10f * S * sc, "CLICK TO CONTINUE", Mathf.Max(1f, ts - 1f), new Color(0.55f, 0.55f, 0.62f, alpha * (0.6f + 0.4f * Mathf.Sin(t * 5f))), 1);
         }
     }
 }

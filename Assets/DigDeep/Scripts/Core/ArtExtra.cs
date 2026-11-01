@@ -9,6 +9,7 @@ namespace DigDeep
         public static Sprite PlateUp, PlateDown, Bucket, StatueRun, StatueSit, Flag, AltarBase, Arrow;
         public static Sprite CampLog, TentA, TentB;
         public static Sprite[] Flames;
+        public static Sprite[][] FlamesOut;   // a flame dying down: three ever smaller sets of six (fire_out1..3)
         public static Sprite CampBarrel, CampCrates, CampLantern, CampPick, CampBedroll, CampCart, CampSign, CampWood, CampPot, CampShroom, CampShroomBlue, CampFlag;
         public static Sprite[] CampFire;
         static readonly Dictionary<string, string[]> shapes = new Dictionary<string, string[]>();

@@ -18,9 +18,10 @@ namespace DigDeep
         public static readonly List<System.Func<int, int, int, Enemy>> Foes = new List<System.Func<int, int, int, Enemy>>
         {
             (x, y, d) => new Crawler(x, y, d, false), (x, y, d) => new Crawler(x, y, d, true), (x, y, d) => new Crawler(x, y, d, false, true),
-            (x, y, d) => new Bat(x, y, d, false), (x, y, d) => new Bat(x, y, d, true), (x, y, d) => new Mole(x, y, d), (x, y, d) => new Spitter(x, y, d),
+            (x, y, d) => new Bat(x, y, d, false), (x, y, d) => new Bat(x, y, d, true), (x, y, d) => new Mole(x, y, d), (x, y, d) => new Mole(x, y, d, Mole.Kind.Bandit), (x, y, d) => new Mole(x, y, d, Mole.Kind.Miner), (x, y, d) => new Spitter(x, y, d),
             (x, y, d) => new Raider(x, y, d, Raider.Kind.Gunner), (x, y, d) => new Raider(x, y, d, Raider.Kind.Brute),
             (x, y, d) => new Raider(x, y, d, Raider.Kind.Marksman), (x, y, d) => new Raider(x, y, d, Raider.Kind.Bomber),
+            (x, y, d) => new Bandit(x, y, d, Bandit.Kind.Sword), (x, y, d) => new Bandit(x, y, d, Bandit.Kind.Axe), (x, y, d) => new Bandit(x, y, d, Bandit.Kind.Dagger),
             (x, y, d) => new Beetle(x, y, d), (x, y, d) => new Slime(x, y, d), (x, y, d) => new Turtle(x, y, d), (x, y, d) => new Skeleton(x, y, d),
             (x, y, d) => new GliderBat(x, y, d), (x, y, d) => new Wolf(x, y, d), (x, y, d) => new RockMage(x, y, d), (x, y, d) => new MushroomElite(x, y, d),
             (x, y, d) => new VoidMage(x, y, d, VoidMage.Kind.Fire), (x, y, d) => new VoidMage(x, y, d, VoidMage.Kind.Ice), (x, y, d) => new VoidMage(x, y, d, VoidMage.Kind.Lightning),

@@ -27,7 +27,7 @@ namespace DigDeep
         readonly bool tinted;
         readonly Player owner;
         readonly Weapon weapon;
-        readonly float size;     // GIANT ROUNDS and friends make spears bigger too
+        float size;              // GIANT ROUNDS and friends make spears bigger too
         float len => Len * size;
         Vector2 Tip => TipBase * size;
         float life, fade = -1f, ghostKidT, flightT;
@@ -41,7 +41,12 @@ namespace DigDeep
         // as a platform: the part sticking out of the wall
         public bool IsPlatform;
         public float platX0, platX1, platTop;
-
+        public float platA, platK;   // the ledge's top along it: top = platA + platK * x (slanted spears make slanted ledges)
+        public float TopAt(float x) => platA + platK * Mathf.Clamp(x, platX0, platX1);
+        // EXPLOSIVE spears: lodged in a foe, it blinks and swells for a second, then goes off like a bomb
+        readonly bool explodes, explodeHurtsYou;
+        float boomT = -1f;
+        bool hostile;   // batted back by a MIRROR BEETLE: now it flies at you
         public Spear(Player p, Weapon w, Vector2 at, Vector2 v, float dmg, bool ghost = false)
         {
             owner = p; weapon = w; this.ghost = ghost;
@@ -55,7 +60,9 @@ namespace DigDeep
             freezes = w.Has(Mod.Frost) || ps.shotFrost;
             boomerang = !ghost && p.Cursed(Curse.Boomerang);
             size = Mathf.Clamp(ps.shotSize, 0.6f, 2.6f) * (w.Has(Mod.HighCaliber) ? 1.2f : 1f);
-            blocksLeft = w.def.blockPierce + (w.Has(Mod.WallBreaker) ? 2 : 0);
+            blocksLeft = w.def.blockPierce;
+            explodes = !ghost && (w.Has(Mod.Explosive) || ps.shotExplode);
+            explodeHurtsYou = w.Has(Mod.Explosive) && !ps.blastProof;
             // the elements it carries colour it (and it sheds their sparks, embers and drips)
             var fx = p.AttackFx(w);
             tinted = fx.Count > 0;
@@ -114,6 +121,20 @@ namespace DigDeep
                 if (fade >= 0.6f) { Kill(); return; }
             }
             if (ghost) { TickGhost(dt); if (!dead) Pose(); return; }
+            if (boomT >= 0f && st != St.Returning)
+            {
+                boomT -= dt;
+                float k = 1f - Mathf.Clamp01(boomT);   // 0 -> 1 over the second
+                bool on = ((int)(Time.time * (8f + k * 18f))) % 2 == 0;
+                sr.color = on ? new Color(1f, 0.35f, 0.3f) : (tinted ? Color.Lerp(Color.white, tint, 0.55f) : Color.white);
+                go.transform.localScale = Vector3.one * size * (1f + k * 0.3f);
+                if (boomT <= 0f)
+                {
+                    G.Explode(TipPos, 1.6f * Mathf.Max(1f, size), dmg * 0.9f + 2f, !explodeHurtsYou, true, true);
+                    Kill();
+                    return;
+                }
+            }
             switch (st)
             {
                 case St.Flying: Fly(dt); break;
@@ -183,6 +204,18 @@ namespace DigDeep
                 if (bb != null) { BounceOff(tip - bb.pos); return; }
                 // a foe: one hit, and it wears the spear
                 if (HitFoes(tip)) return;
+                // batted back by a beetle: it can skewer you
+                if (hostile && st == St.Flying)
+                {
+                    var pl = G.player;
+                    if (pl != null && pl.mode != Player.Mode.Dead && U.Overlap(tip, Tip, pl.pos, Player.Half))
+                    {
+                        pl.Hurt(50, tip);
+                        hostile = false;
+                        Drop(vel * 0.15f);
+                        return;
+                    }
+                }
                 int cx = Mathf.FloorToInt(tip.x), cy = Mathf.FloorToInt(tip.y);
                 Block b = Wd.Get(cx, cy);
                 // spikes snap off as it passes
@@ -238,14 +271,31 @@ namespace DigDeep
                 if (e.dead || !(e is Enemy en) || en.Intangible || en.team == Team.Player || hit.Contains(en)) continue;
                 if (!U.Overlap(tip, Tip, en.pos, en.half)) continue;
                 hit.Add(en);
+                // a MIRROR BEETLE bats it straight back at you
+                if (en.Reflects && !hostile && (st == St.Flying || st == St.Returning || ghost))
+                {
+                    hostile = true;
+                    if (st == St.Returning) st = St.Flying;
+                    vel = U.Rot(-vel, Random.Range(-12f, 12f)) * 1.1f;
+                    ang = Mathf.Atan2(vel.y, vel.x) * Mathf.Rad2Deg;
+                    pos += vel.normalized * 0.25f;
+                    blocksLeft = 0;
+                    G.sfx.PlayAt(tip, "reflect", 0.6f, Random.Range(0.9f, 1.2f));
+                    G.fx.Sparks(tip, new Color(0.7f, 1f, 1f));
+                    sr.color = new Color(1f, 0.55f, 0.95f);
+                    en.OnReflect();
+                    return true;
+                }
+                if (hostile) continue;   // (a batted spear only hurts you)
                 float d = st == St.Falling ? dmg * 0.6f : dmg;
+                if (owner != null && st == St.Flying) d *= Mods.RangeMul(weapon, owner.pos, tip);   // SHARPSHOOTER / POINT-BLANK
                 en.TakeShot(d, vel.normalized * knock);
                 Status(en);
                 G.sfx.Play("hit", 0.6f, 0.8f);
                 G.fx.Burst(tip, 8, en.blood, 4f, 0.3f, 6f);
                 if (ghost) { fade = Mathf.Max(fade, 0f); return true; }
                 if (st == St.Returning) continue;
-                if (en.dead) { Drop(vel * 0.2f); return true; }
+                if (en.dead) { if (explodes && boomT < 0f) boomT = 1f; Drop(vel * 0.2f); return true; }
                 StickFoe(en);
                 return true;
             }
@@ -364,6 +414,7 @@ namespace DigDeep
             foeOff = pos - en.pos; foeAng = ang;
             vel = Vector2.zero; spin = 0f;
             flightT = life;
+            if (explodes && boomT < 0f) { boomT = 1f; G.sfx.Play("fuse", 0.4f, 1.3f); }
             Settled();
         }
 
@@ -487,6 +538,7 @@ namespace DigDeep
                 float ax = pos.x - dd.x * len * 0.5f, bx = pos.x + dd.x * len * 0.5f;
                 platX0 = Mathf.Min(ax, bx); platX1 = Mathf.Max(ax, bx);
                 platTop = pos.y + 0.06f * size;
+                platK = 0f; platA = platTop;
                 IsPlatform = DryPart();
                 return;
             }
@@ -498,9 +550,10 @@ namespace DigDeep
             platX0 = Mathf.Min(tail.x, face);
             platX1 = Mathf.Max(tail.x, face);
             if (platX1 - platX0 < 0.2f) return;
-            float midX = (platX0 + platX1) * 0.5f;
-            float t = Mathf.Abs(d.x) > 0.01f ? (midX - pos.x) / d.x : 0f;
-            platTop = pos.y + d.y * t + 0.06f * size;
+            // the ledge follows the shaft: a slanted spear makes a slanted ledge
+            platK = Mathf.Abs(d.x) > 0.01f ? d.y / d.x : 0f;
+            platA = pos.y - platK * pos.x + 0.06f * size;
+            platTop = Mathf.Max(TopAt(platX0), TopAt(platX1));
             IsPlatform = DryPart();
         }
 
@@ -536,7 +589,9 @@ namespace DigDeep
             {
                 if (s.dead || !s.IsPlatform) continue;
                 if (p.x + h.x <= s.platX0 || p.x - h.x >= s.platX1) continue;
-                if (feetFrom >= s.platTop - 0.02f && feetTo <= s.platTop + 0.001f) { top = s.platTop; return true; }
+                float t = s.TopAt(p.x);
+                float tol = 0.02f + Mathf.Min(1.5f, Mathf.Abs(s.platK)) * 0.3f;   // (walking up a slanted one: the feet may dip under it a touch)
+                if (feetFrom >= t - tol && feetTo <= t + 0.001f) { top = t; return true; }
             }
             return false;
         }

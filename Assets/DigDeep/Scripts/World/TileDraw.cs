@@ -22,7 +22,7 @@ namespace DigDeep
                 case Block.Obsidian: return obsC;
                 case Block.Bedrock: return bedrockC;
                 case Block.Wood: return U.C(160, 104, 60);
-                case Block.Brick: return brickC;
+                case Block.Brick: return Color32.Lerp(brickC, b.stone, 0.35f);   // each biome's bricks take on its stone
                 case Block.GildBrick: return U.C(214, 168, 64);
                 case Block.Sand: return sandC;
                 case Block.Magma: return magmaC;
@@ -41,6 +41,9 @@ namespace DigDeep
                 case Block.Spikes: return U.C(180, 180, 190);
                 case Block.Seal: return U.C(70, 24, 96);
                 case Block.DarkMatter: return U.C(26, 14, 38);
+                case Block.Cloud: case Block.CloudGold: return U.C(232, 240, 255);
+                case Block.Coral: return U.C(255, 120, 140);
+                case Block.Leaf: return b.plant;
                 default: return b.bg;
             }
         }
@@ -85,6 +88,7 @@ namespace DigDeep
                 if (n > 0.996f) return U.C(230, 230, 255);
                 return sky;
             }
+            if (Shelter.WallPx(wx, wy, gx, gy, out var shelterPx)) return shelterPx;   // a shelter's back wall
             if (World.Void)
             {
                 // the void: near-black, crumbling into bands of loose squares (dissolving gradients)
@@ -100,10 +104,117 @@ namespace DigDeep
             int lv = cl < 0.3f ? 1 : 2;
             if (fine < 0.08f) lv = 0;
             else if (fine > 0.94f) lv = 3;
-            return Pal.Ramp(b.bg, lv);
+            Color32 c = Pal.Ramp(b.bg, lv);
+            // and each biome's own back wall (Noita-style: shapes you can read in the dark behind the play space)
+            if (b.idx >= Biomes.Cloud) return BiomeTiles.Bg(b, c, lv, gx, gy, fine);
+            switch (b.idx)
+            {
+                case Biomes.Topsoil:
+                    {
+                        // a cave wall: big rough rocks fitted together, lit from above, broken dark cracks between them
+                        const int CS = 26;
+                        int ccx = U.FloorDiv(gx, CS), ccy = U.FloorDiv(gy, CS);
+                        float d1 = 1e9f, d2 = 1e9f, fx1 = 0f, fy1 = 0f; int hx = 0, hy = 0;
+                        for (int j = -1; j <= 1; j++)
+                            for (int i = -1; i <= 1; i++)
+                            {
+                                int qx = ccx + i, qy = ccy + j;
+                                float fx = qx * CS + U.H01(qx, qy, 60) * CS, fy = qy * CS + U.H01(qx, qy, 61) * CS;
+                                float d = (gx - fx) * (gx - fx) + (gy - fy) * (gy - fy) * 1.35f;   // (rocks a bit wider than tall)
+                                if (d < d1) { d2 = d1; d1 = d; fx1 = fx; fy1 = fy; hx = qx; hy = qy; }
+                                else if (d < d2) d2 = d;
+                            }
+                        float edge = Mathf.Sqrt(d2) - Mathf.Sqrt(d1);
+                        int rl = lv == 0 ? 1 : lv;
+                        if (U.H01(hx, hy, 62) < 0.35f) rl = Mathf.Max(1, rl - 1);                    // some rocks darker than others
+                        float shade = (gy - fy1) / CS - (gx - fx1) / CS * 0.4f;                       // lit from above and to the left
+                        if (edge < 1.1f && U.H01(gx >> 2, gy >> 2, 63) < 0.8f) rl = 0;                // the crack (broken up now and then)
+                        else
+                        {
+                            if (shade > 0.3f && edge > 4f) rl = Mathf.Min(3, rl + 1);
+                            if (edge < 2.6f) rl = Mathf.Max(0, rl - 1);                               // the rock's rim falls into shadow
+                            if (fine < 0.06f) rl = Mathf.Max(0, rl - 1);                              // pits
+                        }
+                        if (U.H01(gx >> 1, gy >> 1, 40) > 0.993f) return Color32.Lerp(Pal.Ramp(b.bg, 3), b.dirt, 0.3f);   // a pebble of earth
+                        return Pal.Ramp(b.bg, rl);
+                    }
+                case Biomes.Jungle:
+                    {
+                        // hanging vines and big dim leaves
+                        int vx = (gx >> 3) * 8 + 3 + (int)(1.5f * Mathf.Sin(gy * 0.2f + (gx >> 3)));
+                        if (Mathf.Abs(gx - vx) <= 0 && U.H01(gx >> 3, gy >> 6, 42) < 0.33f) return Color32.Lerp(c, Pal.Ramp(b.plant, 0), 0.45f);
+                        float leaf = Mathf.Sin(gx * 0.09f + Mathf.Sin(gy * 0.05f) * 2f) * Mathf.Sin(gy * 0.08f + gx * 0.02f);
+                        if (leaf > 0.62f) return Color32.Lerp(c, Pal.Ramp(b.plant, 1), leaf > 0.78f ? 0.32f : 0.2f);
+                        return c;
+                    }
+                case Biomes.Fungal:
+                    {
+                        // giant mushrooms far behind, their caps speckled with glowing spots, and drifting spores
+                        int mx = (int)Mathf.Floor(gx / 48f), my = (int)Mathf.Floor(gy / 64f);
+                        int lx = gx - mx * 48, ly = gy - my * 64;
+                        if (U.H01(mx, my, 43) < 0.5f)
+                        {
+                            int sw = 2 + (int)(U.H01(mx, my, 44) * 3f);
+                            float capY = 40f + U.H01(mx, my, 45) * 10f, capW = 14f + U.H01(mx, my, 46) * 8f;
+                            bool stem = Mathf.Abs(lx - 24) <= sw && ly < capY;
+                            float u = (lx - 24) / capW, v = (ly - capY) / 9f;
+                            bool capP = ly >= capY - 1 && u * u + v * v < 1f;
+                            if (capP)
+                            {
+                                if (U.H01(gx >> 1, gy >> 1, 47) > 0.93f) return Color32.Lerp(b.rim, Pal.Ramp(b.bg, 3), 0.35f);   // glowing spots
+                                return Pal.Ramp(Color32.Lerp(b.bg, b.dirt, 0.35f), v > 0.3f ? 3 : 2);
+                            }
+                            if (stem) return Pal.Ramp(Color32.Lerp(b.bg, b.stone, 0.3f), lx < 24 ? 2 : 1);
+                        }
+                        if (U.H01(gx, gy, 48) > 0.9975f) return b.plant;   // a drifting spore
+                        return c;
+                    }
+                case Biomes.Crystal:
+                    {
+                        // crystal shards jutting through the back wall, and sparkles
+                        int sx = gx >> 5, sy = gy >> 5;
+                        if (U.H01(sx, sy, 49) < 0.4f)
+                        {
+                            int lx = gx & 31, ly = gy & 31;
+                            float axis = (lx - 16) + (ly - 16) * (U.H01(sx, sy, 50) < 0.5f ? 0.55f : -0.55f);
+                            if (Mathf.Abs(axis) < 3.5f && ly > 4 && ly < 28)
+                                return Color32.Lerp(c, axis < -1.5f ? b.crystal : Pal.Ramp(b.crystal, 1), axis < -1.5f ? 0.38f : 0.22f);
+                        }
+                        if (U.H01(gx, gy, 51) > 0.997f) return b.crystal;
+                        return c;
+                    }
+                case Biomes.Storm:
+                    {
+                        // jagged cracks lit faintly by the lightning, and slanting streaks of seeping water
+                        int zx = (gx >> 4) * 16 + 8 + (((gy >> 2) & 1) == 0 ? 2 : -2) + (int)(3f * Mathf.Sin(gy * 0.05f));
+                        if (Mathf.Abs(gx - zx) < 1 && U.H01(gx >> 4, gy >> 5, 52) < 0.18f) return Color32.Lerp(c, b.rim, 0.28f);
+                        if ((gx * 3 + gy + 9000) % 23 == 0 && U.H01(gx >> 2, gy >> 4, 53) < 0.3f) return Pal.Ramp(b.bg, 3);
+                        return c;
+                    }
+                case Biomes.Magma:
+                    {
+                        // dark ash rock threaded with glowing veins, and the odd ember
+                        float vn = Mathf.Abs(Mathf.Sin(gx * 0.11f + Mathf.Sin(gy * 0.07f) * 3f) + Mathf.Sin(gy * 0.13f + gx * 0.02f));
+                        if (vn < 0.06f) return Color32.Lerp(c, U.C(255, 110, 40), 0.45f);
+                        if (vn < 0.13f) return Color32.Lerp(c, U.C(200, 60, 30), 0.2f);
+                        if (U.H01(gx, gy, 54) > 0.997f) return U.C(255, 150, 60);
+                        return c;
+                    }
+                case Biomes.Kingdom:
+                    {
+                        // ancient masonry: big dressed stones in courses, each its own shade
+                        int course = (int)Mathf.Floor(gy / 12f), off = (course & 1) * 12;
+                        int lx = ((gx + off) % 24 + 24) % 24, ly = ((gy % 12) + 12) % 12;
+                        if (ly == 0 || lx == 0) return Pal.Ramp(b.bg, 0);
+                        int sl = U.H01((gx + off) / 24, course, 55) < 0.4f ? 1 : 2;
+                        if (fine > 0.95f) sl = 3;
+                        return Pal.Ramp(b.bg, sl);
+                    }
+            }
+            return c;
         }
 
-        static void Put(Color32[] buf, int stride, int ox, int oy, int px, int py, Color32 c)
+        public static void Put(Color32[] buf, int stride, int ox, int oy, int px, int py, Color32 c)
         {
             if (px < 0 || px > 15 || py < 0 || py > 15) return;
             buf[(oy + py) * stride + ox + px] = c;
@@ -113,7 +224,7 @@ namespace DigDeep
         {
             if (t == Block.Boulder) { wx = 3; wy = -3; }   // every boulder looks the same, so one that rolls and settles doesn't change its face
             if (t == Block.Bedrock) t = Block.DarkMatter;   // world walls and floors look like the void, not like background rock
-            bool full = Tiles.Solid(t) && t != Block.Chest && t != Block.Boulder && t != Block.Crate && t != Block.Supply && t != Block.Glass;
+            bool full = Tiles.Solid(t) && t != Block.Chest && t != Block.Boulder && t != Block.Crate && t != Block.Supply && t != Block.Glass && t != Block.Cloud && t != Block.CloudGold && t != Block.Leaf && t != Block.Coral;
             Color32 rim = RimColor(t, b);
             Color32 baseC = BaseColor(t, b);
             for (int py = 0; py < 16; py++)
@@ -137,7 +248,10 @@ namespace DigDeep
                 case Block.Chest: Chest(buf, stride, ox, oy); break;
                 case Block.Supply: Supply(buf, stride, ox, oy); break;
                 case Block.Crate: Crate(buf, stride, ox, oy, Crates.RarityAt(wx, wy)); break;
-                case Block.Boulder: Boulder(buf, stride, ox, oy, wx, wy); break;
+                case Block.Boulder: if (b.idx == Biomes.Beach) Coconut(buf, stride, ox, oy, wx, wy); else Boulder(buf, stride, ox, oy, wx, wy); break;
+                case Block.Cloud: case Block.CloudGold: BiomeTiles.Cloud(buf, stride, ox, oy, wx, wy, mask, t == Block.CloudGold); break;
+                case Block.Coral: BiomeTiles.Coral(buf, stride, ox, oy, wx, wy, mask); break;
+                case Block.Leaf: BiomeTiles.Leaf(buf, stride, ox, oy, wx, wy, mask, b); break;
                 case Block.Gold: Nuggets(buf, stride, ox, oy, wx, wy); break;
                 case Block.Gem: Gems(buf, stride, ox, oy, wx, wy); break;
             }
@@ -252,8 +366,10 @@ namespace DigDeep
                     {
                         int px = (int)((h >> (4 + k * 4)) & 15);
                         int ht = 1 + (int)((h >> (16 + k * 2)) & 3);
+                        // (each biome's own: ash in the magma core, crystal grit in the depths, dry stalks in the storm)
+                        Color32 tuft = b.idx == Biomes.Magma ? U.C(96, 84, 90) : b.idx == Biomes.Crystal ? b.crystal : b.idx == Biomes.Storm ? U.C(170, 160, 116) : b.plant;
                         for (int i = 0; i < ht; i++)
-                            Put(buf, stride, ox, oy, px, i, i == ht - 1 ? Pal.Ramp(b.plant, 4) : i == 0 ? Pal.Ramp(b.plant, 1) : b.plant);
+                            Put(buf, stride, ox, oy, px, i, i == ht - 1 ? Pal.Ramp(tuft, 4) : i == 0 ? Pal.Ramp(tuft, 1) : tuft);
                     }
                 }
                 if (((h >> 26) % 9) == 0 && wy < 0)
@@ -282,6 +398,20 @@ namespace DigDeep
         // A patch of grass growing on the block below: dense blades of varying height, light tips.
         static void GrassPatch(Color32[] buf, int stride, int ox, int oy, int wx, int wy, Biome b)
         {
+            // every biome grows its own: glowing mushrooms in the fungal hollows, crystal sprouts in the depths, dry
+            // grass in the storm caverns, ash and embers in the magma core, moss and tiny white flowers in the kingdom,
+            // and tall grass and ferns in the jungle (the topsoil keeps its meadows)
+            switch (b.idx)
+            {
+                case Biomes.Fungal: GlowShrooms(buf, stride, ox, oy, wx, wy, b); return;
+                case Biomes.Crystal: CrystalSprouts(buf, stride, ox, oy, wx, wy, b); return;
+                case Biomes.Magma: AshAndEmbers(buf, stride, ox, oy, wx, wy); return;
+                case Biomes.Storm: DryGrass(buf, stride, ox, oy, wx, wy, b); return;
+                case Biomes.Kingdom: MossAndStars(buf, stride, ox, oy, wx, wy, b); return;
+                case Biomes.Jungle: JungleGrass(buf, stride, ox, oy, wx, wy, b); return;
+                case Biomes.Cloud: case Biomes.Crimson: case Biomes.Beach: case Biomes.Neon: case Biomes.Reef:
+                    BiomeTiles.Grass(buf, stride, ox, oy, wx, wy, b); return;
+            }
             Color32 dark = Pal.Ramp(b.plant, 1), mid = b.plant, lit = Pal.Ramp(b.plant, 3), tip = Pal.Ramp(b.plant, 4);
             for (int px = 0; px < 16; px++)
             {
@@ -291,15 +421,148 @@ namespace DigDeep
                 for (int py = 0; py < ht; py++)
                     Put(buf, stride, ox, oy, px, py, py == ht - 1 ? (((h >> 12) & 1) == 0 ? tip : lit) : py == 0 ? dark : mid);
             }
-            // the odd flower
+            // FLOWER SPOTS: here and there a little meadow, a few blocks wide, where the grass is full of flowers of one
+            // or two colours; elsewhere just the odd one
+            uint spot = U.Hash((wx + 1000) >> 2, wy, 77);
+            bool meadow = spot % 4 == 0;
             uint f = U.Hash(wx, wy, 24);
-            if (f % 5 == 0)
+            int count = meadow ? 2 + (int)((f >> 20) % 3) : (f % 5 == 0 ? 1 : 0);
+            Color32[] petals = { U.C(255, 220, 110), U.C(255, 130, 170), U.C(250, 250, 245), U.C(190, 140, 255), U.C(120, 190, 255), U.C(255, 150, 90) };
+            int c1 = (int)((spot >> 5) % (uint)petals.Length), c2 = (int)((spot >> 9) % (uint)petals.Length);
+            for (int k = 0; k < count; k++)
             {
+                uint fk = U.Hash(wx * 7 + k, wy, 25);
+                int fx = 2 + (int)((fk >> 4) % 12);
+                if (count > 1) fx = 2 + k * (12 / count) + (int)((fk >> 4) % (uint)Mathf.Max(1, 12 / count - 1));
+                Color32 petal = meadow ? petals[(fk >> 8) % 3 == 0 ? c2 : c1] : petals[(fk >> 8) % 2];
+                int stem = 3 + (int)((fk >> 12) % 3);   // stems of different heights
+                for (int py = 0; py < stem; py++) Put(buf, stride, ox, oy, fx, py, dark);
+                switch ((fk >> 16) % 3)
+                {
+                    case 0:   // a daisy: petals round a pale heart
+                        Put(buf, stride, ox, oy, fx, stem + 1, petal); Put(buf, stride, ox, oy, fx - 1, stem, petal); Put(buf, stride, ox, oy, fx + 1, stem, petal);
+                        Put(buf, stride, ox, oy, fx, stem - 1, petal); Put(buf, stride, ox, oy, fx, stem, U.C(255, 240, 160));
+                        break;
+                    case 1:   // a tulip: a little cup
+                        Put(buf, stride, ox, oy, fx - 1, stem, petal); Put(buf, stride, ox, oy, fx + 1, stem, petal);
+                        Put(buf, stride, ox, oy, fx - 1, stem + 1, petal); Put(buf, stride, ox, oy, fx + 1, stem + 1, petal);
+                        Put(buf, stride, ox, oy, fx, stem, Pal.Shade(petal, 0.8f));
+                        break;
+                    default:  // a bud: a single bright dot with a leaf
+                        Put(buf, stride, ox, oy, fx, stem, petal); Put(buf, stride, ox, oy, fx, stem + 1, Pal.Shade(petal, 1.15f));
+                        Put(buf, stride, ox, oy, fx + 1, 1, lit);
+                        break;
+                }
+            }
+        }
+
+        // GLOWING MUSHROOMS (the fungal hollows' grass): little pale stalks with bright caps that light the dark
+        static void GlowShrooms(Color32[] buf, int stride, int ox, int oy, int wx, int wy, Biome b)
+        {
+            uint h = U.Hash(wx, wy, 31);
+            int n = 2 + (int)(h % 3);
+            Color32 stalk = U.C(214, 206, 222), stalkD = U.C(150, 140, 170);
+            Color32[] caps = { b.plant, b.rim, Pal.Ramp(b.plant, 3) };
+            for (int k = 0; k < n; k++)
+            {
+                uint hk = U.Hash(wx * 5 + k, wy, 32);
+                int fx = 1 + k * (14 / n) + (int)((hk >> 3) % (uint)Mathf.Max(1, 14 / n - 2));
+                int ht = 2 + (int)((hk >> 7) % 5);
+                Color32 cap = caps[(hk >> 11) % 3];
+                for (int py = 0; py < ht; py++) Put(buf, stride, ox, oy, fx, py, py == 0 ? stalkD : stalk);
+                bool big = ((hk >> 14) & 3) == 0;
+                int cw = big ? 2 : 1;
+                for (int dx = -cw; dx <= cw; dx++) Put(buf, stride, ox, oy, fx + dx, ht, Pal.Ramp(cap, 1));
+                for (int dx = -cw + 1; dx <= cw - 1; dx++) Put(buf, stride, ox, oy, fx + dx, ht + 1, cap);
+                Put(buf, stride, ox, oy, fx, ht + (big ? 1 : 0), Pal.Ramp(cap, 4));   // the bright heart of the glow
+            }
+        }
+
+        // CRYSTAL SPROUTS: thin shards poking up out of the rock
+        static void CrystalSprouts(Color32[] buf, int stride, int ox, int oy, int wx, int wy, Biome b)
+        {
+            uint h = U.Hash(wx, wy, 33);
+            int n = 1 + (int)(h % 3);
+            for (int k = 0; k < n; k++)
+            {
+                uint hk = U.Hash(wx * 7 + k, wy, 34);
+                int fx = 2 + (int)((hk >> 3) % 12), ht = 2 + (int)((hk >> 8) % 5);
+                int lean = (int)((hk >> 12) % 3) - 1;
+                for (int py = 0; py < ht; py++)
+                {
+                    int x = fx + (py * lean) / 3;
+                    Put(buf, stride, ox, oy, x, py, py == ht - 1 ? Pal.Ramp(b.crystal, 4) : Pal.Ramp(b.crystal, 2));
+                    if (py < ht - 2) Put(buf, stride, ox, oy, x + 1, py, Pal.Ramp(b.crystal, 1));
+                }
+            }
+        }
+
+        // ASH AND EMBERS (the magma core: nothing grows): grey drifts with a few glowing coals
+        static void AshAndEmbers(Color32[] buf, int stride, int ox, int oy, int wx, int wy)
+        {
+            for (int px = 0; px < 16; px++)
+            {
+                uint h = U.Hash(wx * 16 + px, wy, 35);
+                int ht = (int)(h % 3);
+                for (int py = 0; py < ht; py++) Put(buf, stride, ox, oy, px, py, py == ht - 1 ? U.C(110, 96, 100) : U.C(70, 60, 66));
+                if (h % 23 == 0) Put(buf, stride, ox, oy, px, ht, U.C(255, 140, 50));
+            }
+        }
+
+        // DRY GRASS (the storm caverns): sparse pale tufts, no flowers
+        static void DryGrass(Color32[] buf, int stride, int ox, int oy, int wx, int wy, Biome b)
+        {
+            Color32 dry = U.C(176, 168, 120), dryD = U.C(120, 112, 86);
+            for (int px = 0; px < 16; px++)
+            {
+                uint h = U.Hash(wx * 16 + px, wy, 36);
+                if (h % 3 != 0) continue;
+                int ht = 1 + (int)((h >> 3) % 4);
+                for (int py = 0; py < ht; py++) Put(buf, stride, ox, oy, px + (py == ht - 1 && (h & 64) != 0 ? 1 : 0), py, py == 0 ? dryD : dry);
+            }
+        }
+
+        // MOSS AND STARS (the forgotten kingdom): a soft carpet of moss with tiny white star-flowers
+        static void MossAndStars(Color32[] buf, int stride, int ox, int oy, int wx, int wy, Biome b)
+        {
+            Color32 moss = Pal.Ramp(b.plant, 1), mossL = b.plant;
+            for (int px = 0; px < 16; px++)
+            {
+                uint h = U.Hash(wx * 16 + px, wy, 37);
+                int ht = 1 + (int)(h % 2);
+                for (int py = 0; py < ht; py++) Put(buf, stride, ox, oy, px, py, py == ht - 1 ? mossL : moss);
+                if (h % 11 == 0) { Put(buf, stride, ox, oy, px, ht + 1, U.C(250, 250, 240)); Put(buf, stride, ox, oy, px, ht, mossL); }
+            }
+        }
+
+        // JUNGLE GRASS: tall and thick, with fern fronds and the odd bright tropical flower
+        static void JungleGrass(Color32[] buf, int stride, int ox, int oy, int wx, int wy, Biome b)
+        {
+            Color32 dark = Pal.Ramp(b.plant, 1), mid = b.plant, lit = Pal.Ramp(b.plant, 3);
+            for (int px = 0; px < 16; px++)
+            {
+                uint h = U.Hash(wx * 16 + px, wy, 38);
+                int ht = 3 + (int)(h % 6);
+                for (int py = 0; py < ht; py++) Put(buf, stride, ox, oy, px, py, py == ht - 1 ? lit : py < 2 ? dark : mid);
+            }
+            uint f = U.Hash(wx, wy, 39);
+            if (f % 3 == 0)
+            {
+                // a fern: a curving stem with leaflets both sides
                 int fx = 3 + (int)((f >> 4) % 10);
-                Color32 petal = (f >> 8) % 2 == 0 ? U.C(255, 220, 110) : U.C(255, 130, 170);
-                Put(buf, stride, ox, oy, fx, 5, petal); Put(buf, stride, ox, oy, fx - 1, 4, petal); Put(buf, stride, ox, oy, fx + 1, 4, petal);
-                Put(buf, stride, ox, oy, fx, 4, U.C(255, 250, 220));
-                for (int py = 0; py < 4; py++) Put(buf, stride, ox, oy, fx, py, dark);
+                for (int py = 0; py < 9; py++)
+                {
+                    int x = fx + py / 4;
+                    Put(buf, stride, ox, oy, x, py, dark);
+                    if (py > 2 && (py & 1) == 0) { Put(buf, stride, ox, oy, x - 1, py, mid); Put(buf, stride, ox, oy, x + 1, py + 1, lit); }
+                }
+            }
+            if (f % 7 == 1)
+            {
+                int fx = 2 + (int)((f >> 9) % 12);
+                Color32 petal = (f >> 13) % 2 == 0 ? U.C(255, 90, 60) : U.C(255, 180, 40);
+                for (int py = 0; py < 6; py++) Put(buf, stride, ox, oy, fx, py, dark);
+                Put(buf, stride, ox, oy, fx - 1, 6, petal); Put(buf, stride, ox, oy, fx + 1, 6, petal); Put(buf, stride, ox, oy, fx, 7, petal); Put(buf, stride, ox, oy, fx, 6, U.C(255, 240, 150));
             }
         }
 
@@ -473,7 +736,28 @@ namespace DigDeep
                 }
         }
 
-        static void Nuggets(Color32[] buf, int stride, int ox, int oy, int wx, int wy)
+        // THE BEACH: its boulders are coconuts (brown and hairy, three eyes at one end)
+        static void Coconut(Color32[] buf, int stride, int ox, int oy, int wx, int wy)
+        {
+            const float r = 7.2f;
+            Color32 husk = U.C(122, 78, 44);
+            for (int py = 0; py < 16; py++)
+                for (int px = 0; px < 16; px++)
+                {
+                    float dx = px - 7.5f, dy = (py - 7.5f) * 1.08f, d2 = dx * dx + dy * dy;
+                    if (d2 > r * r) continue;
+                    float lt = (py - px) / 15f + 0.5f;
+                    int lv = lt > 0.8f ? 3 : lt > 0.45f ? 2 : lt > 0.2f ? 1 : 0;
+                    if (d2 > (r - 1.2f) * (r - 1.2f)) lv = Mathf.Max(0, Mathf.Min(lv, 1) - (lt < 0.5f ? 1 : 0));
+                    Color32 c = Pal.Ramp(husk, lv);
+                    if (U.H01(wx * 16 + px, wy * 16 + py, 43) > 0.86f) c = Pal.Ramp(husk, Mathf.Max(0, lv - 1));   // hairy fibres
+                    Put(buf, stride, ox, oy, px, py, c);
+                }
+            // three dark eyes near the top
+            Put(buf, stride, ox, oy, 6, 11, U.C(40, 24, 16)); Put(buf, stride, ox, oy, 9, 11, U.C(40, 24, 16)); Put(buf, stride, ox, oy, 7, 9, U.C(40, 24, 16));
+        }
+
+        public static void Nuggets(Color32[] buf, int stride, int ox, int oy, int wx, int wy)
         {
             for (int k = 0; k < 4; k++)
             {

@@ -64,6 +64,7 @@ namespace DigDeep
             R("plasma", 0.25f, Takes("Big_laserShoot", 4), Takes("big_single_laser_submerged", 4));
             R("laserbig", 0.2f, Takes("big_single_laser", 5), Takes("big_single_laser_submerged", 4));
             R("laser", 0f, Takes("laserShoot", 4), Takes("laserShoot_submerged", 3));
+            R("shotgun", 0.2f, new[] { "shotgun1", "shotgun2", "shotgun3", "shotgun4" }, Takes("under_water_explosion", 4));   // (under water: a muffled underwater blast)   // a fat boom with the synth crack under it
             R("pistol", 0.35f, Takes("big_pistol_fire", 2), Takes("pistol_submerged", 4));
             R("launcher", 0.35f, new[] { "grenade_launcher_fire" });
             R("rocket", 0.3f, Takes("rocket_launcher_fire", 5));

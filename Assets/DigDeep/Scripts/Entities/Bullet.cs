@@ -36,6 +36,7 @@ namespace DigDeep
 
         public override bool AlwaysActive => true;
 
+
         // ---------------------------------------------------------------- player shot
         public Bullet(Player p, Weapon w, Vector2 at, Vector2 v, bool echo)
         {
@@ -53,14 +54,14 @@ namespace DigDeep
             bounces = d.bounces + (w.Has(Mod.Ricochet) ? 1 : 0);
             mine = d.mine;
             blockPierce = d.blockPierce;
-            wallBreaker = w.Has(Mod.WallBreaker);
+            wallBreaker = false;   // (WALL-BREAKER became POINT-BLANK)
             radius = d.radius;
             explosive = w.Has(Mod.Explosive);
             grav = d.grav; lob = d.lob; accel = d.accel; flame = d.flame;
             nativeHoming = d.homing;
             homing = d.homing || w.Has(Mod.Homing);
             selfHurt = d.selfHurt;
-            sharp = w.Has(Mod.Sharpshooter);
+            sharp = w.Has(Mod.Sharpshooter) || w.Has(Mod.PointBlank);
             col = echo ? new Color(0.8f, 0.6f, 1f) : crit ? new Color(1f, 0.55f, 0.45f) : d.col;
             main = Art.Bullets.TryGetValue(d.bullet, out var s) ? s : Art.Bullets["b_bullet"];
 
@@ -117,7 +118,7 @@ namespace DigDeep
             if (!homing && ps.softHoming) { homing = true; softHome = true; }
             // the reworked trinkets' shot tricks
             if (ps.fullPierce && p.s.hp >= p.s.maxHp) pierce += 1;                 // STOUT HEART: at full health
-            if (ps.longShots) life *= 1.5f;                                         // NIGHT EYES: shots fly further
+            if (ps.longShots) life *= 1.5f;                                         // BULLET EXTENDER: shots fly further
             if (ps.lanternShots) lanternLit = true;                                 // LANTERN OIL: shots light the dark
             if (ps.lastShots && w != null && w.def.mag > 0 && w.ammo == 0) { dmg *= 2f; size *= 1.3f; }   // TERMINAL ROUND: the last round in the mag
             if (ps.critPierce && crit) pierce += 2;                                 // SHARP EDGE: crits pierce
@@ -178,6 +179,7 @@ namespace DigDeep
             ApplyExtraEffects(p, w, d);
             // and they take on the colour of every damage type they carry, from items and weapon modifiers alike
             if (!special) { var t = FxTint(col); tinted = t != col || laser; col = t; }
+            if (rainbowCol.HasValue) { col = rainbowCol.Value; tinted = true; }   // HEART OF IRIS: its colour of the rainbow
         }
 
         // SHRAPNEL PRISM: a laser thrown out of a blast. It never explodes into more lasers (DEATH STAR: it does explode).
@@ -491,7 +493,6 @@ namespace DigDeep
                 return false;
             }
             // (the void's walls are just unbreakable: shots bounce off them, arrows and spears stick in them)
-            if (skip && SkipOff(prev, cx, cy)) return !dead;   // SKIPPING: off the floor like a stone off water
             Wd.Impact(cx, cy, 99f);   // shots always set off TNT
             if (b == Block.Ice && (flame || main == Art.Bullets["b_fire"]))
             {
@@ -655,7 +656,7 @@ namespace DigDeep
                 if (!pl.Invulnerable)
                 {
                     if (team == Team.Player) Player.Cause = "YOUR OWN SHOT";
-                    pl.Hurt(team == Team.Player ? 50 : playerDmg, pos);
+                    pl.Hurt(team == Team.Player ? Player.Haz(25) : playerDmg, pos);
                     if (team != Team.Player && main == Art.Bullets["b_fire"]) pl.SetOnFire();   // fireballs set you alight
                     if (poison) pl.Poison(3f);                                                  // jungle seeds poison you
                     if (chills) pl.Chill(2.5f);
@@ -694,7 +695,7 @@ namespace DigDeep
                 float d = dmg;
                 if (owner != null && team == Team.Player) d *= owner.Backstab(en);   // AMBUSH
                 bool weak = false;
-                if (sharp && (pos - en.pos).magnitude < Mathf.Min(en.half.x, en.half.y) * 0.55f + 0.12f) { d *= 2.2f; weak = true; }
+                if (sharp && owner != null) { float rm = Mods.RangeMul(w, owner.pos, pos); if (rm > 1f) { d *= rm; weak = true; } }
                 if (en.Poisoned) d *= 1.25f;
                 Vector2 dir = vel.normalized;
                 Enemy.ArrowKill = arrow;
@@ -709,7 +710,7 @@ namespace DigDeep
                     if (petShot) Pets.Status(en, d);
                     else OnHitExtras(en, d, dir);
                     if (crit) G.Popup(en.pos + Vector2.up * 0.8f, "CRIT!", new Color(1f, 0.4f, 0.3f));
-                    else if (weak) G.Popup(en.pos + Vector2.up * 0.8f, "WEAK SPOT!", Mods.Col(Mod.Sharpshooter));
+                    else if (weak) G.Popup(en.pos + Vector2.up * 0.8f, (owner.pos - pos).magnitude <= Mods.CloseRange ? "POINT BLANK!" : "LONG SHOT!", Mods.Col(Mod.Sharpshooter));
                     if (knock >= 10f) G.HitStop(0.025f);
                 }
                 if (explosive) ModBlast(pos);
@@ -1049,7 +1050,7 @@ namespace DigDeep
             }
             if (!resting)
             {
-                vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 38f * dt, -22f), dt);
+                vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 38f * dt, -22f), dt); vel.x = Fluids.Drag(pos, vel.x, dt);
                 float sp = vel.magnitude;
                 Vector2 p = pos;
                 if (Wd.MoveX(ref p, H, vel.x * dt, out var hx))

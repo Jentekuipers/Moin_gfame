@@ -21,8 +21,11 @@ namespace DigDeep
             if (CoinShine != null) Coin = CoinShine[0];
             var fire = Load("fire", 6, false, false);
             if (fire != null) Flames = fire;
+            FlamesOut = new Sprite[3][];
+            for (int k = 0; k < 3; k++) FlamesOut[k] = Load("fire_out" + (k + 1), 6, false, false);
             var keeper = Load("shopkeeper", 2, true, false);
-            KeeperOld = Keeper;   // the old generated keeper runs the premium shops
+            KeeperOld = Keeper;   // the old generated keeper (fallback for the premium shops)
+            KeeperFancy = Load("merchant_fancy", 2, true, false);
             if (keeper != null) Keeper = keeper[0];
             Enemy["toxictoad"] = Load("frog", 2, true, true, "toxictoad");
 
@@ -44,6 +47,12 @@ namespace DigDeep
             if (!Enemy.ContainsKey("creatorhand")) { Enemy["creatorhand"] = Enemy["godhand"]; EnemyWhite["creatorhand"] = EnemyWhite["godhand"]; }
             Enemy["glider"] = Load("glider", 2, true, true, "glider");
             Enemy["wolf"] = Load("wolf", 2, true, false, "wolf");
+            // the bandits (melee, three kinds in four clans) and the restyled raiders that come down with them
+            foreach (var bt in new[] { "sword", "axe", "dagger" })
+                for (int clan = 0; clan < 4; clan++) { string bk = "bandit_" + bt + "_" + clan; Enemy[bk] = Load(bk, 2, true, false, bk); }
+            foreach (var gk in new[] { "raider2", "brute2", "marksman2", "bomber2" }) Enemy[gk] = Load("gun_" + gk, 2, true, false, gk);
+            Enemy["mole_bandit"] = Load("mole_bandit", 2, false, true, "mole_bandit");   // (drawn over your own mole, with the outline already on)
+            Enemy["mole_miner"] = Load("mole_miner", 2, false, true, "mole_miner");
             Enemy["rockmage"] = Load("rock_mage", 1, true, false, "rockmage");
             Enemy["mushelite"] = Load("mush_elite", 1, true, false, "mushelite");
             Enemy["boneslime"] = Load("bslime_idle", 4, true, false, "boneslime");

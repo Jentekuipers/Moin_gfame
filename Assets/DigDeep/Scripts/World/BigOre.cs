@@ -9,7 +9,7 @@ namespace DigDeep
     public static class BigOre
     {
         const int Cell2 = 10, Cell4 = 24, Cell6 = 40;   // placement grids
-        const float Chance2 = 0.055f, Chance4 = 0.025f, Chance6 = 0.006f;
+        const float Chance2 = 0.035f, Chance4 = 0.012f, Chance6 = 0.003f;   // (rarer than they were)
         const int MinDepth2 = Gen.CampFloor + 5, MinDepth4 = 40, MinDepth6 = 80;
 
         public static bool Is(Block b) => b == Block.BigGold2 || b == Block.BigGold4 || b == Block.BigGold6;
@@ -95,28 +95,19 @@ namespace DigDeep
                                 float dmg, int ox, int od, Biome bio)
         {
             int N = size * 16;
-            float R = size == 6 ? 13f : size == 4 ? 9f : 5f;
-            float half = (N - 1) * 0.5f;
             int level = Mathf.Clamp(Mathf.CeilToInt(dmg * 12f), 0, 12);
             var cracks = level > 0 ? Cracks(size, ox, od, level) : null;
-            Color32 stone = bio.stone, outline = U.C(84, 52, 12), crackC = U.C(64, 34, 8), deep = U.C(186, 126, 28);
+            Color32 crackC = U.C(64, 34, 8), deep = U.C(186, 126, 28);
             Color32 gold = b == Block.BigGold6 ? U.C(255, 200, 70) : b == Block.BigGold4 ? U.C(244, 186, 52) : U.C(232, 178, 48);
 
             for (int py = 0; py < 16; py++)
                 for (int px = 0; px < 16; px++)
                 {
                     int X = cx * 16 + px, Y = cyUp * 16 + py;
-                    float qx = Mathf.Max(Mathf.Abs(X - half) - (half - R), 0f);
-                    float qy = Mathf.Max(Mathf.Abs(Y - half) - (half - R), 0f);
-                    float d = Mathf.Sqrt(qx * qx + qy * qy);
                     Color32 c;
-                    if (d > R)
-                    {
-                        // corners show the rock it's embedded in
-                        float s0 = 0.8f + 0.3f * U.H01(X >> 2, Y >> 2, 5);
-                        c = U.Mul(stone, s0);
-                    }
-                    else if (d > R - 1.2f) c = outline;
+                    // (no rounded rock corners or dark rim any more: the deposit fills its whole square, its edge just
+                    // a touch darker, so it sits in the rock like any other block)
+                    if (X == 0 || Y == 0 || X == N - 1 || Y == N - 1) c = U.Mul(gold, 0.78f + 0.12f * U.H01(X >> 1, Y >> 1, 75));
                     else
                     {
                         float light = 0.72f + 0.45f * ((Y / (float)N) * 0.6f + (1f - X / (float)N) * 0.4f);

@@ -19,7 +19,7 @@ namespace DigDeep
     // =====================================================================================
     public class Dragon : Boss
     {
-        public enum Elem { Fire, Water, Jungle, Void, Storm }
+        public enum Elem { Fire, Water, Jungle, Void, Storm, Rainbow }
         public enum Atk { None, Inferno, Volley, Breath, Dashes, Flood, Geysers, IceRing, Bubbles, Prey, Dark }
         enum S { Roam, Hide, Rise, Slam, Hover, Breath, WarnDash, Dash, Dive, Flooded, Exit, Prey, Dark }
 
@@ -44,7 +44,11 @@ namespace DigDeep
         static readonly Color FireC = new Color(1f, 0.55f, 0.2f), WaterC = new Color(0.55f, 0.85f, 1f);
 
         static readonly Color JungleC = new Color(0.55f, 1f, 0.35f), VoidC = new Color(0.68f, 0.38f, 1f), StormC = new Color(1f, 0.95f, 0.4f);
-        Color Col => elem == Elem.Fire ? FireC : elem == Elem.Water ? WaterC : elem == Elem.Jungle ? JungleC : elem == Elem.Storm ? StormC : VoidC;
+        Color Col => elem == Elem.Fire ? FireC : elem == Elem.Water ? WaterC : elem == Elem.Jungle ? JungleC : elem == Elem.Storm ? StormC : elem == Elem.Rainbow ? RainbowC(rainN) : VoidC;
+        // IRIS, THE RAINBOW DRAGON: every shot the next colour of the rainbow, each with its own sting
+        static readonly Color[] Bow = { new Color(1f, 0.3f, 0.3f), new Color(1f, 0.6f, 0.2f), new Color(1f, 0.95f, 0.3f), new Color(0.35f, 1f, 0.4f), new Color(0.35f, 0.7f, 1f), new Color(0.5f, 0.4f, 1f), new Color(0.85f, 0.4f, 1f) };
+        static Color RainbowC(int n) => Bow[((n % 7) + 7) % 7];
+        int rainN;
         bool Fiery => elem != Elem.Water;   // the jungle and void dragons move like the fire dragon (fast dashes, from the left)
 
         // a shot in its own element: jungle seeds poison, void orbs are dark
@@ -56,6 +60,16 @@ namespace DigDeep
                 case Elem.Void: { var b = Shot(at, v, Art.Circle, VoidC, grav, delay, sc * 0.45f); b.body = new Color(0.35f, 0.15f, 0.6f); return b; }
                 case Elem.Water: return Shot(at, v, Art.Spit, WaterC, grav, delay, sc);
                 case Elem.Storm: { var b = Shot(at, v, Art.Circle, StormC, grav, delay, sc * 0.4f); b.body = new Color(0.5f, 0.85f, 1f); return b; }
+                case Elem.Rainbow:
+                    {
+                        int k = rainN++ % 7;
+                        var b = Shot(at, v, Art.Circle, Bow[k], grav, delay, sc * 0.45f);
+                        b.body = Bow[k];
+                        if (k == 0 || k == 1) b.burns = true;   // red and orange burn
+                        else if (k == 3) b.poison = true;       // green poisons
+                        else if (k == 4 || k == 5) b.chills = true;   // blue and indigo chill
+                        return b;
+                    }
                 default: return Shot(at, v, Art.Fireball, FireC, grav, delay, sc);
             }
         }
@@ -65,9 +79,10 @@ namespace DigDeep
         public Dragon(BossArena a, Elem e, float hp, bool partOfDuo)
         {
             elem = e;
-            string key = e == Elem.Fire ? "firedragon" : e == Elem.Water ? "waterdragon" : e == Elem.Jungle ? "jungledragon" : e == Elem.Storm ? "stormdragon" : "voiddragon";
-            string nm = e == Elem.Fire ? "IGNIS" : e == Elem.Water ? "UNDA" : e == Elem.Jungle ? "VIRIDIS" : e == Elem.Storm ? "VOLTAR" : "NIHIL";
-            string sub = e == Elem.Fire ? "THE FIRE DRAGON" : e == Elem.Water ? "THE WATER DRAGON" : e == Elem.Jungle ? "THE JUNGLE DRAGON" : e == Elem.Storm ? "THE STORM DRAGON" : "THE VOID DRAGON";
+            if (e == Elem.Rainbow) Art.RainbowDragon();
+            string key = e == Elem.Fire ? "firedragon" : e == Elem.Water ? "waterdragon" : e == Elem.Jungle ? "jungledragon" : e == Elem.Storm ? "stormdragon" : e == Elem.Rainbow ? (Art.Enemy.ContainsKey("rainbowdragon") ? "rainbowdragon" : "waterdragon") : "voiddragon";
+            string nm = e == Elem.Fire ? "IGNIS" : e == Elem.Water ? "UNDA" : e == Elem.Jungle ? "VIRIDIS" : e == Elem.Storm ? "VOLTAR" : e == Elem.Rainbow ? "IRIS" : "NIHIL";
+            string sub = e == Elem.Fire ? "THE FIRE DRAGON" : e == Elem.Water ? "THE WATER DRAGON" : e == Elem.Jungle ? "THE JUNGLE DRAGON" : e == Elem.Storm ? "THE STORM DRAGON" : e == Elem.Rainbow ? "THE RAINBOW DRAGON" : "THE VOID DRAGON";
             SetupBoss(nm, sub, key, hp, 2.3f, new Vector2(0.75f, 0.6f), a, new Vector2(e != Elem.Water ? a.MinX - 3f : a.MaxX + 3f, a.FloorY + 3f));
             blood = e == Elem.Fire ? new Color(1f, 0.5f, 0.2f) : e == Elem.Water ? new Color(0.4f, 0.75f, 1f) : e == Elem.Jungle ? new Color(0.5f, 0.9f, 0.3f) : e == Elem.Storm ? new Color(1f, 0.95f, 0.5f) : new Color(0.6f, 0.3f, 1f);
             for (int i = 0; i < 10; i++)
@@ -89,7 +104,14 @@ namespace DigDeep
         public bool mixHeights;                 // the fire dragon's dashes after the water dragon's: other heights, to mix you up
         float dashY2;
         float Spd => (Phase2 ? 8.5f : 7f) * Rage;
-        public override Def Drop => elem == Elem.Jungle || elem == Elem.Void || elem == Elem.Storm ? null : DB.ById.TryGetValue(elem == Elem.Fire ? "heart_ignis" : "heart_unda", out var d) ? d : null;
+        public override Def Drop
+        {
+            get
+            {
+                if (elem == Elem.Rainbow) return Random.value < 0.4f && DB.ById.TryGetValue("heart_iris", out var hi) ? hi : null;   // (only sometimes)
+                return elem == Elem.Jungle || elem == Elem.Void || elem == Elem.Storm ? null : DB.ById.TryGetValue(elem == Elem.Fire ? "heart_ignis" : "heart_unda", out var d) ? d : null;
+            }
+        }
         float H1 => arena.FloorY + 2.6f;                                          // the ledges' height
         float H2 => arena.FloorY + ArenaRoom.IH * 0.66f;                           // two thirds up
         float HalfMinX => zone > 0 ? arena.CenterX : arena.MinX;
@@ -347,7 +369,11 @@ namespace DigDeep
             if ((trail[0] - pos).sqrMagnitude > 0.02f) trail.Insert(0, pos);
             while (trail.Count > 140) trail.RemoveAt(trail.Count - 1);
             PlaceSegments();
+            if (elem == Elem.Rainbow && !enraged) tint = Color.HSVToRGB(Mathf.Repeat(Time.time * 0.22f, 1f), 0.5f, 1f);
             DrawBoss(0f);
+            if (elem == Elem.Rainbow)
+                for (int si = 0; si < segs.Count; si++)
+                    if (segs[si].sr != null && !segs[si].dead) segs[si].sr.color = Color.HSVToRGB(Mathf.Repeat(Time.time * 0.22f - si * 0.06f, 1f), 0.5f, 1f);
             if (dead) return;
             if (sr != null)
             {
@@ -417,6 +443,19 @@ namespace DigDeep
                     case 4: Order(Atk.Volley); break;
                     case 5: Order(Atk.IceRing); break;
                     default: Order(Atk.Breath); break;
+                }
+            }
+            else if (elem == Elem.Rainbow)
+            {
+                // a rainbow volley, circling you breathing colours, a rainbow ring, prisms rising from the floor, dashes
+                switch (solo % 6)
+                {
+                    case 1: Order(Atk.Volley); break;
+                    case 2: Order(Atk.Prey); break;
+                    case 3: Order(Atk.IceRing); break;
+                    case 4: Order(Atk.Geysers); break;
+                    case 5: Order(Atk.Breath); break;
+                    default: Order(Atk.Dashes); break;
                 }
             }
             else if (elem == Elem.Void)

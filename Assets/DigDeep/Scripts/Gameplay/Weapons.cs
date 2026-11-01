@@ -92,7 +92,7 @@ namespace DigDeep
 
     // ===================================================================================== modifiers
 
-    public enum Mod { Homing, Ricochet, Triple, Crit, Pierce, Poison, HighCaliber, Hunter, Sharpshooter, Explosive, WallBreaker, Frost, Chain, Fire, Skip, COUNT }
+    public enum Mod { Homing, Ricochet, Triple, Crit, Pierce, Poison, HighCaliber, Hunter, Sharpshooter, Explosive, PointBlank, Frost, Chain, Fire, AmmoPlus, COUNT }   // (AmmoPlus took the old SKIPPING slot)
 
     public class ModDef : Def { public Mod mod; }
 
@@ -101,7 +101,7 @@ namespace DigDeep
         public const int Max = 3;
 
         public static readonly string[] Names =
-            { "HOMING", "RICOCHET", "TRIPLE", "CRIT", "ALL-PIERCE", "POISON", "HIGH-CALIBER", "HUNTER", "SHARPSHOOTER", "EXPLOSIVE", "WALL-BREAKER", "FROST", "CHAIN", "FIRE", "SKIPPING" };
+            { "HOMING", "RICOCHET", "TRIPLE", "CRIT", "ALL-PIERCE", "POISON", "HIGH-CALIBER", "HUNTER", "SHARPSHOOTER", "EXPLOSIVE", "POINT-BLANK", "FROST", "CHAIN", "FIRE", "AMMO+" };
 
         public static readonly string[] Desc =
         {
@@ -113,16 +113,16 @@ namespace DigDeep
             "POISONED FOES TAKE 25% MORE DAMAGE",
             "HUGE DAMAGE, MUCH SLOWER FIRE RATE",
             "KILL THE MARKED FOE FOR A BUFF",
-            "HIT THE WEAK SPOT FOR A BIG CRIT",
+            "+20% DAMAGE TO FOES HALF A SCREEN AWAY OR MORE",
             "ATTACKS EXPLODE. HURTS YOU TOO (EXCEPT MELEE WEAPONS)",
-            "SHOTS SMASH THROUGH ROCK",
+            "+20% DAMAGE TO FOES UP CLOSE",
             "HITS FREEZE FOES SOLID FOR 1.5S",
             "HITS JUMP ON TO THE NEAREST FOE",
             "SETS FOES (BOSSES TOO) ALIGHT FOR 2S. LIGHTS GRASS AND WOOD",
-            "SHOTS ARC DOWN AND SKIP OFF FLOORS LIKE STONES ON WATER, HALF AS FAST EACH TIME",
+            "1.5X AMMO CAPACITY",
         };
 
-        static readonly char[] Letters = { 'S', 'R', 'T', 'C', 'P', 'V', 'K', 'H', 'A', 'X', 'W', 'F', 'Z', 'B', 'K' };
+        static readonly char[] Letters = { 'S', 'R', 'T', 'C', 'P', 'V', 'K', 'H', 'A', 'X', 'N', 'F', 'Z', 'B', 'M' };
 
         static readonly Color[] Cols =
         {
@@ -154,17 +154,29 @@ namespace DigDeep
             return icons[(int)m];
         }
 
+        // SHARPSHOOTER (+20% from half a screen away or more) and POINT-BLANK (+20% up close)
+        public const float CloseRange = 2.6f;
+        public static float FarRange => Game.I != null && Game.I.cam != null ? Game.I.cam.halfW : 10f;
+        public static float RangeMul(Weapon w, Vector2 from, Vector2 to)
+        {
+            if (w == null) return 1f;
+            float d = (to - from).magnitude, m = 1f;
+            if (w.Has(Mod.Sharpshooter) && d >= FarRange) m *= 1.2f;
+            if (w.Has(Mod.PointBlank) && d <= CloseRange) m *= 1.2f;
+            return m;
+        }
+
         // Some modifiers make no sense on some weapons.
         public static bool Fits(AttackDef d, Mod m)
         {
-            if (d.spear) return m == Mod.Triple || m == Mod.HighCaliber || m == Mod.WallBreaker || m == Mod.Fire || m == Mod.Poison || m == Mod.Frost;
-            if (d.Melee) return m != Mod.Homing && m != Mod.Ricochet && m != Mod.Pierce && m != Mod.Skip;
-            if (d.type == WType.Rail) return m != Mod.Homing && m != Mod.Ricochet && m != Mod.Pierce && m != Mod.Skip;
+            if (m == Mod.AmmoPlus) return d.mag > 0 && !d.spear && !d.Melee;   // only guns with a magazine
+            if (d.spear) return m == Mod.Triple || m == Mod.HighCaliber || m == Mod.PointBlank || m == Mod.Sharpshooter || m == Mod.Explosive || m == Mod.Fire || m == Mod.Poison || m == Mod.Frost;
+            if (d.Melee) return m != Mod.Homing && m != Mod.Ricochet && m != Mod.Pierce && m != Mod.Sharpshooter;   // (a blade never hits from afar)
+            if (d.type == WType.Rail) return m != Mod.Homing && m != Mod.Ricochet && m != Mod.Pierce;
             if (d.lob) return m != Mod.Ricochet && m != Mod.Explosive;
             if (d.radius > 0f && m == Mod.Explosive) return false;
             if (d.homing && m == Mod.Homing) return false;
             if (d.flame && m == Mod.Fire) return false;   // the flamethrower already burns
-            if (d.flame && m == Mod.Skip) return false;
             return true;
         }
 
@@ -172,6 +184,7 @@ namespace DigDeep
         public static void Roll(Weapon w, int depth, Rarity r, System.Random rng)
         {
             // first biome: a modded weapon is a rare treat; it ramps up from the second biome on
+            depth = Biomes.LootTune(depth);   // (tuned on the old, shorter biomes)
             float rb = r == Rarity.Relic ? 0.25f : r == Rarity.Rare ? 0.08f : r == Rarity.Uncommon ? 0.03f : 0f;
             float past = Mathf.Max(0, depth - 70);
             var pl = Game.I != null ? Game.I.player : null;
@@ -226,7 +239,7 @@ namespace DigDeep
         // From the second biome on, better crates slowly take over.
         public static Rarity RarityFor(int d, float h)
         {
-            d = Mathf.RoundToInt(d / Biomes.Stretch);   // the biomes are longer now: scale by how far through the run you are
+            d = Mathf.RoundToInt((d + (World.Void ? ArenaRoom.Final : 0)) / Biomes.Stretch);   // (the void carries on below the world)   // the biomes are longer now: scale by how far through the run you are
             float past = Mathf.Max(0, d - 70);
             // luck makes every better crate more likely
             var pl = Game.I != null ? Game.I.player : null;
@@ -263,7 +276,7 @@ namespace DigDeep
             {
                 if (a.rarity != r) continue;
                 if (a.altarOnly && r != Rarity.Relic) continue;
-                if (a.minDepth > depth + 40) continue;
+                if (a.minDepth > Biomes.LootTune(depth) + 40) continue;
                 if (p != null && p.Holds(a.id)) continue;
                 if (!Unlocks.Open(a)) continue;   // still locked (see Unlocks)
                 pool.Add(a);

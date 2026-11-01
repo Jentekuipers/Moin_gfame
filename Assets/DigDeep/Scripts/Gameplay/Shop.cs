@@ -37,11 +37,12 @@ namespace DigDeep
         // Shops only sell modified weapons: more modifiers the deeper you are (and in better shops). Some come cursed, a bit cheaper.
         static Weapon ShopWeapon(int depth, int tier, Player p, System.Random r)
         {
-            var rar = Crates.RarityFor(depth + tier * 150, (float)r.NextDouble());
+            var rar = Crates.RarityFor(depth + tier * Mathf.RoundToInt(150 * Biomes.Stretch / 1.5f), (float)r.NextDouble());
             if (tier >= 2 && rar < Rarity.Rare) rar = Rarity.Rare;
             var w = Crates.Roll(depth, rar, p, r);
             w.mods.Clear(); w.curse = Curse.None;
-            int want = 1 + (depth > 200 ? 1 : 0) + (depth > 420 ? 1 : 0) + tier;
+            int dd = depth + (World.Void ? ArenaRoom.Final : 0);   // (the void stocks as if the run went on deeper)
+            int want = 1 + (dd > 200 ? 1 : 0) + (dd > 420 ? 1 : 0) + tier;
             want = Mathf.Clamp(want, 1, Mods.Max);
             for (int i = 0; i < want; i++) if (!Mods.AddRandom(w, r)) break;
             if (r.NextDouble() < 0.2f) { w.curse = Curses.Pick(r); w.curseKills = 0; }
@@ -58,7 +59,8 @@ namespace DigDeep
             int depth = room.top;
             int tier = Tier(depth, p, r);
             bool premium = tier > 0;
-            int roll = depth + tier * 150;   // better shelves stock as if you were much deeper
+            int roll = depth + tier * Mathf.RoundToInt(150 * Biomes.Stretch / 1.5f);   // better shelves stock as if you were much deeper
+            g.Spawn(new ShopDecor(room, tier));   // timber walls, shelves, a bar, a hearth and chandeliers: an underground inn-shop
             g.Spawn(new Keeper(new Vector2(room.x0 + 2.5f, standY), tier, room.x0));
             if (premium)   // a premium shop is built of gilded brick: you can tell from the walls
                 for (int gd = room.top - 3; gd <= room.top + ShopRoom.Ht; gd++)
@@ -73,7 +75,7 @@ namespace DigDeep
             all.Add(Trinket(roll, tier, p, r));
             int k = r.Next(100);
             all.Add(k < (premium ? 30 : 35) ? DB.RollMod(p, r) : Trinket(roll, tier, p, r));
-            all.Add(r.Next(2) == 0 ? (r.Next(2) == 0 ? DB.Ale : DB.ById.TryGetValue("stew", out var stew) ? stew : DB.Ale) : Trinket(roll, tier, p, r));
+            all.Add(r.Next(2) == 0 ? (r.Next(3) == 0 ? DB.Ale : DB.ById.TryGetValue("stew", out var stew) ? stew : DB.Ale) : Trinket(roll, tier, p, r));
             for (int i = 4; i < n; i++) all.Add(Trinket(roll, tier, p, r));
             // a better shop has a second shelf above the first, its wares sitting in the gaps between the ones below
             int rows = premium ? 2 : 1;
@@ -91,7 +93,7 @@ namespace DigDeep
             }
 
             float gap = n <= 4 ? 3f : 12f / (n - 1);
-            float priceMul = (1f + Mathf.Max(0, depth - 120) / 350f) * (tier == 2 ? 2.4f : tier == 1 ? 1.6f : 1f);   // deeper diggers carry more gold
+            float priceMul = (1f + Mathf.Max(0, Biomes.LootTune(depth) - 120) / 350f) * (tier == 2 ? 2.4f : tier == 1 ? 1.6f : 1f);   // deeper diggers carry more gold
             int wi = 0;
             for (int row = 0; row < rows; row++)
                 for (int i = 0; i < (row == 0 ? n : n - 1); i++)
@@ -258,18 +260,20 @@ namespace DigDeep
                 if (halo != null) halo.transform.position = new Vector3(pos.x, pos.y + Mathf.Sin(bob * 2.5f) * 0.08f, 0f);
                 if (Random.value < dt * 5f) G.fx.Burst(pos + new Vector2(Random.Range(-0.5f, 0.5f), Random.Range(-0.4f, 0.6f)), 1, tier >= 2 ? LegendC : new Color(1f, 0.9f, 0.45f), 0.6f, 0.6f, -1f);
             }
-            G.hud.Label(pos + Vector2.up * 0.75f, price + "G", pl.s.gold >= price ? (premium ? new Color(1f, 0.95f, 0.55f) : new Color(1f, 0.85f, 0.3f)) : new Color(0.7f, 0.4f, 0.35f));
-            if (pl.mode == Player.Mode.Dead) return;
+            Color priceC = pl.s.gold >= price ? (premium ? new Color(1f, 0.95f, 0.55f) : new Color(1f, 0.85f, 0.3f)) : new Color(0.7f, 0.4f, 0.35f);
+            if (pl.mode == Player.Mode.Dead) { G.hud.Label(pos + Vector2.up * 0.75f, price + "G", priceC); return; }
             bool near0 = Mathf.Abs(pl.pos.x - pos.x) < 0.8f && Mathf.Abs(pl.pos.y - (baseY + Player.Half.y)) < 1.2f;
             bool hov0 = G.MouseOver(pos, 0.7f);
             // one text box at a time across everything you could take (shop, floor, boss rewards)
             PickFocus.Offer(this, hov0, near0, Mathf.Abs(pl.pos.x - pos.x) + Mathf.Abs(pl.pos.y - baseY) * 0.5f);
             bool mine = PickFocus.Is(this);
             bool near = near0 && mine, hov = hov0 && mine;
+            if (near || hov) G.hud.FocusLabel(pos + Vector2.up * 0.75f, price + "G", priceC);   // (the highlighted ware's price stays bright)
+            else G.hud.Label(pos + Vector2.up * 0.75f, price + "G", priceC);
             if (!near && hov) Describe("", pl, true);
             if (near)
             {
-                Describe("PRESS " + GameInput.Prompt(Btn.Interact), pl, hov);
+                Describe("PRESS " + GameInput.Prompt(Btn.Interact) + " TO BUY", pl, hov);
                 if (GameInput.Take(Btn.Interact))
                 {
                     if (pl.s.gold < price)
@@ -321,7 +325,7 @@ namespace DigDeep
         readonly string line;
         readonly bool premium;
         readonly int tier;
-        float hp = 30f, vy, hurtCd, flashT, burnT, fallFrom;
+        float hp = 30f, vy, hurtCd, flashT, burnT, fallFrom, breath = 8f;
         bool grounded = true;
 
         // he walks his shop: up to a ware, points at it ("can I interest you...?"), then on to the next
@@ -339,7 +343,7 @@ namespace DigDeep
             goalX = floorPos.x;
             pos = new Vector2(floorPos.x, floorPos.y + H.y);
             fallFrom = pos.y;
-            MakeGO("Shopkeeper", premium && Art.KeeperOld != null ? Art.KeeperOld : Art.Keeper, 11);
+            MakeGO("Shopkeeper", BaseSprite, 11);
             string[] pool = tier >= 2 ? LegendLines : premium ? PremiumLines : Lines;
             line = pool[Random.Range(0, pool.Length)];
             if (!premium && Art.Keeper != Art.KeeperOld) go.transform.localScale = new Vector3(1.25f, 1.25f, 1f);   // the regular keeper stands a bit taller
@@ -348,14 +352,41 @@ namespace DigDeep
             All.Add(this);
         }
 
+        // a premium shop is run by a fancy merchant (he taps his cane now and then)
+        Sprite BaseSprite
+        {
+            get
+            {
+                if (!premium) return Art.Keeper;
+                var f = Art.KeeperFancy;
+                if (f != null && f.Length > 0 && f[0] != null) return f[Mathf.Repeat(Time.time, 3f) > 2.6f && f.Length > 1 ? 1 : 0];
+                return Art.KeeperOld ?? Art.Keeper;
+            }
+        }
+
         float Top => sr != null && sr.sprite != null ? sr.sprite.bounds.size.y * go.transform.localScale.y : 1.5f;
 
         public override void Tick(float dt)
         {
             var pl = G.player;
             hurtCd -= dt; flashT -= dt; burnT -= dt;
-            // gravity: he falls like anything else when the floor goes
-            vy = Mathf.Max(vy - 38f * dt, -18f);
+            // in liquid he floats like you do: buoyed up to the surface, bobbing there (and he can drown, burn or dissolve)
+            byte bodyF = Wd.FluidAtPoint(pos);
+            byte headF = Wd.FluidAtPoint(pos + new Vector2(0f, H.y * 0.8f));
+            bool wet = bodyF == Fluids.Water || bodyF == Fluids.Poison || bodyF == Fluids.Acid || bodyF == Fluids.Lava;
+            bool under = headF == Fluids.Water || headF == Fluids.Poison || headF == Fluids.Acid || headF == Fluids.Lava;
+            if (wet)
+            {
+                vy = U.Approach(vy, under ? 2.4f : Mathf.Sin(Time.time * 3f + pos.x) * 0.3f, 14f * dt);
+                fallFrom = pos.y;   // (a splash never hurts)
+                if (bodyF == Fluids.Water) burnT = 0f;
+                if (bodyF == Fluids.Poison) Hurt(2f * dt, pos, true);
+                if (bodyF == Fluids.Acid) Hurt(6f * dt, pos, true);
+                if (dead) return;
+            }
+            else vy = Mathf.Max(vy - 38f * dt, -18f);   // gravity: he falls like anything else when the floor goes
+            breath = under ? breath - dt : Mathf.Min(8f, breath + dt * 2f);
+            if (breath <= 0f) { Hurt(3f * dt, pos, true); if (Random.value < dt * 4f) G.fx.Burst(pos + Vector2.up * 0.5f, 1, new Color(0.8f, 0.95f, 1f), 1f, 0.6f, -3f, 1f, false); if (dead) return; }
             Vector2 p = pos;
             if (Wd.MoveY(ref p, H, vy * dt, out _))
             {
@@ -390,7 +421,7 @@ namespace DigDeep
 
         void Wander(float dt, Player pl)
         {
-            var baseSpr = premium && Art.KeeperOld != null ? Art.KeeperOld : Art.Keeper;
+            var baseSpr = BaseSprite;
             if (!roams || !grounded)
             {
                 sr.sprite = baseSpr;

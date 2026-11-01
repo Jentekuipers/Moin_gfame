@@ -69,7 +69,7 @@ namespace DigDeep
         {
             if (w == null || w.def == DB.Pickaxe) return;
             var pl = Game.I != null ? Game.I.player : null;
-            double chance = Mathf.Min(0.1f + depth * 0.0005f, 0.3f) / (1f + 0.1f * Mathf.Max(0f, pl != null ? pl.s.luck : 0f));   // luck keeps curses away
+            double chance = Mathf.Min(0.1f + Biomes.Tune(depth) * 0.0005f, 0.3f) / (1f + 0.1f * Mathf.Max(0f, pl != null ? pl.s.luck : 0f));   // luck keeps curses away
             if (rng.NextDouble() >= chance) return;
             w.curse = Pick(rng);
             w.curseKills = 0;

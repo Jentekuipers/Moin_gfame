@@ -1069,6 +1069,182 @@ The old floating-pickaxes trinket is gone from the loot pool. It's the Curse of 
 - **Enemy shots** (and boss shots) are drawn over everything, even the dark, with a pulsing red halo (`Bullet.Threat`).
 - **X-ray:** an enemy inside water, poison, acid, mist or thick gas gets a pulsing red outline drawn on top (`Enemy.XRay`).
 
+## Batch 118 notes
+
+- **Water:** loose things sink slowly through any liquid (`Fluids.Sink`, `Fluids.Drag`). Falling blocks sink a bit faster, and dirt and debris drift down.
+- **Boulders:**
+  - Once loose, a boulder stays a rolling stone and never snaps back onto the grid or turns square.
+  - Nudged less than about half its width, it rocks back into its old dip.
+  - When you save and quit, resting stones are written back as blocks.
+- **Dying flames:** in its last second a flame steps through three ever-smaller sets of six pictures (`DigDeepArt/new/fire_out1..3`), a random frame each flicker.
+- **Character select:**
+  - Only unlocked diggers stand at the campfire and in the lineup, and left/right skips the locked ones.
+  - A SELECT button sits under the achievements.
+- **Controls help:** chalked on the cave wall behind the campfire (`WallText`). It stays for the whole run and updates when you switch between keyboard and pad.
+- **Lava mages:**
+  - They live in the magma biome only, and lava can't hurt them.
+  - They make lava well up beside them and lob molten balls that burst into lava where they hit, or when you shoot them down.
+- **Flowers:** little flower meadows grow in the grass: daisies, tulips and buds in one or two colours.
+- **Moles:** they path round bricks and stone (a small Dijkstra search) instead of pushing into them.
+- **Box collision:** chests, crates and supply boxes collide at their lid height, so you, coins and debris rest on the lid.
+- **Pause screen:** the combos column shows the combos you're part-way to.
+- **Shops:** each shop is an underground inn-shop (`ShopDecor`):
+  - Timber walls, rafters, pennants and shelves of bottles.
+  - A bar with mugs, a framed picture and a stone hearth with a fire.
+  - Swaying candle chandeliers, a rug, and hanging signs outside both doors.
+  - Premium shops get gilt and violet.
+
+## Batch 121 notes
+
+- **Bandits** (`Entities/Bandits.cs`): melee crew that come down with the raiders (about half of every squad).
+  - Three kinds, each with its weapon in hand:
+    - Swordsman: red sash, short sword.
+    - Chieftain: horned helm, great axe. A slow, heavy chop that smashes blocks.
+    - Cutthroat: hood, dagger. Fast, lunges in to stab, then backs off.
+  - Behaviour:
+    - They blink before they swing.
+    - They chase you once they spot you, jump up ledges, and hack through blocks in the way (or dig up or down to reach you).
+    - They fight beasts too.
+  - Four clans (colour sets) follow depth: brown, green, blue and iron.
+  - Art: `DigDeepArt/new/bandit_<sword|axe|dagger>_<0..3>`.
+- **Raiders:** restyled to match, dressed like the bandits but with coloured bandanas (`gun_raider2`, `gun_brute2`, `gun_marksman2`, `gun_bomber2`).
+- **Biomes** each have their own back wall:
+  - Topsoil: earth strata, roots and pebbles.
+  - Jungle: vines and big leaves.
+  - Fungal: giant background mushrooms with glowing spots, and drifting spores.
+  - Crystal: shards and sparkles.
+  - Storm: lit cracks and seeping streaks.
+  - Magma: glowing veins and embers.
+  - Kingdom: masonry.
+- **Plants per biome:**
+  - Glowing mushrooms in the fungal hollows (they light the dark), crystal sprouts in the crystal depths, dry grass in the storm caverns, ash and embers in the magma core.
+  - Moss and white star-flowers in the kingdom, tall grass, ferns and tropical flowers in the jungle; the topsoil keeps its meadows.
+  - Bricks take on each biome's stone colour.
+- **Giant mushrooms** (fungal hollows, `Gameplay/Mushrooms.cs`):
+  - Violet caps you can stand on. They sag under weight and wobble back.
+  - Fire or blasts burn them away, and burning caps release violet spores.
+- **Hallucination** (from breathing the spores): it builds while you stand in the spores, up to a cap, and fades over about 6 s.
+  - Swirling colour wash.
+  - The view sways and breathes.
+  - Creatures look like other creatures.
+- **Lava glow:** lava gives off a warm Noita-style haze (`Lighting.AddGlow`).
+- **Shotgun sound:** uses the new recorded `shotgun1-4` takes.
+- **Controls text:** the chalk text sits just above the campfire.
+
+## Batch 122 notes
+- **Runs**: five biomes instead of seven. Normal run: Topsoil, three of the five middle biomes (in depth order), Forgotten Kingdom. Void run: four of the six in a random order, then The Void. No biome twice in a run (`Biomes.Order`, `Biomes.SlotOf`). Boss halls follow the biomes (`ArenaRoom.Depths`; the jungle and magma core keep their midway hall).
+- **Damage**: world hazards are flat and halved (spikes/lava/magma 25, falling spikes 30, sand 10, blasts 35, own shots 25, burn/poison 2 per tick, zaps 8-9, slower drowning). Only creatures scale with depth; `Enemy.ContactDmg` starts lower (35) and ends about where it did.
+- **Void**: loot, shop stock, prices and weapon modifiers roll as if the run kept going deeper (`Biomes.LootTune`); half as many chests and crates. Every boss is its void self: "VOID" in its name, a purple wash over all of it (`Enemy.VoidHueTick`), 20x health, and four void attacks in turn (double shard ring, spikes, shard rain with gaps, a closing shard cage).
+- **Altars**: the weapon/item altars are gone and puzzles are rarer. New: a basin to fill with water, poison (jungle) or lava (magma core), and an upside-down steam altar in a closed vault that wants steam around it but not down to the floor (`BasinAltar`, `SteamAltar` in Events.cs). Shrines are rarer too.
+- **Shops**: at most one per biome (sometimes none). Nothing grows around a shop (`Gen.InShop`). Premium shops are a jeweller's salon (damask, marble, gilt, drapes, gem cabinets, crystal chandeliers). Shopkeepers float, burn, dissolve and drown in liquids.
+- **Moles**: mole bandits (mask and knife; they steal gold and run; kill one to get it back) from the second biome, and miner moles (hard hat and lamp; tougher, dig through stone) from the third.
+- **Other**:
+  - Fire burns with the old flicker and only uses the dying-flame pictures in its last second.
+  - A jump tap under water only kicks; you leap out only while holding jump.
+  - The SKIPPING modifier is now AMMO+ (1.5x magazine).
+  - THE WRITHING is ultra (rainbow) rare. Its worms go through every block, only hunt what's on screen, and stay on screen.
+  - Lava glow scales with how much lava is nearby.
+  - Removed the "ON THE WAY" combo list and the "IT GETS NASTIER" line.
+  - The weapon name shows just under the biome title.
+
+## Batch 123 notes
+- **Controls on the cave wall**: the keys now sit in bright keycaps (dark cap, gold rim, cream letters) among the chalk words (`WallText`, Camp.cs).
+- **Floating sprites**: the turtle, skeleton, wolf, lava mage and lantern shroom stand on the floor now. Their strips pivot at the feet, so they draw at `-half.y + 1/16` (like the slime).
+- **Topsoil back wall**: a cave wall of big rough rocks, lit from above, with broken dark cracks between them.
+- **Removed**: the hover labels on TNT and weapon crates.
+- **Fire**: the mirror flip now changes only with the picture, and the random height squash is gone. Both used to change every frame, which made the flames shimmer.
+- **Weapon crates**: planned per biome (`Gen.CrateChunks`): none 30%, one 42%, two 21%, three 7%. The hash crates and the old crate-every-two-chunks rule are gone.
+- **Premium shops**: run by a fancy merchant (`merchant_fancy` strip: top hat, monocle, velvet coat, cane).
+- **Steam altar**: any gas counts (steam or fumes). It needs much less: a small cloud in the two rows under the vault roof (about 1.2 cells' worth), held for 0.8s. It only refuses when more gas sits down at the floor than up top. A wisp curls up into it as a hint.
+
+## Batch 124 notes
+- **Fixes and small changes**:
+  - The Camp.cs compile error is fixed.
+  - **Grapple hook**: a new consumable (`It.Grapple`, `grapplehook`) that throws one hook where you aim.
+  - **Ink's camouflage**: it can't start while you're burning or poisoned, and nothing hurts you while it's on.
+  - **x2 mist**: much more see-through.
+- **Shelters** (`World/Shelter.cs`): about 80% of chests and weapon crates now sit in worn-down shelters, Terraria-style. They come as a timber cabin, a brick ruin or a little shrine, with open sides (no doors) and knocked-out blocks. Each has a back-wall sprite with holes in it (`ShelterBack`). In the reef they're made of coral; in the clouds the ruins and shrines are ice.
+- **Five new biomes** (Tiles.cs: `Cloud`, `Crimson`, `Beach`, `Neon`, `Reef`): they join the random middle pool (`Biomes.Middle`), so a run picks its three middle biomes from ten.
+  - Terrain is in `BiomeGen`, the big structures in `BiomeBuild`, the tiles and back walls in `BiomeTiles`, the creatures in `BiomeFoes`, who spawns where in `BiomeSpawns.cs`, and the bosses in `BiomeBosses`.
+  - **CLOUD REACHES**:
+    - Mostly packed cloud blocks with narrow tunnels between them, and the odd wide gap.
+    - Some puffs are ice, and some carry a clump of earth on top (with a little gold around it).
+    - Gold sits inside clouds instead of rock (gilded clouds), at about the normal rate. Lots of pooled water.
+    - Broken or burned clouds come back after about 2s: a puff fades in and swells, and only turns solid once nothing is in the way (`CloudWeather`, `CloudPuff`). Fire boils clouds into steam.
+    - **Rain**: now and then a cloud with air under it darkens. The darkness spreads through the whole cloud, 0.2s per block, the higher blocks too. The bottom blocks rain for about 3s.
+    - Rainbows show in the back wall.
+    - **Foes**: Puffling, Thunderbird (its touch shocks), Spark Wisp (zaps), tesla coils.
+    - **Bosses**: Nimbus, or Iris the rainbow dragon. Iris sometimes drops the Heart of Iris: your shots cycle the rainbow, each colour with its own effect (fire, blast, chain, poison, frost, homing, pierce).
+  - **CRIMSON FOREST**:
+    - Great red trees and pools of **blood**, a new liquid (grain type 3; steam moved to 8).
+    - Blood thins into water as a red tint (`mixB`), and behaves as water towards the other liquids.
+    - Crimson creatures heal in blood; bosses don't.
+    - Touching blood shows you every foe for 4s (`BloodSight`).
+    - **Foes**: Blood Leech, Crimson Hound, Weepling (lobs blood), Vampire Bat.
+    - **Bosses**: the Heartwood, or the Bloodstag.
+  - **SUNKEN BEACH**:
+    - Sand (only where it has something to rest on), sandstone and lots of sea water. The boulders are coconuts.
+    - Palms with coconuts on the fronds. Huts on stilts over the water with a boardwalk to the shore, a chest or supply crate inside.
+    - **Foes**: Crablings, Gulls (they snatch coins), and new fish (pufferfish, swordfish, jellyfish, clownfish).
+    - **Bosses**: the King Crab, or the Kraken (it floods the hall in its second phase).
+  - **NEON CANOPY**:
+    - Dark caves with glowing pink/teal/lime grass, flowers and leaves (they light the dark), big trees and hanging canopy.
+    - **Foes**: Neon Jaguar, Neon Monkey (throws glowing fruit), Glow Moth.
+    - **Bosses**: Lumina the neon jaguar, or Viridis.
+  - **CORAL REEF**:
+    - Flooded caves with coral through the rock, coral branches, sunken coral houses (the shelters), sea grass and fan corals.
+    - **Foes**: anglerfish, jellyfish and other fish, urchins, crablings.
+    - **Bosses**: the Abyssal Angler (a dark, flooding hall that floods and drains; its lure pulls you in), or Unda.
+- **Test mode**: spawn entries for the new foes, and the boss list is in three columns.
+
+## Batch 125 notes
+- **Shelters**:
+  - The back wall is painted into the cave background now (`Shelter.WallPx`, called from `TileDraw.Bg`). Before, it was a sprite drawn over everything, which hid the chests.
+  - **Cabin**: planks, corner posts, a cross window, and a pitched roof.
+  - **Ruin**: stone with an arched window and cracks.
+  - **Shrine**: a carved arch with a glowing glyph.
+  - The walls are only lightly worn now (ruins more).
+- **Tidal burst**: works on lava and other liquids now. The water passes them and lands around them (and reacts).
+- **x2 mist**:
+  - Makes grass and vines grow where it lies.
+  - Works like water: you swim and can drown in it.
+  - Fluorescent blue, and it glows.
+- **Water slowly dilutes other liquids**: acid now thins too, slowly.
+- **Glider bat**: only the gliding picture while flying.
+- **The void**: hazards do 2x damage (`Player.Haz`).
+- **Shotgun under water**: plays the underwater explosion takes.
+- **Supply crates**: the random ones are gone. Each biome now gets 1-4, more with luck. Weapon crates are planned per biome when you get near (more likely with luck). Chests and buried chests are more common with luck (`Gen.LuckMul`).
+- **Coral reef**: soft corals (break at a touch) in clumps and growing out of the walls, and twice the coral branches.
+- **Memory of what you've seen**: every cell you can see is now remembered, including the larger range from vision items.
+
+## Batch 126 notes
+- **Compile fix**: TileDraw's shelter-wall variable was renamed (`shelterPx`).
+- **Steam altar**: draws steam and fumes in towards itself (`SteamAltar.Suck`), like the chalice reels in coins. Every cloud of gas within a few blocks of the vault drifts a step closer.
+- **Ground slam**: water no longer stops it (it just slows a little), and you can start one while swimming.
+- **Beach**:
+  - The block palm trees are gone. Palms are now drawn pictures (`ArtDecor`, 8 kinds) after your example: a ringed curved trunk, wide arching fronds with hanging leaflets, coconuts.
+  - More wood: stilt huts are twice as likely (up to two per chunk, a chest only now and then), wooden piers run out from the shore over the water, and little thatched shacks stand on the sand.
+  - Sand castles too.
+- **Decorations for the new biomes** (`BiomeDecor`, `Decor`): pictures only. They're kept out of the entity list, so they cost almost nothing.
+  - **Beach**: palms, parasols, sand castles and shells above water; seaweed and starfish under it.
+  - **Reef**: kelp, seaweed, anemones, brain coral, starfish and shells.
+  - **Clouds**: nests, weather vanes, and sky lanterns hanging from the roof.
+  - **Crimson**: bone piles, blood shrooms, thorns, and cocoons hanging from the roof.
+  - **Neon**: glowing shrooms and flowers, and neon lanterns.
+  - Tall plants sway; lanterns and neon things glow.
+
+
+## Batch 127 notes
+- **Hunter**: no more big banner when a hunted foe dies, just a small popup over it.
+- **Gold veins** (`BigOre`): the rock-coloured rim and rounded corners are gone, so the edge pixels are just a slightly darker gold. 2×2, 4×4 and 6×6 lumps are all rarer (3.5% / 1.2% / 0.3%).
+- **Breath**: the drowning meter is a row of pixel-art bubbles (7×7). The last bubble blinks once it's under half, and the row blinks red when you're out of air.
+- **Altars rarer**: puzzle altars are spaced 95–165 rows apart (was 60–115), and shrines at least 85 rows apart (was 50).
+- **Giant mushrooms**:
+  - They won't catch fire under water or any other liquid except lava, and a burning cap that gets wet goes out.
+  - A cap that has burnt away stays gone. The spot is remembered for the rest of the run and kept in the save (`RunSave.burntCapX/Y`).
+  - A burning cap now finishes burning even off-screen.
+- **Magpie**: each quest rolls 3 items using the chest odds for where you are when the quest starts (when the magpie arrives, and again after each payout). The price adds up per item: 100 common, 150 uncommon, 200 rare, 250 mythic, 300 ultra, so 3 commons cost 300.
+- **Black sun**: the shots out of a killed foe are now copies of your current gun's bullets (same effects and speed). Melee, spear and rail weapons still give the violet orbs.
 ## Unlocks and achievements (Systems/Unlocks.cs)
 
 FIN is the digger everyone starts with. The other diggers and a good share of the weapons and pets are locked behind achievements (PlayerPrefs `ul_<id>`; test runs never earn any and see everything open). Locked gear never drops, shows up in shops or comes from rerolls.

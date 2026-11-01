@@ -8,7 +8,10 @@ namespace DigDeep
     // shards and ghosts, so every item combos with every other one.
     public partial class Bullet
     {
-        bool poisons, chains, skip, ghost, wormy, swell;
+        bool poisons, chains, ghost, wormy, swell;
+        static int rainbowN;
+        Color? rainbowCol;
+        static readonly Color[] RainbowC = { new Color(1f, 0.3f, 0.3f), new Color(1f, 0.6f, 0.2f), new Color(1f, 0.95f, 0.3f), new Color(0.35f, 1f, 0.4f), new Color(0.35f, 0.7f, 1f), new Color(0.5f, 0.4f, 1f), new Color(0.85f, 0.4f, 1f) };
         float swellSize, swellDmg, swellSpeed, swellMin, ghostKidT = -1f;
 
         // read by FriendlyWorm when a shot turns into a worm
@@ -43,13 +46,27 @@ namespace DigDeep
                     case 5: pierce = Mathf.Max(pierce, 999); break;
                     default: bounces += 2; break;
                 }
+            // HEART OF IRIS: the shots go round the rainbow, each colour its own effect
+            if (ps.rainbowShots)
+            {
+                int k = Bullet.rainbowN++ % 7;
+                switch (k)
+                {
+                    case 0: burns = true; break;                                       // red: fire
+                    case 1: if (radius <= 0f) explosive = true; else radius *= 1.3f; break;   // orange: a blast
+                    case 2: chains = true; break;                                      // yellow: it jumps on to the next foe
+                    case 3: poisons = true; break;                                     // green: poison
+                    case 4: frost = true; break;                                       // blue: frost
+                    case 5: homing = true; break;                                      // indigo: it seeks
+                    default: pierce = Mathf.Max(pierce, 999); break;                   // violet: it goes through everything
+                }
+                rainbowCol = RainbowC[k];
+            }
             // KINDLING / TOXIC SKIN: a chance for any shot to burn or poison
             if (ps.fireChance > 0f && Chance.Roll("fire", p.Lucky(ps.fireChance))) burns = true;
             if (ps.poisonChance > 0f && Chance.Roll("poison", p.Lucky(ps.poisonChance))) poisons = true;
             bounces += ps.extraBounces;   // BOUNCY ROUNDS stack: one more bounce each
             knock *= ps.knockMul;
-            // SKIPPING modifier: shots arc down and skip off floors
-            if (w != null && w.Has(Mod.Skip) && !flame && !linger) { skip = true; grav += 26f; lob = false; }
             // SWELL SHOT: 3x as big (and as strong) out of the barrel, shrinking fast along with its speed
             if (ps.swell && !flame)
             {
@@ -371,12 +388,18 @@ namespace DigDeep
             if (life <= 0f) { Burst(); return; }
             Enemy target = null;
             float bd = homes ? 22f * 22f : 14f * 14f;   // homing worms sniff out prey from further away
+            // it only hunts what's on your screen, and never strays off it
+            Vector2 cc = G.cam != null ? G.cam.pos : owner.pos;
+            float hw = G.cam != null ? G.cam.halfW : 12f, hh = G.cam != null ? G.cam.halfH : 7f;
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en) || en.Intangible || en.team == Team.Player) continue;
+                if (Mathf.Abs(en.pos.x - cc.x) > hw || Mathf.Abs(en.pos.y - cc.y) > hh) continue;
                 float d2 = (en.pos - pos).sqrMagnitude;
                 if (d2 < bd) { bd = d2; target = en; }
             }
+            bool strayed = Mathf.Abs(pos.x - cc.x) > hw + 1f || Mathf.Abs(pos.y - cc.y) > hh + 1f;
+            if (strayed) target = null;
             Vector2 goal = target != null ? target.pos : owner.pos + new Vector2(Mathf.Cos(t) * 2.5f, 1.5f + Mathf.Sin(t * 1.3f));
             Vector2 want = (goal - pos).normalized;
             want = U.Rot(want, Mathf.Sin(t * 9f) * 35f);   // it wriggles
@@ -384,8 +407,8 @@ namespace DigDeep
             vel = Vector3.RotateTowards(vel, want * spd, (homes ? 9f : 6f) * dt, 30f * dt);
             TickElement(dt);
             Vector2 next = pos + vel * dt;
-            // it burrows through rock, but bumps off the void
-            if (Wd.Get(Mathf.FloorToInt(next.x), Mathf.FloorToInt(next.y)) == Block.Bedrock)
+            // it burrows through anything (bedrock and void blocks too, like dirt); only the world's edges turn it back
+            if (next.x < 2f || next.x > Gen.W - 2f || -next.y > ArenaRoom.Bottom)
             {
                 vel = -vel * 0.8f + Random.insideUnitCircle * 2f;
                 G.fx.Burst(pos, 3, col, 2f, 0.2f, 0f);

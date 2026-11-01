@@ -7,7 +7,7 @@ namespace DigDeep
     // What kind of hit reached an altar. Weapon altars only respond to the matching one.
     public enum Src { Pick, Bolt, Explosion, Dash, Pound, Shockwave, Hook, Laser, Weapon }
 
-    public enum PuzzleType { Boulder, Gold, Meditate, Race, Altar }
+    public enum PuzzleType { Boulder, Gold, Meditate, Race, Altar, Liquid, Steam }   // (Altar: the old weapon/item altar, no longer built)
 
     // =====================================================================================
     // Chambers carved into the terrain for each puzzle
@@ -19,6 +19,7 @@ namespace DigDeep
         public PuzzleType type;
         public int x0, ceil, w, h = 5;
         public int fx0, ftop;
+        public byte liquid;   // PuzzleType.Liquid: which liquid the basin wants (water, poison or lava)
         public int Cx => x0 + w / 2;
 
         public void Build()
@@ -26,12 +27,28 @@ namespace DigDeep
             rects.Clear();
             rects.Add(new RectInt(x0 - 1, ceil - 4, w + 2, h + 4));
             if (type == PuzzleType.Race) rects.Add(new RectInt(fx0 - 1, ftop, FW + 2, FH));
+            if (type == PuzzleType.Liquid) rects.Add(new RectInt(Cx - 2, ceil + h - 1, 5, 3));   // the basin sunk into the floor
         }
+
+        // the basin: three wide and two deep, sunk into the middle of the floor
+        public const int BasinW = 3, BasinD = 2;
+        public int BasinTop => ceil + h - 1;   // depth of its upper row (level with the floor)
 
         public override int AnchorDepth => ceil + h - 1;
 
         public override int TileAt(int x, int d)
         {
+            if (type == PuzzleType.Liquid && d >= BasinTop && d <= BasinTop + BasinD && x >= Cx - 2 && x <= Cx + 2)
+            {
+                bool inside = x >= Cx - 1 && x <= Cx + 1 && d < BasinTop + BasinD;
+                return inside ? (int)Block.Air : (int)Block.Brick;
+            }
+            if (type == PuzzleType.Steam)
+            {
+                // a closed vault: a brick roof and walls, with a doorway at the floor on both sides, so steam gathers under the roof
+                if (d == ceil - 1 && x >= x0 - 1 && x <= x0 + w) return (int)Block.Brick;
+                if ((x == x0 - 1 || x == x0 + w) && d >= ceil && d < ceil + h - 3) return (int)Block.Brick;
+            }
             int t = Room(x, d, x0, ceil, w, h);
             if (t >= 0)
             {
@@ -61,7 +78,9 @@ namespace DigDeep
                     break;
                 case PuzzleType.Gold: g.AddAltar(new GoldAltar(at, ceil)); break;
                 case PuzzleType.Meditate: g.AddAltar(new MeditateAltar(at)); break;
-                case PuzzleType.Altar: g.AddAltar(new ReqAltar(at, r)); break;
+                case PuzzleType.Altar: break;   // (the weapon/item altars are gone)
+                case PuzzleType.Liquid: g.AddAltar(new BasinAltar(this, liquid)); break;
+                case PuzzleType.Steam: g.AddAltar(new SteamAltar(this)); break;
                 case PuzzleType.Race:
                     g.AddAltar(new RaceAltar(new Vector2(x0 + 1.5f, standY), new Vector2(fx0 + FW / 2 + 0.5f, 2 - ftop - FH), r));
                     break;
@@ -95,18 +114,28 @@ namespace DigDeep
             while (d < maxDepth)
             {
                 PuzzleType t;
+                byte liq = Fluids.Water;
+                int bi = Biomes.Index(d + 3);
                 if (n == 0) t = (PuzzleType)r.Next(3);   // first one is always a simple puzzle
                 else
                 {
                     int k = r.Next(100);
-                    if (k < 20) t = PuzzleType.Boulder;
-                    else if (k < 38) t = PuzzleType.Gold;
-                    else if (k < 55) t = PuzzleType.Meditate;
-                    else if (k < 74) t = d > 25 ? PuzzleType.Race : PuzzleType.Meditate;
-                    else t = d > 28 ? PuzzleType.Altar : PuzzleType.Boulder;
+                    if (k < 18) t = PuzzleType.Boulder;
+                    else if (k < 34) t = PuzzleType.Gold;
+                    else if (k < 48) t = PuzzleType.Meditate;
+                    else if (k < 64) t = PuzzleType.Race;
+                    else if (k < 84)
+                    {
+                        // a basin to fill: lava in the magma core, poison in the jungle, water where water pools
+                        t = PuzzleType.Liquid;
+                        if (bi == Biomes.Magma) liq = Fluids.Lava;
+                        else if (bi == Biomes.Jungle && r.Next(2) == 0) liq = Fluids.Poison;
+                        else if (bi == Biomes.Crystal) t = PuzzleType.Meditate;   // (water freezes down there)
+                    }
+                    else t = d > 60 && bi != Biomes.Crystal ? PuzzleType.Steam : PuzzleType.Boulder;   // an upside-down altar that wants steam
                 }
-                var e = new EventRoom { type = t, ceil = d };
-                e.w = (t == PuzzleType.Altar || t == PuzzleType.Race) ? 7 : 9;
+                var e = new EventRoom { type = t, ceil = d, liquid = liq };
+                e.w = (t == PuzzleType.Altar || t == PuzzleType.Race) ? 7 : t == PuzzleType.Liquid || t == PuzzleType.Steam ? 9 : 9;
                 e.x0 = 4 + r.Next(Gen.W - 8 - e.w);
                 if (t == PuzzleType.Race)
                 {
@@ -119,7 +148,7 @@ namespace DigDeep
                     if (blocked) { d += 4; continue; }
                 }
                 e.Build();
-                if (Gen.TryAdd(e)) { n++; d += 38 + r.Next(40); }
+                if (Gen.TryAdd(e)) { n++; d += 95 + r.Next(70); }   // (rarer still)
                 else d += 4;
             }
         }
@@ -578,6 +607,203 @@ namespace DigDeep
         {
             base.Kill();
             if (icon != null) Object.Destroy(icon);
+        }
+    }
+
+    // ------------------------------------------------------------------ the basin: fill it with the right liquid
+    // A stone basin sunk into the floor with a carved drop on the wall above: water, poison (in the jungle) or lava
+    // (in the magma core). Bring that liquid here, by digging a channel or carrying it, until the basin brims.
+    public class BasinAltar : Altar
+    {
+        readonly EventRoom room;
+        readonly byte want;
+        readonly GameObject glyph;
+        readonly SpriteRenderer glyphSr;
+        readonly Color col;
+        float holdT, pulse;
+
+        static Color ColOf(byte t) => t == Fluids.Lava ? new Color(1f, 0.45f, 0.15f) : t == Fluids.Poison ? new Color(0.5f, 1f, 0.3f) : new Color(0.35f, 0.65f, 1f);
+        static string NameOf(byte t) => t == Fluids.Lava ? "LAVA" : t == Fluids.Poison ? "POISON" : "WATER";
+
+        public BasinAltar(EventRoom room, byte want)
+        {
+            this.room = room; this.want = want;
+            col = ColOf(want);
+            pos = new Vector2(room.Cx + 0.5f, -room.BasinTop + 0.5f);
+            Half = new Vector2(1.5f, 1f);
+            MakeGO("Basin", Art.Pixel, 3);
+            sr.color = new Color(0, 0, 0, 0);
+            glyph = Extra("BasinDrop", Drop(), new Vector2(room.Cx + 0.5f, -room.BasinTop + 3.2f), 4, out glyphSr);
+            glyph.transform.localScale = Vector3.one * 1.2f;
+        }
+
+        // a carved drop of the liquid, set in a ring of stone
+        static Sprite drop;
+        static Sprite Drop()
+        {
+            if (drop != null) return drop;
+            int w = 13, h = 15;
+            var px = new Color32[w * h];
+            var ring = new Color32(150, 146, 160, 255);
+            var fill = new Color32(255, 255, 255, 255);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float dx = x - 6f, dy = y - 5.5f;
+                    bool round = dx * dx + dy * dy <= 20f;
+                    bool tip = y > 5 && Mathf.Abs(dx) <= (h - 1 - y) * 0.6f;
+                    bool inner = (dx * dx + dy * dy <= 11f) || (y > 5 && y < h - 3 && Mathf.Abs(dx) <= (h - 3 - y) * 0.45f);
+                    if (inner) px[y * w + x] = fill;
+                    else if (round || tip) px[y * w + x] = ring;
+                }
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
+            tex.SetPixels32(px); tex.Apply();
+            drop = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), Art.PPU);
+            return drop;
+        }
+
+        float Fill()
+        {
+            float sum = 0f;
+            for (int dd = 0; dd < EventRoom.BasinD; dd++)
+                for (int x = room.Cx - 1; x <= room.Cx + 1; x++)
+                {
+                    int y = -(room.BasinTop + dd);
+                    if (Wd.LiquidType(x, y) == want) sum += Wd.LiquidAmount(x, y);
+                }
+            return sum / (EventRoom.BasinW * EventRoom.BasinD);
+        }
+
+        public override void Tick(float dt)
+        {
+            pulse += dt;
+            if (!Active)
+            {
+                glyphSr.color = Color.Lerp(col, Color.white, 0.4f + 0.3f * Mathf.Sin(pulse * 3f));
+                return;
+            }
+            float f = Fill();
+            // the drop glows a little as the basin fills, but never says how much more it wants
+            float v = 0.4f + 0.05f * Mathf.Sin(pulse * 2f);
+            glyphSr.color = Color.Lerp(new Color(v, v, v + 0.05f), col, f > 0.05f ? 0.35f : 0f);
+            if (f >= 0.8f) holdT += dt; else holdT = 0f;
+            if (holdT > 0.6f)
+            {
+                glyphSr.color = col;
+                G.fx.Ring(pos, 2.5f, col);
+                G.lighting.Flash(pos, 7f, 0.6f);
+                G.sfx.Play("splash", 0.7f, 0.8f);
+                G.hud.Banner("THE BASIN BRIMS", "IT DRINKS THE " + NameOf(want), Gold);
+                Reward(pos + Vector2.up * 2.6f);
+            }
+        }
+
+        public override void AddLight(Lighting l) => l.Add(pos + Vector2.up * 2.6f, Active ? 1.8f : 3f, Active ? 0.4f : 0.75f);
+
+        public override void Kill()
+        {
+            base.Kill();
+            if (glyph != null) Object.Destroy(glyph);
+        }
+    }
+
+    // ------------------------------------------------------------------ the steam altar: hung upside down from the roof
+    // It wants steam gathered around it under the vault's roof: enough to wreathe it, but not so much that the
+    // whole chamber fills. Boil water (lava, fire) and let the steam rise into the vault.
+    public class SteamAltar : Altar
+    {
+        readonly EventRoom room;
+        readonly GameObject gauge;
+        readonly SpriteRenderer gaugeSr;
+        float holdT, pulse, tooMuchT;
+        static readonly Color SteamC = new Color(0.85f, 0.9f, 1f);
+
+        public SteamAltar(EventRoom room)
+        {
+            this.room = room;
+            float top = 1 - room.ceil;   // world y of the vault roof's underside
+            MakeGO("SteamAltar", Art.AltarBase, 6);
+            go.transform.position = new Vector3(room.Cx + 0.5f, top, 0);
+            go.transform.localScale = new Vector3(1f, -1f, 1f);   // hanging upside down
+            pos = new Vector2(room.Cx + 0.5f, top - 0.9f);
+            Half = new Vector2(0.8f, 0.9f);
+            sr.color = new Color(0.75f, 0.78f, 0.85f);
+            gauge = Extra("SteamGlow", Art.Glow, pos, 5, out gaugeSr);
+            gauge.transform.localScale = Vector3.one * 2.2f;
+            gaugeSr.color = new Color(1f, 1f, 1f, 0f);
+        }
+
+        // it draws steam and fumes in towards itself (like the chalice reels in coins): within a few blocks of the
+        // vault, every cloud of gas drifts a step closer to the altar
+        void Suck(float dt)
+        {
+            int ax = room.Cx, ay = -room.ceil;   // the cell the altar hangs in
+            for (int y = ay - room.h - 4; y <= ay + 1; y++)
+                for (int x = room.x0 - 7; x <= room.x0 + room.w + 6; x++)
+                {
+                    byte t = Wd.LiquidType(x, y);
+                    if (!Fluids.IsGas(t)) continue;
+                    float a = Wd.LiquidAmount(x, y);
+                    if (a < 0.03f) continue;
+                    int dx = ax - x, dy = ay - y;
+                    if (dx == 0 && dy == 0) continue;
+                    int sx = Mathf.Abs(dx) >= Mathf.Abs(dy) ? System.Math.Sign(dx) : 0, sy = sx == 0 ? System.Math.Sign(dy) : 0;
+                    int tx = x + sx, ty = y + sy;
+                    if (Wd.Solid(tx, ty)) { if (sx != 0 && dy != 0 && !Wd.Solid(x, y + System.Math.Sign(dy))) { tx = x; ty = y + System.Math.Sign(dy); } else continue; }
+                    byte tt = Wd.LiquidType(tx, ty);
+                    if (tt != Fluids.None && !Fluids.IsGas(tt)) continue;
+                    float ta = tt == Fluids.None ? 0f : Wd.LiquidAmount(tx, ty);
+                    float m = Mathf.Min(a, Mathf.Min(1f - ta, a * 2.5f * dt + 0.004f));
+                    if (m <= 0f) continue;
+                    Wd.SetLiquid(x, y, t, a - m);
+                    Wd.SetLiquid(tx, ty, tt == Fluids.None ? t : tt, ta + m);
+                }
+            if (Random.value < dt * 4f) G.fx.Burst(pos + new Vector2(Random.Range(-3f, 3f), Random.Range(-3f, 0f)), 1, new Color(0.85f, 0.9f, 1f, 0.6f), 1.5f, 0.6f, 0f, 1f, false);
+        }
+
+        static float SteamAt(int x, int y) => Fluids.IsGas(Wd.LiquidType(x, y)) ? Wd.LiquidAmount(x, y) : 0f;   // steam or fumes: any gas will do
+
+        public override void Tick(float dt)
+        {
+            pulse += dt;
+            if (!Active)
+            {
+                sr.color = Color.Lerp(Color.white, Gold, 0.5f + 0.5f * Mathf.Sin(pulse * 3f));
+                gaugeSr.color = new Color(1f, 0.9f, 0.6f, 0.25f);
+                return;
+            }
+            Suck(dt);
+            // gas gathered up under the vault's roof, around the altar (its two top rows, a little past its walls too),
+            // and gas down at the floor (the doorway rows)
+            float around = 0f, below = 0f;
+            for (int d = room.ceil - 1; d < room.ceil + room.h - 1; d++)
+                for (int x = room.x0 - 1; x <= room.x0 + room.w; x++)
+                {
+                    float s = SteamAt(x, -d);
+                    if (d <= room.ceil + 1) around += s; else below += s;
+                }
+            float k = Mathf.Clamp01(around / 1.2f);       // a little cloud up there is enough
+            bool tooMuch = below > 3f && below > around;  // ...but a chamber full of it down to the floor drowns it out
+            gaugeSr.color = tooMuch ? new Color(1f, 0.45f, 0.4f, 0.35f + 0.15f * Mathf.Sin(pulse * 12f)) : new Color(SteamC.r, SteamC.g, SteamC.b, 0.45f * k);
+            sr.color = Color.Lerp(new Color(0.75f, 0.78f, 0.85f), Color.white, k);
+            if (Random.value < dt * 1.5f) G.fx.Burst(pos + new Vector2(Random.Range(-0.6f, 0.6f), -0.5f), 1, SteamC, 0.6f, 0.9f, -1.5f, 1f, false);   // a wisp curling up into it: it wants vapour
+            if (tooMuch) { tooMuchT -= dt; if (tooMuchT <= 0f) { tooMuchT = 2f; G.sfx.Play("fizz", 0.4f, 0.6f); } }
+            if (k >= 1f && !tooMuch) holdT += dt; else holdT = 0f;
+            if (holdT > 0.8f)
+            {
+                G.fx.Ring(pos, 2.5f, SteamC);
+                G.lighting.Flash(pos, 7f, 0.6f);
+                G.hud.Banner("THE ALTAR BREATHES", "WREATHED IN STEAM", Gold);
+                Reward(pos + Vector2.down * 1.4f);
+            }
+        }
+
+        public override void AddLight(Lighting l) => l.Add(pos, Active ? 1.8f : 3f, Active ? 0.4f : 0.75f);
+
+        public override void Kill()
+        {
+            base.Kill();
+            if (gauge != null) Object.Destroy(gauge);
         }
     }
 }

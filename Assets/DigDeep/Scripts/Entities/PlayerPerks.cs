@@ -77,7 +77,7 @@ namespace DigDeep
         // a kill: MOLE JERKY, MINER'S COFFEE, WAR HYMN
         void PerkKill(Enemy e)
         {
-            if (s.jerkyDrop && Chance.Roll("jerky", Lucky(0.06f))) G.Spawn(new HealOrb(e.pos + Vector2.up * 0.4f, 25));
+            if (s.jerkyDrop && Chance.Roll("jerky", Lucky(0.06f))) G.Spawn(new HealOrb(e.pos + Vector2.up * 0.4f, 15));
             if (s.killRush) GiveBuff(Buff.Speed, 1.6f);
             killStreak++; killStreakT = 2f;
             if (s.streakRate && killStreak >= 3) { GiveBuff(Buff.Rate, 3f); killStreak = 0; G.fx.Ring(pos, 1.3f, new Color(1f, 0.85f, 0.35f)); }

@@ -16,7 +16,7 @@ namespace DigDeep
         readonly Transform gun, laser;
         readonly SpriteRenderer gunSr, laserSr;
 
-        static readonly string[] Keys = { "raider", "brute", "marksman", "bomber" };
+        static readonly string[] Keys = { "raider2", "brute2", "marksman2", "bomber2" };   // (dressed like the bandits, with red bandanas)
         static readonly string[] Names = { "Raider", "Brute", "Marksman", "Bomber" };
         static readonly string[] Guns = { "revolver", "shotgun", "sniper", "grenade" };
 

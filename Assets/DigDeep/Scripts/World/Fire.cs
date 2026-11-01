@@ -51,6 +51,7 @@ namespace DigDeep
             Block b = w.Get(x, y);
             if (b == Block.TNT) { w.Break(x, y, false); return true; }
             if (b == Block.Ice) { Melt(x, y); return false; }
+            if (b == Block.Cloud || b == Block.CloudGold) { CloudWeather.Evaporate(x, y); return false; }   // fire boils a cloud off into steam (it drifts back together later)
             if (!HasFuel(x, y) || IsBurning(x, y)) return false;
             if (w.LiquidType(x, y) == Fluids.Water && w.LiquidAmount(x, y) > 0.3f) return false;
             G.Spawn(new Flame(x, y, Life, Tiles.Solid(b), false));
@@ -121,9 +122,21 @@ namespace DigDeep
         bool sparePlayer;        // cursed footstep: harmless until you've stepped out of it
         float t, touchT, crackT;
         int spreads, frame;
+        bool wasDying, flipNow;
+        float stretch = 1f;
 
         public override bool AlwaysActive => true;
         public float Height => t > life - 1f ? Mathf.Clamp01(life - t) : 1f;
+
+        // the pictures for how far it has burned down: full flames, then three ever smaller dying sets (Art.FlamesOut)
+        Sprite[] DyingSet()
+        {
+            float h = Height;
+            var o = Art.FlamesOut;
+            if (h >= 0.999f || o == null) return Art.Flames;
+            int k = h > 0.66f ? 0 : h > 0.33f ? 1 : 2;
+            return o[k] ?? Art.Flames;
+        }
 
         public Flame(int x, int y, float life, bool onBlock, bool sparePlayer)
         {
@@ -182,17 +195,26 @@ namespace DigDeep
 
             if (t >= life) { Burnout(true); return; }
 
-            // looks: three-frame flicker, shrinking in the last second
+            // looks: while burning the old three-frame flicker; in the last second it dies down through
+            // its own smaller pictures (Art.FlamesOut), each flame starting at its own frame so no two look alike
             crackT -= dt;
-            if (crackT <= 0f)
+            var set = DyingSet();
+            bool dying = set != Art.Flames;
+            if (crackT <= 0f || (dying && !wasDying))
             {
                 crackT = Random.Range(0.08f, 0.14f);
-                frame = (frame + 1 + Random.Range(0, 2)) % Art.Flames.Length;
-                sr.sprite = Art.Flames[frame];
+                if (dying && !wasDying) frame = Random.Range(0, set.Length);
+                else frame = dying ? (frame + 1) % set.Length : (frame + 1 + Random.Range(0, 2)) % set.Length;
+                frame %= set.Length;
+                sr.sprite = set[frame];
+                // the mirror and the height jitter change with the picture, not every frame (that shimmered)
+                flipNow = !dying && Random.value < 0.3f;
+                stretch = 1f;   // (no squash on a pixel-art flame: it made uneven rows)
                 if (Random.value < 0.08f && (p.pos - pos).sqrMagnitude < 120f) G.sfx.Play("fuse", 0.08f, Random.Range(0.7f, 1.3f), 0.1f);
             }
-            float h = Mathf.Max(0.15f, Height);
-            go.transform.localScale = new Vector3(Random.value < 0.15f ? -1f : 1f, h * Random.Range(0.92f, 1.06f), 1f);
+            wasDying = dying;
+            float h = dying ? Mathf.Clamp01(Height * 4f + 0.25f) : 1f;
+            go.transform.localScale = new Vector3(flipNow ? -1f : 1f, h * stretch, 1f);
             if (Random.value < 0.12f) G.fx.Burst(new Vector2(cx + Random.Range(0.2f, 0.8f), cy + 0.9f * h), 1, new Color(1f, Random.Range(0.5f, 0.9f), 0.2f), 1f, 0.5f, -6f, 1f, false);
         }
 

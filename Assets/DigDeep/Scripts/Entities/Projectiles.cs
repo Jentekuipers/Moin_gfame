@@ -130,6 +130,17 @@ namespace DigDeep
                     Kill();
                     int dmg = type == Type.Mega ? 16 : type == Type.Bomb ? 12 : 6;   // blasts are risky, so they hit hard
                     G.Explode(pos, radius, dmg, false, true, true);   // your own bombs count as your blasts (SHRAPNEL PRISM, NAPALM)
+                    // bombs are a boss-killer: bosses caught in (or touching) the blast take a heavy extra hit
+                    if (type != Type.Flare)
+                        foreach (var e in G.ents)
+                        {
+                            if (e.dead || !(e is Boss bo)) continue;
+                            Vector2 d = bo.pos - pos;
+                            float reach = radius * G.player.s.blastMul + Mathf.Max(bo.half.x, bo.half.y);
+                            if (d.magnitude > reach) continue;
+                            float extra = dmg * 3f * G.player.s.blastMul + bo.maxHp * (type == Type.Mega ? 0.08f : type == Type.Bomb ? 0.05f : 0.03f);
+                            bo.TakeShot(extra, Vector2.zero);
+                        }
                     if (type == Type.Mega) G.cam.Shake(1f);
                     return;
                 }

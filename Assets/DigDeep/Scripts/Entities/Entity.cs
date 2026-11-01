@@ -127,7 +127,7 @@ namespace DigDeep
         public float splashMul = 1f;     // SHRAPNEL STORM: stronger splash shards
         public float bodyScale = 1f;
         // ---- more run-changers (see README)
-        public bool splash4, cloudSplit, swell, spectral, ghostSwarm, wildShots, ghostGun, freeDouble, wormShots;   // shot items
+        public bool splash4, cloudSplit, swell, spectral, ghostSwarm, wildShots, ghostGun, freeDouble, wormShots, rainbowShots;   // shot items
         public int extraBounces;          // BOUNCY ROUNDS (stacks)
         public float knockMul = 1f;       // knockback items
         public bool ramming;              // BATTERING RAM: hard hits send foes flying like a kick

@@ -117,7 +117,7 @@ namespace DigDeep
             if (onGround && !wasGround) landT = 0.3f;
             wasGround = onGround;
             landT -= dt;
-            Draw(0f);
+            Draw(-half.y + 1f / 16f);   // (its picture stands on its feet: the pivot is at the bottom of the sprite, not its middle)
             if (dead) return;
             // the falling stretch, the landing squash and a jelly wobble when hit
             if (flash > 0.06f) hitT = 0.3f;
@@ -162,7 +162,7 @@ namespace DigDeep
                 if (facing != before) { bounces++; G.sfx.Play("land", 0.4f, 1.6f); G.cam.Shake(0.05f); if (bounces >= 3) slideT = 0f; }
                 if (Random.value < 0.4f) G.fx.Burst(pos + new Vector2(0f, -half.y), 1, new Color(0.7f, 0.6f, 0.45f), 2f, 0.25f, 10f);
                 if (slideT <= 0f) coolT = 2.5f;
-                Draw(0f);
+                Draw(-half.y + 1f / 16f);   // (bottom-pivot picture: feet on the floor)
                 if (!dead) { var sl = StripFrame("turtle_slide", ((int)(animT * 14f)) % 7); if (sl != null) sr.sprite = sl; }
                 return;
             }
@@ -174,7 +174,7 @@ namespace DigDeep
                 G.sfx.Play("dash", 0.6f, 1.2f);
             }
             WalkMove(sp, dt, false);
-            Draw(0f);
+            Draw(-half.y + 1f / 16f);   // (bottom-pivot picture: feet on the floor)
         }
     }
 
@@ -289,18 +289,22 @@ namespace DigDeep
                 }
                 WalkMove(sp, dt, HasTarget, !path);
             }
-            Draw(0f);
+            Draw(-half.y + 1f / 16f);   // (bottom-pivot picture: feet on the floor)
             if (!dead && over != null) sr.sprite = over;
             if (!dead && buried && !awake) sr.color = new Color(0.55f, 0.47f, 0.4f, 0.85f);   // bones showing through the dirt
         }
     }
 
-    // GLIDER BAT: clings to the ceiling, then drops into a long swooping glide at you and flaps back up.
+    // GLIDER BAT: hangs from the ceiling, then drops into a long swooping glide at you, bouncing off the walls a few
+    // times (a random number) before it clings to one. It rests there a second, then launches at you again if it
+    // still has you in its sights, or flaps back to its roost. Pictures: Extra.gliderhang (hanging), Extra.gliderwall
+    // (clinging to a wall on its left; flipped for a wall on its right), Enemy.glider (the two flying frames).
     public class GliderBat : Enemy
     {
-        int st;   // 0 hanging, 1 gliding, 2 climbing back
+        int st;   // 0 hanging, 1 gliding, 2 flying back to the roost, 3 clinging to a wall
         float t;
         Vector2 roost, glideV;
+        int bouncesLeft, wallDir;
 
         public GliderBat(int x, int y, int depth)
         {
@@ -309,6 +313,16 @@ namespace DigDeep
             Setup("Glider Bat", "glider", 2, depth);
             gold = 3;
             blood = new Color(0.6f, 0.4f, 0.9f);
+        }
+
+        void Swoop(Vector2 at, float awayX)
+        {
+            st = 1; t = 0f;
+            float dx = awayX != 0f ? awayX : Mathf.Sign(at.x - pos.x);
+            glideV = new Vector2(dx * 7f, Mathf.Clamp((at.y - pos.y) * 1.2f, -6f, 4f));
+            if (awayX == 0f) glideV.y = -6f;   // off the ceiling: a falling swoop
+            bouncesLeft = Random.Range(1, 4);   // 1-3 bounces before it clings to a wall
+            G.sfx.Play("bat", 0.35f, 0.7f);
         }
 
         public override void Tick(float dt)
@@ -320,32 +334,76 @@ namespace DigDeep
             switch (st)
             {
                 case 0:
-                    animT = 0f;
-                    if (HasTarget && (TPos - pos).sqrMagnitude < 64f || flash > 0f)
-                    {
-                        st = 1; t = 0f;
-                        Vector2 d = TPos - pos;
-                        glideV = new Vector2(Mathf.Sign(d.x) * 7f, -6f);
-                        G.sfx.Play("bat", 0.35f, 0.7f);
-                    }
+                    vel = Vector2.zero;
+                    if (HasTarget && (TPos - pos).sqrMagnitude < 64f || flash > 0f) Swoop(HasTarget ? TPos : pos + Vector2.right, 0f);
                     break;
                 case 1:
-                    // a falling swoop that flattens out
+                    // a swoop that flattens out
                     glideV.y = Mathf.MoveTowards(glideV.y, 2.5f, 9f * dt);
                     vel = glideV;
-                    if (t > 1.8f) { st = 2; t = 0f; }
+                    if (t > 2.4f) { st = 2; t = 0f; }
                     break;
                 case 2:
                     vel = Vector2.MoveTowards(vel, (roost - pos).normalized * 4f, 12f * dt);
-                    if ((roost - pos).sqrMagnitude < 0.2f || t > 4f) { st = 0; vel = Vector2.zero; if (t > 4f) roost = pos; }
+                    if ((roost - pos).sqrMagnitude < 0.2f || t > 4f) { st = 0; vel = Vector2.zero; if (t > 4f) roost = pos; pos = roost; }
+                    break;
+                case 3:
+                    vel = Vector2.zero;
+                    if (!Wd.Solid(Mathf.FloorToInt(pos.x + wallDir * (half.x + 0.1f)), Mathf.FloorToInt(pos.y))) { st = 2; t = 0f; break; }   // its wall went
+                    // a second's rest on the wall, then at you again (or home, if it lost you)
+                    if (t >= 1f)
+                    {
+                        if (HasTarget) Swoop(TPos, -wallDir);
+                        else { st = 2; t = 0f; }
+                    }
                     break;
             }
             Vector2 p = pos;
-            if (Wd.MoveX(ref p, half, vel.x * dt, out _)) { glideV.x *= -1f; vel.x *= -0.5f; }
-            if (Wd.MoveY(ref p, half, vel.y * dt, out _)) { vel.y = 0f; if (st == 1) { st = 2; t = 0f; } }
+            if (st != 3 && Wd.MoveX(ref p, half, vel.x * dt, out _))
+            {
+                if (st == 1 && bouncesLeft <= 0)
+                {
+                    // out of bounces: it clings to the wall
+                    st = 3; t = 0f; wallDir = vel.x > 0f ? 1 : -1;
+                    vel = Vector2.zero; glideV = Vector2.zero;
+                    G.sfx.Play("land", 0.3f, 1.6f);
+                }
+                else { if (st == 1) bouncesLeft--; glideV.x *= -1f; vel.x *= -0.5f; }
+            }
+            if (st != 3 && Wd.MoveY(ref p, half, vel.y * dt, out _))
+            {
+                if (st == 1 && bouncesLeft > 0) { bouncesLeft--; glideV.y = vel.y < 0f ? Mathf.Abs(glideV.y) * 0.6f + 3f : -2f; vel.y = 0f; }
+                else { vel.y = 0f; if (st == 1) { st = 2; t = 0f; } }
+            }
             pos = p;
-            if (Mathf.Abs(vel.x) > 0.1f) facing = vel.x > 0 ? 1 : -1;
-            Draw(0f);
+            if (st == 1 || st == 2) { animT += dt * 1.5f; if (Mathf.Abs(vel.x) > 0.1f) facing = vel.x > 0 ? 1 : -1; }
+            DrawGlider();
+        }
+
+        void DrawGlider()
+        {
+            Sprite[] pic = st == 0 ? SpriteSheet.Frames("gliderhang") : st == 3 ? SpriteSheet.Frames("gliderwall") : null;
+            if (pic == null || pic.Length == 0)
+            {
+                // flying: always the gliding picture (tail a little down), never flapping between two
+                Draw(0f);
+                if (!dead && frames != null && frames.Length > 1) sr.sprite = flash > 0f && whites != null && whites.Length > 1 ? whites[1] : frames[1];
+                return;
+            }
+            var s = pic[0];
+            float yOff = 0f;
+            if (st == 0)
+            {
+                // hanging: the top of the picture against the ceiling
+                float above = (s.rect.height - s.pivot.y) / s.pixelsPerUnit, below = s.pivot.y / s.pixelsPerUnit;
+                int cy = Mathf.FloorToInt(pos.y);
+                yOff = Wd.Solid(Mathf.FloorToInt(pos.x), cy + 1) ? cy + 1f - pos.y - above : (above - below) * -0.5f;
+            }
+            Draw(yOff);
+            if (dead || sr == null) return;
+            sr.sprite = s;
+            sr.flipX = st == 3 ? wallDir > 0 : facing < 0;   // (the wall picture is drawn for a wall on its left)
+            if (flash > 0f) sr.color = new Color(1f, 0.6f, 0.6f);
         }
     }
 
@@ -403,22 +461,26 @@ namespace DigDeep
                 onGround = Wd.Ground(pos + new Vector2(0f, -0.05f), half);
             }
             animT += dt * (Mathf.Abs(vel.x) > 3f ? 1.5f : 0f);   // legs run faster when it runs
-            Draw(0f);
+            Draw(-half.y + 1f / 16f);   // (bottom-pivot picture: feet on the floor)
         }
     }
 
-    // ROCK MAGE: a hooded stone caster. Raises spikes of rock from the floor under you and blinks away if you get close.
+    // LAVA MAGE (the RockMage class): a little stone-and-magma caster of the magma depths, and nowhere else. Made of
+    // fire: lava can't hurt it (water puts it out for good). It calls up lava around its feet now and then and lobs
+    // balls of molten rock that burst into lava wherever they hit (or when you shoot them down). Blinks away when
+    // you get close.
     public class RockMage : Walker
     {
-        float castT = 2f, blinkCd;
+        float castT = 2f, blinkCd, poolT = 3f;
 
         public RockMage(int x, int y, int depth)
         {
             half = new Vector2(0.35f, 0.8f);
             pos = new Vector2(x + 0.5f, y + half.y + 0.002f);
-            Setup("Rock Mage", "rockmage", 5, depth);
+            Setup("Lava Mage", "rockmage", 5, depth);
             gold = 6;
-            blood = new Color(0.6f, 0.65f, 0.6f);
+            blood = new Color(1f, 0.5f, 0.2f);
+            fireLike = true;   // lava-proof and fire-proof (water snuffs it out)
         }
 
         public override void Tick(float dt)
@@ -427,7 +489,7 @@ namespace DigDeep
             if (dead) return;
             FindTarget(10f, true, dt);
             Fall(dt);
-            castT -= dt; blinkCd -= dt;
+            castT -= dt; blinkCd -= dt; poolT -= dt;
             if (HasTarget)
             {
                 facing = TPos.x > pos.x ? 1 : -1;
@@ -435,17 +497,32 @@ namespace DigDeep
                 if (castT <= 0f)
                 {
                     castT = 2.6f;
-                    // the ground under you heaves up
-                    int fx = Mathf.FloorToInt(TPos.x), fy = Mathf.FloorToInt(TPos.y - Player.Half.y - 0.1f);
-                    for (int k = 0; k < 3 && !Wd.Solid(fx, fy); k++) fy--;
-                    var at = new Vector2(fx + 0.5f, fy + 1.5f);
-                    G.Spawn(new Hazard(at, new Vector2(0.45f, 0.6f), 0.75f, 0.3f, new Color(0.7f, 0.65f, 0.55f), dmg));
-                    G.sfx.Play("rumble", 0.4f, 1.5f);
+                    // a ball of molten rock, lobbed at you: it bursts into lava where it lands
+                    Vector2 from = pos + new Vector2(facing * 0.4f, 0.5f);
+                    Vector2 d = TPos - from;
+                    float tf = Mathf.Clamp(Mathf.Abs(d.x) / 8f, 0.35f, 1.1f);
+                    G.Spawn(new LiquidGlob(from, new Vector2(d.x / tf, d.y / tf + 0.5f * LiquidGlob.Grav * tf), Fluids.Lava, 22, dmg, this));
+                    G.sfx.Play("flame", 0.45f, 0.7f, 0.1f);
                     flash = 0.04f;
                 }
+                if (poolT <= 0f)
+                {
+                    poolT = Random.Range(5f, 7f);
+                    // lava wells up out of the ground on either side of it
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        int lx = Mathf.FloorToInt(pos.x) + side * Random.Range(1, 3), ly = Mathf.FloorToInt(pos.y - half.y + 0.1f);
+                        if (Wd.Solid(lx, ly) || !Wd.Solid(lx, ly - 1)) continue;
+                        Fluids.Spill(new Vector2(lx + 0.5f, ly + 0.5f), Fluids.Lava, 14, Vector2.up);
+                        G.fx.Burst(new Vector2(lx + 0.5f, ly + 0.3f), 8, new Color(1f, 0.5f, 0.15f), 3f, 0.4f, 6f);
+                    }
+                    G.sfx.Play("rumble", 0.35f, 1.3f);
+                }
             }
-            Draw(0f);
+            Draw(-half.y + 1f / 16f);   // (bottom-pivot picture: feet on the floor)
         }
+
+        public override void AddLight(Lighting l) { base.AddLight(l); l.Add(pos + Vector2.up * 0.3f, 2.2f, 0.6f); }
 
         void Blink()
         {
@@ -510,7 +587,7 @@ namespace DigDeep
                 }
             }
             WalkMove(sp, dt, false);
-            Draw(0f);
+            Draw(-half.y + 1f / 16f);   // (bottom-pivot picture: feet on the floor)
         }
 
         public override void AddLight(Lighting l) { base.AddLight(l); l.Add(pos + new Vector2(facing * 0.6f, 0f), 3f, 0.8f); }

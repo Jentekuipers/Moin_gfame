@@ -15,7 +15,7 @@ namespace DigDeep
         public Dictionary<int, List<int>> stains;
         public float[] liq = new float[World.W * World.CH];   // fluid amount per cell (0..1)
         public byte[] sub, cnt;                                // water/lava grains, 8x8 per cell, and how many per cell (see Fluids)
-        public float[] mixP, mixH;                             // poison / haste-mist dissolved in the water of a cell (0..1): it tints the water
+        public float[] mixP, mixH, mixB;                       // poison / haste-mist / blood dissolved in the water of a cell (0..1): it tints the water
         public byte[] lt = new byte[World.W * World.CH];      // fluid type per cell (see Fluids)
         public byte[] fl = new byte[World.W * World.CH];      // plant growth in an empty cell: 1 grass, 2 vine (both burn)
         public bool[] seen = new bool[World.W * World.CH];    // has the player ever had this cell in sight? (it stays dimly lit)
@@ -63,6 +63,7 @@ namespace DigDeep
             if (h < 0.09f) return Fluids.Haste;
             int bi = Biomes.Index(-y);
             if ((bi == Biomes.Jungle || bi == Biomes.Fungal) && h < 0.3f) return Fluids.Poison;
+            if (bi == Biomes.Crimson && h < 0.75f) return Fluids.Blood;   // the crimson forest pools blood
             return Fluids.Water;
         }
 
@@ -117,8 +118,10 @@ namespace DigDeep
                 }
             GrowPlants(c);
             AcidBuckets(c);
-            BuildWood(c);
             GuaranteeCrate(c);
+            BuildWood(c);
+            BiomeBuild.Decorate(this, c);
+            BiomeDecor.Place(c);
             Game.I.OnChunkGenerated(c);
             // anything built afterwards (wood, crates, rooms) may have moved the ground: grass only stays on a floor
             PrunePlants(c, 0, CH - 1);
@@ -139,34 +142,44 @@ namespace DigDeep
                 }
         }
 
-        // At least one weapon crate in every 32-row band (two chunks), on a cave floor, below the camp.
+        // The weapon crates and supply crates planned for this chunk (Gen.CrateChunks, Gen.SupplyChunks), each on a
+        // cave floor (under water if there's nowhere dry).
         void GuaranteeCrate(Chunk c)
         {
-            if ((c.ci & 1) != 0) return;
-            int topDepth = -(c.Y0 + CH - 1);
-            if (topDepth < 22) return;
-            for (int i = 0; i < c.t.Length; i++) if (c.t[i] == Block.Crate) return;
+            if (-(c.Y0 + CH - 1) >= 18) { Gen.PlanSlot(Biomes.SlotOf(-(c.Y0 + CH / 2))); Gen.PlanSlot(Biomes.SlotOf(-c.Y0)); }
+            int want = 0, wantS = 0;
+            foreach (int cc in Gen.CrateChunks) if (cc == c.ci) want++;
+            foreach (int cc in Gen.SupplyChunks) if (cc == c.ci) wantS++;
+            if (want + wantS == 0) return;
             var r = new System.Random(Gen.Seed * 977 + c.ci * 131);
             var spots = new List<int>();
+            var wet = new List<int>();
             for (int ly = 1; ly < CH; ly++)
                 for (int x = 3; x < W - 3; x++)
                 {
                     int i = ly * W + x;
-                    if (c.t[i] != Block.Air || c.lt[i] != Fluids.None) continue;
+                    if (c.t[i] != Block.Air) continue;
                     if (!Tiles.Solid(c.t[(ly - 1) * W + x]) || c.t[(ly - 1) * W + x] == Block.Spikes) continue;
                     if (Gen.InCarve(x, -(c.Y0 + ly))) continue;
-                    spots.Add(i);
+                    if (c.lt[i] != Fluids.None) wet.Add(i); else spots.Add(i);
                 }
-            if (spots.Count == 0) return;
-            int k = spots[r.Next(spots.Count)];
-            c.t[k] = Block.Crate;
-            c.hp[k] = (byte)MaxHp(Block.Crate, c.Y0 + k / W);
+            if (spots.Count == 0) spots = wet;
+            for (int n = 0; n < want + wantS && spots.Count > 0; n++)
+            {
+                int si = r.Next(spots.Count);
+                int k = spots[si];
+                spots.RemoveAt(si);
+                Block b = n < want ? Block.Crate : Block.Supply;
+                c.t[k] = b; c.lt[k] = Fluids.None; c.liq[k] = 0f;
+                c.hp[k] = (byte)MaxHp(b, c.Y0 + k / W);
+            }
         }
 
         public static int MaxHp(Block b, int y)
         {
-            int hp = Tiles.Def(b).hp;
-            int depth = -y;
+            var def = Tiles.Def(b);
+            int hp = def.hp;
+            int depth = Biomes.Tune(-y);   // (the toughening with depth keeps the old pace through the longer biomes)
             if (b == Block.Stone || b == Block.HardStone || b == Block.Obsidian || b == Block.Gold || b == Block.Gem)
                 hp += Mathf.Max(0, depth) / 110;
             return Mathf.Clamp(hp, 0, 255);
@@ -208,6 +221,17 @@ namespace DigDeep
         }
 
         // Which fluid is this point actually inside? (below the surface of the liquid in its cell)
+        // is this point in blood (or water red with it)? crimson creatures heal in it, and you see foes clearly
+        public bool BloodyAt(Vector2 p)
+        {
+            byte f = FluidAtPoint(p);
+            if (f == Fluids.Blood) return true;
+            if (f != Fluids.Water) return false;
+            int x = Mathf.FloorToInt(p.x), y = Mathf.FloorToInt(p.y);
+            if (x < 0 || x >= W || !chunks.TryGetValue(U.FloorDiv(y, CH), out var c) || c.mixB == null) return false;
+            return c.mixB[(y - c.Y0) * W + x] > 0.3f;
+        }
+
         public byte FluidAtPoint(Vector2 p)
         {
             int x = Mathf.FloorToInt(p.x), y = Mathf.FloorToInt(p.y);
@@ -286,6 +310,15 @@ namespace DigDeep
             return c.fl[(y - c.Y0) * W + x];
         }
 
+        public void AddFlags(int x, int y, byte mask)
+        {
+            if (x < 0 || x >= W || !chunks.TryGetValue(U.FloorDiv(y, CH), out var c)) return;
+            int i = (y - c.Y0) * W + x;
+            if ((c.fl[i] & mask) == mask || Tiles.Solid(c.t[i])) return;
+            c.fl[i] = (byte)(c.fl[i] | mask);
+            RedrawCell(x, y);
+        }
+
         public void ClearFlags(int x, int y, byte mask)
         {
             if (x < 0 || x >= W || !chunks.TryGetValue(U.FloorDiv(y, CH), out var c)) return;
@@ -307,6 +340,11 @@ namespace DigDeep
                 case Biomes.Jungle: return earth ? 0.95f : rock ? 0.7f : 0f;
                 case Biomes.Fungal: return earth ? 0.2f : 0f;
                 case Biomes.Kingdom: return earth ? 0.25f : 0f;
+                case Biomes.Cloud: return below == Block.Cloud ? 0.35f : earth ? 0.6f : 0f;
+                case Biomes.Crimson: return earth ? 0.9f : rock ? 0.5f : 0f;
+                case Biomes.Beach: return below == Block.Sand ? 0.3f : earth ? 0.7f : 0f;
+                case Biomes.Neon: return earth ? 0.95f : rock ? 0.6f : below == Block.Leaf ? 0.4f : 0f;
+                case Biomes.Reef: return earth || below == Block.Sand ? 0.6f : rock || below == Block.Coral ? 0.4f : 0f;
                 default: return 0f;
             }
         }
@@ -318,6 +356,7 @@ namespace DigDeep
                 {
                     int i = ly * W + x, y = c.Y0 + ly;
                     if (c.t[i] != Block.Air || c.lt[i] != Fluids.None || y >= 0) continue;
+                    if (Gen.InShop(x, -y)) continue;   // nothing grows behind a shop's walls
                     int bio = Biomes.Index(-y);
                     Block below = ly > 0 ? c.t[i - W] : Peek(x, y - 1);   // (the real block, which may already be dug out)
                     // grass in patches: a coarse noise decides where it grows at all
@@ -325,14 +364,14 @@ namespace DigDeep
                     if (patch < 0.75f && U.H01(x, y, 402) < GrassChance(bio, below)) c.fl[i] |= Grass;
                     // vines (grass ropes) hang from ceilings, mostly in the jungle
                     Block above = ly < CH - 1 ? c.t[i + W] : Peek(x, y + 1);
-                    float vineChance = bio == Biomes.Jungle ? 0.22f : bio == Biomes.Topsoil ? 0.02f : 0f;
+                    float vineChance = bio == Biomes.Jungle || bio == Biomes.Neon ? 0.22f : bio == Biomes.Crimson ? 0.12f : bio == Biomes.Topsoil ? 0.02f : 0f;
                     if (Tiles.Solid(above) && above != Block.Spikes && U.H01(x, y, 403) < vineChance)
                     {
                         int len = 2 + (int)(U.Hash(x, y, 404) % 6);
                         for (int k = 0; k < len && ly - k >= 0; k++)
                         {
                             int j = (ly - k) * W + x;
-                            if (c.t[j] != Block.Air || c.lt[j] != Fluids.None) break;
+                            if (c.t[j] != Block.Air || c.lt[j] != Fluids.None || Gen.InShop(x, -(c.Y0 + ly - k))) break;
                             c.fl[j] |= Vine;
                         }
                     }
@@ -345,16 +384,15 @@ namespace DigDeep
             int top = -(c.Y0 + CH - 1);
             if (top < 18) return;   // not in the camp
             var r = new System.Random(Gen.Seed * 613 + c.ci * 59);
-            // huts over chests and weapon crates
-            for (int ly = 0; ly < CH - 3; ly++)
-                for (int x = 3; x < W - 3; x++)
+            // chests and weapon crates sit in worn-down shelters: someone lived here once (see Shelter)
+            for (int ly = 1; ly < CH - 6; ly++)
+                for (int x = 6; x < W - 6; x++)
                 {
                     Block b = c.t[ly * W + x];
-                    if ((b != Block.Chest && b != Block.Crate) || r.NextDouble() > 0.5) continue;
-                    if (Gen.InCarve(x, -(c.Y0 + ly))) continue;
-                    // posts either side, a roof two blocks up
-                    for (int k = 0; k <= 1; k++) { WoodAt(c, x - 1, ly + k); WoodAt(c, x + 1, ly + k); }
-                    for (int dx = -2; dx <= 2; dx++) WoodAt(c, x + dx, ly + 2);
+                    if (b != Block.Chest && b != Block.Crate) continue;
+                    if (Gen.InCarve(x, -(c.Y0 + ly)) || Gen.InShop(x, -(c.Y0 + ly)) || r.NextDouble() > 0.8) continue;
+                    if (!Tiles.Solid(c.t[(ly - 1) * W + x])) continue;   // (only one standing on something)
+                    Shelter.Build(this, c, x, ly, r);
                 }
             // scaffolds: a plank platform on two posts
             int tries = 3 + r.Next(3);
@@ -444,8 +482,10 @@ namespace DigDeep
                     if (ut == Fluids.None || ut == lt0 || Fluids.IsGas(ut)) SetLiquid(x, y + 1, lt0, Mathf.Min(1f, (ut == lt0 ? LiquidAmount(x, y + 1) : 0f) + la));
                 }
             }
+            Block was = c.t[i];
             c.t[i] = b;
             c.hp[i] = (byte)MaxHp(b, y);
+            if ((was == Block.Cloud || was == Block.CloudGold) && b != Block.Cloud && b != Block.CloudGold) CloudWeather.Gone(x, y);   // clouds drift back together
             if (Tiles.Solid(b)) c.fl[i] = 0;   // a block filling the cell crushes any grass or vine there
             if (!Tiles.Solid(b) && c.stains != null) c.stains.Remove(i);
             RedrawAround(x, y);
@@ -627,13 +667,30 @@ namespace DigDeep
 
         // ------------------------------------------------------------ collision
 
+        // CHESTS, CRATES and SUPPLY BOXES are shorter than a block: you stand (and things settle) on their lids, not
+        // on an invisible line above them. Their top, as a fraction of a block (1 for everything else).
+        public float TopOf(int x, int y)
+        {
+            Block b = Get(x, y);
+            return b == Block.Chest || b == Block.Supply ? 11f / 16f : b == Block.Crate ? 12f / 16f : 1f;
+        }
+        // is this point inside something solid (minding the short boxes)?
+        public bool SolidAt(Vector2 pt)
+        {
+            int x = Mathf.FloorToInt(pt.x), y = Mathf.FloorToInt(pt.y);
+            return Solid(x, y) && pt.y - y < TopOf(x, y);
+        }
+        // a box against one cell: solid, unless it's a short box whose lid is below the box's bottom
+        bool CellBlocks(int x, int y, float bottom) => Solid(x, y) && bottom < y + TopOf(x, y) - 0.001f;
+
         public bool BoxSolid(Vector2 p, Vector2 h)
         {
             int x0 = Mathf.FloorToInt(p.x - h.x + E), x1 = Mathf.FloorToInt(p.x + h.x - E);
             int y0 = Mathf.FloorToInt(p.y - h.y + E), y1 = Mathf.FloorToInt(p.y + h.y - E);
+            float bottom = p.y - h.y + E;
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
-                    if (Solid(x, y)) return true;
+                    if (CellBlocks(x, y, bottom)) return true;
             return false;
         }
 
@@ -644,6 +701,7 @@ namespace DigDeep
             int steps = Mathf.Max(1, Mathf.CeilToInt(Mathf.Abs(dx) / 0.45f));
             float sdx = dx / steps;
             int y0 = Mathf.FloorToInt(p.y - h.y + E), y1 = Mathf.FloorToInt(p.y + h.y - E);
+            float bottom = p.y - h.y + E;
             for (int s = 0; s < steps; s++)
             {
                 float nx = p.x + sdx;
@@ -651,13 +709,13 @@ namespace DigDeep
                 {
                     int cx = Mathf.FloorToInt(nx + h.x - E);
                     for (int y = y0; y <= y1; y++)
-                        if (Solid(cx, y)) { p.x = cx - h.x; hit = new Vector2Int(cx, y); return true; }
+                        if (CellBlocks(cx, y, bottom)) { p.x = cx - h.x; hit = new Vector2Int(cx, y); return true; }
                 }
                 else
                 {
                     int cx = Mathf.FloorToInt(nx - h.x + E);
                     for (int y = y0; y <= y1; y++)
-                        if (Solid(cx, y)) { p.x = cx + 1 + h.x; hit = new Vector2Int(cx, y); return true; }
+                        if (CellBlocks(cx, y, bottom)) { p.x = cx + 1 + h.x; hit = new Vector2Int(cx, y); return true; }
                 }
                 p.x = nx;
             }
@@ -672,6 +730,7 @@ namespace DigDeep
             if (BoxSolid(p, h)) return true;
             float feet = p.y - h.y;   // (p is already nudged down a touch by the caller)
             if (PlateUnder(p, h, feet + 0.1f, feet, out _)) return true;
+            if (MushroomCap.All.Count > 0 && MushroomCap.Under(p, h, feet + 0.1f, feet, out _)) return true;   // standing on a mushroom cap
             if (Spear.All.Count == 0) return false;
             return Spear.Under(p, h, feet + 0.1f, feet, out _);
         }
@@ -718,9 +777,10 @@ namespace DigDeep
                     // spear ledges: you land on them from above only (walk and jump through them otherwise)
                     if (Spear.All.Count > 0 && Spear.Under(p, h, p.y - h.y, ny - h.y, out float top)) { p.y = top + h.y; return true; }
                     if (PlateUnder(p, h, p.y - h.y, ny - h.y, out float ptop)) { p.y = ptop + h.y; hit = new Vector2Int(Mathf.FloorToInt(p.x), Mathf.FloorToInt(ptop) - 1); return true; }
+                    if (MushroomCap.All.Count > 0 && MushroomCap.Under(p, h, p.y - h.y, ny - h.y, out float mtop)) { p.y = mtop + h.y; return true; }   // a giant mushroom's cap
                     int cy = Mathf.FloorToInt(ny - h.y + E);
                     for (int x = x0; x <= x1; x++)
-                        if (Solid(x, cy)) { p.y = cy + 1 + h.y; hit = new Vector2Int(x, cy); return true; }
+                        if (CellBlocks(x, cy, ny - h.y + E)) { p.y = cy + TopOf(x, cy) + h.y; hit = new Vector2Int(x, cy); return true; }
                 }
                 p.y = ny;
             }

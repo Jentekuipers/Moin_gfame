@@ -12,7 +12,7 @@ namespace DigDeep
     // around them traps them in the ice: smash the ice and the fish dies with it, melt it and the fish swims off.
     public class Fish : Enemy
     {
-        public enum Kind { Minnow, Biter, Grouper, Glow, Gold }   // GLOW and GOLD: harmless, and they shine (gold fish drop gold)
+        public enum Kind { Minnow, Biter, Grouper, Glow, Gold, Puffer, Sword, Jelly, Clown, Angler }   // (the last five: the beach and the reef)   // GLOW and GOLD: harmless, and they shine (gold fish drop gold)
         enum St { Swim, Air, Flop, Iced }
 
         readonly Kind kind;
@@ -23,22 +23,38 @@ namespace DigDeep
         Vector2 drain;
         bool hasDrain, draining;
         readonly float speed;
+        float puff, dashT;
+        protected override void OnTouch(Player p) { if (kind == Kind.Jelly) p.Shock(Mathf.Max(5, dmg / 3)); }
 
-        bool Meek => kind == Kind.Minnow || kind == Kind.Glow || kind == Kind.Gold;
+        bool Meek => kind == Kind.Minnow || kind == Kind.Glow || kind == Kind.Gold || kind == Kind.Clown;
         protected override bool Harmless => Meek || st == St.Flop || st == St.Iced;
 
         public Fish(int x, int y, int depth, Kind k)
         {
             kind = k;
             pos = new Vector2(x + 0.5f, y + 0.5f);
-            half = k == Kind.Biter ? new Vector2(0.36f, 0.24f) : k == Kind.Grouper ? new Vector2(0.55f, 0.32f) : new Vector2(0.3f, 0.16f);
-            Setup(k == Kind.Minnow ? "Minnow" : k == Kind.Biter ? "Biter" : k == Kind.Grouper ? "Grouper" : k == Kind.Glow ? "Glow Fish" : "Gold Fish",
-                  k == Kind.Minnow ? "fish_minnow" : k == Kind.Biter ? "fish_piranha" : k == Kind.Grouper ? "fish_grouper" : k == Kind.Glow ? "fish_glow" : "fish_gold",
-                  k == Kind.Biter ? 2 : k == Kind.Grouper ? 7 : 1, depth);
+            half = k == Kind.Biter ? new Vector2(0.36f, 0.24f) : k == Kind.Grouper ? new Vector2(0.55f, 0.32f) : k == Kind.Sword ? new Vector2(0.55f, 0.16f)
+                 : k == Kind.Puffer || k == Kind.Angler ? new Vector2(0.34f, 0.26f) : k == Kind.Jelly ? new Vector2(0.28f, 0.3f) : new Vector2(0.3f, 0.16f);
+            string nm, key; int hp0;
+            switch (k)
+            {
+                case Kind.Minnow: nm = "Minnow"; key = "fish_minnow"; hp0 = 1; break;
+                case Kind.Biter: nm = "Biter"; key = "fish_piranha"; hp0 = 2; break;
+                case Kind.Grouper: nm = "Grouper"; key = "fish_grouper"; hp0 = 7; break;
+                case Kind.Glow: nm = "Glow Fish"; key = "fish_glow"; hp0 = 1; break;
+                case Kind.Gold: nm = "Gold Fish"; key = "fish_gold"; hp0 = 1; break;
+                case Kind.Puffer: nm = "Pufferfish"; key = "fish_puffer"; hp0 = 3; break;
+                case Kind.Sword: nm = "Swordfish"; key = "fish_sword"; hp0 = 3; break;
+                case Kind.Jelly: nm = "Jellyfish"; key = "fish_jelly"; hp0 = 2; break;
+                case Kind.Clown: nm = "Clownfish"; key = "fish_clown"; hp0 = 1; break;
+                default: nm = "Anglerfish"; key = "fish_angler"; hp0 = 4; break;
+            }
+            Setup(nm, key, hp0, depth);
             waterLike = true;
             team = Team.Beast;
-            speed = k == Kind.Biter ? 4.2f : k == Kind.Grouper ? 2.4f : 3.4f;
+            speed = k == Kind.Biter ? 4.2f : k == Kind.Grouper ? 2.4f : k == Kind.Sword ? 5f : k == Kind.Jelly ? 1.2f : k == Kind.Puffer ? 2.2f : 3.4f;
             if (k == Kind.Grouper) dmg = Mathf.RoundToInt(dmg * 1.7f);
+            if (k == Kind.Puffer || k == Kind.Sword) dmg = Mathf.RoundToInt(dmg * 1.3f);
             gold = k == Kind.Gold ? 8 : k == Kind.Biter ? 2 : k == Kind.Grouper ? 5 : 0;
             blood = new Color(0.85f, 0.3f, 0.3f);
             facing = Random.value < 0.5f ? -1 : 1;
@@ -180,6 +196,21 @@ namespace DigDeep
                 spd *= 0.6f;                                        // it struggles, but the current wins
             }
 
+            // the new fish: the puffer swells up when you come close (spiky: it hurts more), the swordfish lunges, the
+            // jellyfish just drifts (its touch shocks)
+            if (kind == Kind.Puffer)
+            {
+                bool close = pl.mode != Player.Mode.Dead && (pl.pos - pos).sqrMagnitude < 9f;
+                puff = Mathf.MoveTowards(puff, close ? 1f : 0f, dt * (close ? 4f : 0.7f));
+                half = Vector2.Lerp(new Vector2(0.34f, 0.26f), new Vector2(0.5f, 0.45f), puff);
+                if (go != null) go.transform.localScale = Vector3.one * (1f + puff * 0.55f);
+                spd *= 1f - puff * 0.7f;
+            }
+            if (kind == Kind.Sword && dashT <= 0f && Random.value < dt * 0.5f && pl.mode != Player.Mode.Dead && (pl.pos - pos).sqrMagnitude < 36f && Swimmable(pl.pos))
+            { dashT = 0.4f; vel = (pl.pos - pos).normalized * 12f; facing = vel.x > 0 ? 1 : -1; G.sfx.Play("dash", 0.3f, 1.5f); }
+            dashT -= dt;
+            if (kind == Kind.Sword && dashT > 0f) { Move(dt); Bite(); return; }
+            if (kind == Kind.Jelly) { want = new Vector2(Mathf.Sin(Time.time * 0.7f + pos.x), Mathf.Sin(Time.time * 1.3f + pos.y) * 0.8f); }
             float acc = kind == Kind.Grouper ? 6f : 12f;
             vel = Vector2.MoveTowards(vel, want * spd, acc * dt) + pull * dt;
             vel *= 1f - Mathf.Min(0.5f, 1.2f * dt);                 // water drag (this is also what turns a dive into a dip)
@@ -307,6 +338,8 @@ namespace DigDeep
         public override void AddLight(Lighting l)
         {
             if (kind == Kind.Glow) l.Add(pos, 2.6f + Mathf.Sin(Time.time * 3f + pos.x) * 0.2f, 0.75f);
+            else if (kind == Kind.Angler) l.Add(pos + new Vector2(facing * 0.4f, 0.5f), 3f + Mathf.Sin(Time.time * 4f) * 0.3f, 0.8f);   // its lure
+            else if (kind == Kind.Jelly) l.Add(pos, 1.8f, 0.5f);
             else if (kind == Kind.Gold) l.Add(pos, 2f, 0.6f);
             else if (elite || burnT > 0f) base.AddLight(l);
         }

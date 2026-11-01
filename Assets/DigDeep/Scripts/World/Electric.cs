@@ -195,7 +195,7 @@ namespace DigDeep
             var p = G.player;
             int depth = Mathf.Max(0, p.Depth);
             if (p.mode != Player.Mode.Dead && MaxUnder(hostile, p.pos, Player.Half * 0.9f) > 0.12f)
-                p.Shock(Mathf.RoundToInt(16f + depth * 0.08f));
+                p.Shock(Player.Haz(8));
             foreach (var e in G.ents)
             {
                 if (e.dead || !(e is Enemy en)) continue;

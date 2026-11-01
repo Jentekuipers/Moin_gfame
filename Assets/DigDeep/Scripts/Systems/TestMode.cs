@@ -204,18 +204,18 @@ namespace DigDeep
                 // fight any boss: you're dropped into the next unused arena
                 for (int i = 0; i < BossArena.BossKinds.Length; i++)
                 {
-                    float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
-                    var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
+                    float bx = px + 8f * S + (i % 3) * (pw / 3f - 4f * S), by = top + (i / 3) * 14f * S;
+                    var r = new Rect(bx, by, pw / 3f - 10f * S, 12f * S);
                     bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(1f, 0.4f, 0.35f, hov ? 0.4f : 0.15f));
-                    PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, BossArena.BossKinds[i], sm, Color.white);
+                    PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, BossArena.BossKinds[i], FitSize(sm, BossArena.BossKinds[i], r.width - 6f * S), Color.white);
                     if (hov && click) { g.sfx.Play("rumble", 0.8f); Setup = false; g.TestFightBoss(i); return; }
                 }
                 {
                     // the fight above the clouds
                     int i = BossArena.BossKinds.Length;
-                    float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
-                    var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
+                    float bx = px + 8f * S + (i % 3) * (pw / 3f - 4f * S), by = top + (i / 3) * 14f * S;
+                    var r = new Rect(bx, by, pw / 3f - 10f * S, 12f * S);
                     bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(1f, 0.85f, 0.3f, hov ? 0.45f : 0.2f));
                     PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, "THE GOD (FROM ORNIN'S HALL)", FitSize(sm, "THE GOD (FROM ORNIN'S HALL)", r.width - 6f * S), Color.white);
@@ -224,8 +224,8 @@ namespace DigDeep
                 {
                     // the void run: Ornin's hall, Ornin beaten, the black portal just opened
                     int i = BossArena.BossKinds.Length + 1;
-                    float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
-                    var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
+                    float bx = px + 8f * S + (i % 3) * (pw / 3f - 4f * S), by = top + (i / 3) * 14f * S;
+                    var r = new Rect(bx, by, pw / 3f - 10f * S, 12f * S);
                     bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(0.7f, 0.4f, 1f, hov ? 0.5f : 0.25f));
                     PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, "THE VOID (FROM ORNIN'S HALL)", FitSize(sm, "THE VOID (FROM ORNIN'S HALL)", r.width - 6f * S), Color.white);
@@ -234,14 +234,14 @@ namespace DigDeep
                 {
                     // or just play: a normal run with everything you picked
                     int i = BossArena.BossKinds.Length + 2;
-                    float bx = px + 8f * S + (i % 2) * (pw * 0.5f - 6f * S), by = top + (i / 2) * 14f * S;
-                    var r = new Rect(bx, by, pw * 0.5f - 12f * S, 12f * S);
+                    float bx = px + 8f * S + (i % 3) * (pw / 3f - 4f * S), by = top + (i / 3) * 14f * S;
+                    var r = new Rect(bx, by, pw / 3f - 10f * S, 12f * S);
                     bool hov = Sfx.HoverUi(r.Contains(mouse), r);
                     Box(r.x, r.y, r.width, r.height, new Color(0.5f, 1f, 0.5f, hov ? 0.6f : 0.3f));
-                    PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, Setup ? "START A RUN WITH THIS GEAR" : "BACK TO THE RUN", sm, Color.white);
+                    PixelFont.Draw(r.x + 4f * S, r.y + 3f * S, Setup ? "START A RUN WITH THIS GEAR" : "BACK TO THE RUN", FitSize(sm, Setup ? "START A RUN WITH THIS GEAR" : "BACK TO THE RUN", r.width - 6f * S), Color.white);
                     if (hov && click) { Open = false; Setup = false; g.sfx.Play("buy", 0.7f); return; }
                 }
-                PixelFont.Draw(px + pw * 0.5f, bottom - 6f * S, "YOU'RE DROPPED INTO THE NEXT UNUSED ARENA (8 FIGHTS PER TEST RUN)", sm, new Color(0.75f, 0.75f, 0.8f), 1);
+                PixelFont.Draw(px + pw * 0.5f, bottom - 6f * S, "YOU'RE DROPPED INTO THE NEXT UNUSED ARENA (A FEW FIGHTS PER TEST RUN)", sm, new Color(0.75f, 0.75f, 0.8f), 1);
             }
             else if (tab == 6)
             {
@@ -280,6 +280,23 @@ namespace DigDeep
                     ("SPAWN BAT", () => SpawnAt(g, p, (x, y, d) => new Bat(x, y + 2, d, false))),
                     ("SPAWN RAIDER", () => SpawnAt(g, p, (x, y, d) => new Raider(x, y, d, Raider.Kind.Gunner))),
                     ("SPAWN BRUTE", () => SpawnAt(g, p, (x, y, d) => new Raider(x, y, d, Raider.Kind.Brute))),
+                    ("SPAWN SWORDSMAN", () => SpawnAt(g, p, (x, y, d) => new Bandit(x, y, d, Bandit.Kind.Sword))),
+                    ("SPAWN CHIEFTAIN", () => SpawnAt(g, p, (x, y, d) => new Bandit(x, y, d, Bandit.Kind.Axe))),
+                    ("SPAWN CUTTHROAT", () => SpawnAt(g, p, (x, y, d) => new Bandit(x, y, d, Bandit.Kind.Dagger))),
+                    ("SPAWN MOLE BANDIT", () => SpawnAt(g, p, (x, y, d) => new Mole(x, y, d, Mole.Kind.Bandit))),
+                    ("SPAWN MINER MOLE", () => SpawnAt(g, p, (x, y, d) => new Mole(x, y, d, Mole.Kind.Miner))),
+                    ("SPAWN PUFFLING", () => SpawnAt(g, p, (x, y, d) => new Puffling(x, y + 2, d))),
+                    ("SPAWN THUNDERBIRD", () => SpawnAt(g, p, (x, y, d) => new Thunderbird(x, y + 2, d))),
+                    ("SPAWN SPARK WISP", () => SpawnAt(g, p, (x, y, d) => new SparkWisp(x, y + 2, d))),
+                    ("SPAWN BLOOD LEECH", () => SpawnAt(g, p, (x, y, d) => new BloodLeech(x, y, d))),
+                    ("SPAWN CRIMSON HOUND", () => SpawnAt(g, p, (x, y, d) => new CrimsonHound(x, y, d))),
+                    ("SPAWN WEEPLING", () => SpawnAt(g, p, (x, y, d) => new Weepling(x, y, d))),
+                    ("SPAWN VAMPIRE BAT", () => SpawnAt(g, p, (x, y, d) => new VampireBat(x, y + 2, d))),
+                    ("SPAWN CRABLING", () => SpawnAt(g, p, (x, y, d) => new Crabling(x, y, d))),
+                    ("SPAWN GULL", () => SpawnAt(g, p, (x, y, d) => new Gull(x, y + 2, d))),
+                    ("SPAWN NEON JAGUAR", () => SpawnAt(g, p, (x, y, d) => new NeonJaguar(x, y, d))),
+                    ("SPAWN GLOW MOTH", () => SpawnAt(g, p, (x, y, d) => new GlowMoth(x, y + 2, d))),
+                    ("SPAWN SEA URCHIN", () => SpawnAt(g, p, (x, y, d) => new Urchin(x, y, d))),
                     ("SPAWN SPITTER", () => SpawnAt(g, p, (x, y, d) => new Spitter(x, y, d))),
                     ("SPAWN BEES", () => { for (int k = 0; k < 4; k++) SpawnAt(g, p, (x, y, d) => new Bee(new Vector2(x + 0.5f, y + 2f), d)); }),
                     ("SPAWN FLAME WISP", () => SpawnAt(g, p, (x, y, d) => new Wisp(x, y + 2, d, false))),

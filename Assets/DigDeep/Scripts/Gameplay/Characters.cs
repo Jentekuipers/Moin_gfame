@@ -45,7 +45,7 @@ namespace DigDeep
             {
                 id = "bram", name = "BRAM", animal = "MOLE", title = "THE MOLE", blurb = "A BORN DIGGER IN A RED BANDANA. TOUGH, A LITTLE SLOW.",
                 trait = "BADGER CLAWS (WALKS THROUGH BLOCKS HE CAN BREAK IN ONE HIT) + LUCKY COIN",
-                hp = 150, dmg = 1f, swing = 1f, speed = 0.95f, mining = 2, jump = 1.05f, luck = 0f,
+                hp = 175, dmg = 1f, swing = 1f, speed = 0.95f, mining = 2, jump = 1.05f, luck = 0f,
                 weapon = "revolver", special = "quickdig", skills = new[] { "bulldozer", "lucky" },
                 frames = Art.HeroMole(),
             });
@@ -53,7 +53,7 @@ namespace DigDeep
             {
                 id = "nell", name = "NELL", animal = "FOX", title = "THE FOX", blurb = "QUICK AND FIERY. HER SHOTS CATCH ALIGHT, HER DASH SNUFFS FLAMES OUT.",
                 trait = "KINDLING (25% OF SHOTS ARE FIRE SHOTS) + PICKPOCKET",
-                hp = 90, dmg = 0.95f, swing = 1.15f, speed = 1.2f, mining = 1, jump = 1.1f, luck = 1.5f,
+                hp = 105, dmg = 0.95f, swing = 1.15f, speed = 1.2f, mining = 1, jump = 1.1f, luck = 1.5f,
                 weapon = "goldgun", special = "dash", skills = new[] { "kindle", "pickpocket" },
                 frames = Art.HeroFox(),
             });
@@ -61,7 +61,7 @@ namespace DigDeep
             {
                 id = "ribb", name = "RIBB", animal = "FROG", title = "THE FROG", blurb = "SPRINGY AND TOXIC. LEAPS FIRST, SLAMS DOWN AFTER.",
                 trait = "TOXIC SKIN (25% OF SHOTS POISON) + GROUND SLAM",
-                hp = 110, dmg = 1f, swing = 1f, speed = 1.05f, mining = 1, jump = 1.25f, luck = 0.5f,
+                hp = 125, dmg = 1f, swing = 1f, speed = 1.05f, mining = 1, jump = 1.25f, luck = 0.5f,
                 weapon = "shotgun", special = "superjump", skills = new[] { "toxin", "slam" },
                 frames = Art.HeroFrog(),
             });
@@ -69,7 +69,7 @@ namespace DigDeep
             {
                 id = "tor", name = "TOR", animal = "BEETLE", title = "THE BEETLE", blurb = "A WALKING WALL IN A HORNED SHELL. KICKS FIRST, ASKS LATER.",
                 trait = "IRON HIDE (TAKES 25% LESS DAMAGE) + THICK SKIN",
-                hp = 200, dmg = 0.95f, swing = 0.85f, speed = 0.9f, mining = 2, jump = 1f, luck = 0f,
+                hp = 230, dmg = 0.95f, swing = 0.85f, speed = 0.9f, mining = 2, jump = 1f, luck = 0f,
                 weapon = "smg", special = "kick", skills = new[] { "ironhide", "thick" },
                 frames = Art.HeroBeetle(),
             });
@@ -77,7 +77,7 @@ namespace DigDeep
             {
                 id = "fin", name = "FIN", animal = "DOLPHIN", title = "THE DOLPHIN", blurb = "AT HOME IN THE WET. BRINGS THE SEA WITH HER.",
                 trait = "GILLS (NEVER DROWNS) + FLIPPERS (FAST SWIMMER, BIG LEAPS OUT OF THE WATER)",
-                hp = 110, dmg = 1f, swing = 1.05f, speed = 1.05f, mining = 1, jump = 1.1f, luck = 0.5f,
+                hp = 125, dmg = 1f, swing = 1.05f, speed = 1.05f, mining = 1, jump = 1.1f, luck = 0.5f,
                 weapon = "mortar", special = "tide", skills = new[] { "gills", "flippers" },
                 frames = Art.HeroDolphin(),
             });
@@ -85,7 +85,7 @@ namespace DigDeep
             {
                 id = "vex", name = "VEX", animal = "OWL", title = "THE OWL", blurb = "A HOODED WATCHER WITH A LANTERN GAZE. STRIKES FROM BEHIND.",
                 trait = "AMBUSH (HITS FROM BEHIND DEAL 1.5X) + FEATHER (HOLD JUMP TO GLIDE)",
-                hp = 75, dmg = 0.95f, swing = 1.2f, speed = 1f, mining = 1, jump = 1.1f, luck = 0.5f,
+                hp = 90, dmg = 0.95f, swing = 1.2f, speed = 1f, mining = 1, jump = 1.1f, luck = 0.5f,
                 weapon = "boltcaster", special = "phase", skills = new[] { "ambush", "feather" },
                 innate = p => p.s.lightMul += 0.15f,   // an owl sees a little further in the dark
                 frames = Art.HeroOwl(),
@@ -94,7 +94,7 @@ namespace DigDeep
             {
                 id = "nyx", name = "NYX", animal = "BLACK CAT", title = "THE BLACK CAT", blurb = "A KNIFE IN THE DARK. TURNS EVERY BLOW BACK ON ITS OWNER.",
                 trait = "SHARP CLAWS (+25% MELEE DAMAGE) + SWIFT BOOTS",
-                hp = 95, dmg = 1.05f, swing = 1.1f, speed = 1.15f, mining = 1, jump = 1.15f, luck = 1f,
+                hp = 110, dmg = 1.05f, swing = 1.1f, speed = 1.15f, mining = 1, jump = 1.15f, luck = 1f,
                 weapon = "dagger", special = "parry", skills = new[] { "claws", "swift" },
                 frames = Art.HeroCat(),
             });
@@ -102,7 +102,7 @@ namespace DigDeep
             {
                 id = "ink", name = "INK", animal = "OCTOPUS", title = "THE OCTOPUS", blurb = "CLINGS TO EVERYTHING, HIDES FROM EVERYONE.",
                 trait = "TENTACLES (GRAB WALLS AND FLY WHILE HOLDING ON) + NIGHT EYES",
-                hp = 85, dmg = 0.95f, swing = 1f, speed = 1f, mining = 1, jump = 1f, luck = 0.5f,
+                hp = 100, dmg = 0.95f, swing = 1f, speed = 1f, mining = 1, jump = 1f, luck = 0.5f,
                 weapon = "laserpistol", special = "camo", skills = new[] { "tentacles", "nighteyes" },
                 frames = Art.HeroOctopus(), limb = new Color(0.55f, 0.27f, 0.52f),
             });
@@ -110,7 +110,7 @@ namespace DigDeep
             {
                 id = "liv", name = "LIV", animal = "LYNX", title = "THE LYNX", blurb = "PATIENT, SILENT, ONE SHOT ONE KILL.",
                 trait = "DEADLY STILLNESS (STAND STILL: NEXT SHOT CRITS) + LASER SIGHT",
-                hp = 85, dmg = 1.1f, swing = 1f, speed = 1.1f, mining = 1, jump = 1.15f, luck = 1f,
+                hp = 100, dmg = 1.1f, swing = 1f, speed = 1.1f, mining = 1, jump = 1.15f, luck = 1f,
                 weapon = "scout", special = "grapple", skills = new[] { "stillness", "lasersight" },
                 frames = Art.HeroLynx(),
             });

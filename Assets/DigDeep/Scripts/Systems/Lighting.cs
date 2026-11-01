@@ -24,6 +24,42 @@ namespace DigDeep
             go = new GameObject("Darkness");
             go.transform.SetParent(root, false);
             sr = Art.AddSR(go, null, 100);
+            glowGo = new GameObject("Glow");
+            glowGo.transform.SetParent(root, false);
+            glowSr = Art.AddSR(glowGo, null, 101);
+        }
+
+        // GLOW (Noita-style): a warm haze laid over the darkness around hot things (lava, mostly): it tints the dark
+        // and the rock orange around a lava pool and pulses a little
+        readonly GameObject glowGo;
+        readonly SpriteRenderer glowSr;
+        Texture2D glowTex;
+        Color32[] glowBuf;
+        float[] glow;
+        bool anyGlow, glowShown;
+
+        public void AddGlow(Vector2 p, float r, float intensity)
+        {
+            if (r <= 0f || glow == null) return;
+            float lx = (p.x - origin.x) * RES, ly = (p.y - origin.y) * RES, rr = r * RES;
+            int x0 = Mathf.Max(0, (int)(lx - rr)), x1 = Mathf.Min(tw - 1, (int)(lx + rr));
+            int y0 = Mathf.Max(0, (int)(ly - rr)), y1 = Mathf.Min(th - 1, (int)(ly + rr));
+            if (x0 > x1 || y0 > y1) return;
+            anyGlow = true;
+            float inv = 1f / (rr * rr);
+            for (int y = y0; y <= y1; y++)
+            {
+                float dy = y + 0.5f - ly;
+                int row = y * tw;
+                for (int x = x0; x <= x1; x++)
+                {
+                    float dx = x + 0.5f - lx;
+                    float d = (dx * dx + dy * dy) * inv;
+                    if (d >= 1f) continue;
+                    float v = (1f - d); v *= v * intensity;
+                    glow[row + x] += v * (1f - glow[row + x]);   // overlapping glows add up, but never past full
+                }
+            }
         }
 
         void Ensure(int w, int h)
@@ -35,6 +71,12 @@ namespace DigDeep
             buf = new Color32[tw * th];
             lum = new float[tw * th];
             sr.sprite = Sprite.Create(tex, new Rect(0, 0, tw, th), Vector2.zero, RES, 0, SpriteMeshType.FullRect);
+            if (glowTex != null) { Object.Destroy(glowSr.sprite); Object.Destroy(glowTex); }
+            glowTex = new Texture2D(tw, th, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            glowBuf = new Color32[tw * th];
+            glow = new float[tw * th];
+            glowSr.sprite = Sprite.Create(glowTex, new Rect(0, 0, tw, th), Vector2.zero, RES, 0, SpriteMeshType.FullRect);
+            glowShown = true;   // (a fresh texture: clear it on the first frame)
         }
 
         public void Begin(Vector2 camPos, float halfW, float halfH)
@@ -43,6 +85,8 @@ namespace DigDeep
             Ensure(w, h);
             origin = new Vector2(Mathf.Floor(camPos.x - halfW - 2f), Mathf.Floor(camPos.y - halfH - 2f));
             System.Array.Clear(lum, 0, lum.Length);
+            if (anyGlow || glowShown) System.Array.Clear(glow, 0, glow.Length);
+            anyGlow = false;
         }
 
         public bool InView(Vector2 p, float margin) =>
@@ -186,6 +230,22 @@ namespace DigDeep
             tex.SetPixels32(buf);
             tex.Apply(false);
             go.transform.position = new Vector3(origin.x, origin.y, 0);
+            // the warm haze: only rebuilt while something glows (and cleared once after)
+            if (anyGlow || glowShown)
+            {
+                float pulse = 1f + 0.06f * Mathf.Sin(Time.time * 2.1f);
+                for (int k = 0; k < glow.Length; k++)
+                {
+                    float g = Mathf.Clamp01(glow[k] * pulse);
+                    // hot near the source (yellow-orange), deep red-orange at the fringe; never more than half opaque
+                    byte gr = (byte)(140 + 100 * g);
+                    glowBuf[k] = new Color32(255, gr, (byte)(30 + 40 * g), (byte)(Mathf.Min(0.5f, g * 0.55f) * 255f));
+                }
+                glowTex.SetPixels32(glowBuf);
+                glowTex.Apply(false);
+                glowShown = anyGlow;
+            }
+            glowGo.transform.position = new Vector3(origin.x, origin.y, 0);
         }
     }
 }

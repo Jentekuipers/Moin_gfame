@@ -11,6 +11,7 @@ namespace DigDeep
         public static Texture2D White;
         public static Sprite Pixel, Square, Circle, Ring;
         public static Sprite PlayerIdle, PlayerRun1, PlayerRun2, PlayerJump, PlayerDig, Keeper, KeeperOld;
+        public static Sprite[] KeeperFancy;   // the premium shops' merchant: top hat, monocle, velvet coat, a cane
         public static Sprite Coin, BigCoin, GemDrop, Fireball, Spit, Bolt, Pedestal;
         public static readonly Dictionary<string, Sprite[]> Enemy = new Dictionary<string, Sprite[]>();
         public static readonly Dictionary<string, Sprite[]> EnemyWhite = new Dictionary<string, Sprite[]>();
@@ -396,6 +397,7 @@ namespace DigDeep
             InitStorm();
             InitHeroes();
             InitLooks();
+            InitBiomes();   // the newer biomes' creatures
             InitNew();   // the hand-drawn art (replaces some of the above)
         }
 

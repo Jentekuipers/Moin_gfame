@@ -14,7 +14,7 @@ namespace DigDeep
         }
     }
 
-    public class Game : MonoBehaviour
+    public partial class Game : MonoBehaviour
     {
         public static Game I;
         public enum State { Intro, Title, Select, Playing, Paused, Dead, Ending, Options, Credits, Stats, Unlocks }
@@ -189,7 +189,7 @@ namespace DigDeep
         public void EnterVoid()
         {
             var r = BuildSave();
-            r.chunks.Clear(); r.doneAltarX.Clear(); r.doneAltarY.Clear(); r.clearedArenas.Clear();
+            r.chunks.Clear(); r.doneAltarX.Clear(); r.doneAltarY.Clear(); r.clearedArenas.Clear(); r.burntCapX.Clear(); r.burntCapY.Clear();
             r.seed = Random.Range(1, 999999);
             r.maxDepth = 0;
             r.isVoid = true;
@@ -262,6 +262,7 @@ namespace DigDeep
             world.CaptureTo(r);
             foreach (var a in altars)
                 if (!a.dead && a.done) { r.doneAltarX.Add(a.pos.x); r.doneAltarY.Add(a.pos.y); }
+            foreach (var b in MushroomCap.Burnt) { r.burntCapX.Add(b.x); r.burntCapY.Add(b.y); }
             foreach (var e in ents)
                 if (!e.dead && e is BossArena ba && ba.Cleared) r.clearedArenas.Add(ba.Depth);
             return r;
@@ -359,6 +360,7 @@ namespace DigDeep
             // on the way to the gods the checkpoint at the surface is already saved: you come back there
             if (World.SkyMode || Ascent.Flying) { music.SetDuck(false); GoTitle(); return; }
             if (player == null || player.mode == Player.Mode.Dead) return;
+            for (int i = BoulderBody.All.Count - 1; i >= 0; i--) if (!BoulderBody.All[i].dead && BoulderBody.All[i].Speed < 0.2f) BoulderBody.All[i].Settle();   // resting stones are kept as blocks
             SaveGame.Write(BuildSave());
             music.SetDuck(false);
             sfx.Play("buy", 0.7f);
@@ -477,7 +479,7 @@ namespace DigDeep
             Ascent.Active = null; Ascent.Cover = 0f;
             revealT = 0f;
             VoidStage.End();
-            BoulderBody.All.Clear(); Spear.All.Clear(); Keeper.All.Clear(); Pedestal.All.Clear(); StuckArrow.ClearAll();
+            BoulderBody.All.Clear(); MushroomCap.All.Clear(); MushroomCap.Burnt.Clear(); Hallucination.Reset(); CloudWeather.Reset(); BloodSight.Reset(); Decor.Reset(); Spear.All.Clear(); Keeper.All.Clear(); Pedestal.All.Clear(); StuckArrow.ClearAll();
             Fire.Reset();
             Electric.Reset();
             FriendlyWorm.Alive = 0; GhostGun.Alive = 0; Decoy.Active = null;
@@ -505,6 +507,8 @@ namespace DigDeep
             {
                 // the world exactly as you left it (top to bottom, so everything spawns in order), then you
                 save.chunks.Sort((a, b) => b.ci.CompareTo(a.ci));
+                MushroomCap.Burnt.Clear();
+                for (int i = 0; i < save.burntCapX.Count && i < save.burntCapY.Count; i++) MushroomCap.Burnt.Add(new Vector2(save.burntCapX[i], save.burntCapY[i]));
                 foreach (var cs in save.chunks) world.Inject(cs);
                 ents.AddRange(toAdd); toAdd.Clear();
                 foreach (var a in altars)
@@ -553,6 +557,18 @@ namespace DigDeep
             Unlocks.RunStarted(true);
             aim = player.pos + Vector2.right * 3f;
             sfx.Play("buy", 0.7f);
+        }
+
+        // the next unlocked digger along the line (dir -1 / +1), wrapping round
+        static int NextOpen(int from, int dir)
+        {
+            int n = Chars.All.Count;
+            for (int k = 1; k <= n; k++)
+            {
+                int i = ((from + dir * k) % n + n) % n;
+                if (Unlocks.CharOpen(Chars.All[i])) return i;
+            }
+            return from;
         }
 
         void EnterSelect()
@@ -607,20 +623,7 @@ namespace DigDeep
             return true;
         }
 
-        void HoverBlocks()
-        {
-            if (GameInput.UsingStick || state != State.Playing) return;
-            int x = Mathf.FloorToInt(aim.x), y = Mathf.FloorToInt(aim.y);
-            Block b = world.Peek(x, y);
-            Vector2 at = new Vector2(x + 0.5f, y + 1.3f);
-            if (b == Block.Crate)
-            {
-                var r = Crates.RarityAt(x, y);
-                hud.Label(at, (r == Rarity.Relic ? "RELIC" : r.ToString().ToUpperInvariant()) + " WEAPON CRATE", DB.RarityColor(r));
-                hud.Label(at + Vector2.up * 0.4f, "BREAK IT FOR A WEAPON", new Color(0.8f, 0.8f, 0.8f));
-            }
-            else if (b == Block.TNT) hud.Label(at, "TNT: SHOOT IT, OR DROP SOMETHING ON IT", new Color(1f, 0.45f, 0.35f));
-        }
+        void HoverBlocks() { }   // (no more hover labels on TNT or weapon crates)
 
         // Bodies pile up for a while, but not forever.
         public void RegisterCorpse(Corpse c)
@@ -752,9 +755,10 @@ namespace DigDeep
             {
                 MenuWorldTick();
                 if (GameInput.Pressed(Btn.Pause)) { state = State.Title; sfx.Play("swing", 0.5f, 1.2f); return; }
-                int n = Chars.All.Count;
-                if (GameInput.Pressed(Btn.Left)) { charIndex = (charIndex + n - 1) % n; sfx.Play("swing", 0.5f, 1.4f); }
-                if (GameInput.Pressed(Btn.Right)) { charIndex = (charIndex + 1) % n; sfx.Play("swing", 0.5f, 1.4f); }
+                // left / right: along the line (only the diggers you've unlocked stand in it)
+                if (GameInput.Pressed(Btn.Left)) { charIndex = NextOpen(charIndex, -1); sfx.Play("swing", 0.5f, 1.4f); }
+                if (GameInput.Pressed(Btn.Right)) { charIndex = NextOpen(charIndex, 1); sfx.Play("swing", 0.5f, 1.4f); }
+                if (hud.SelectHovered && GameInput.MouseClicked()) { StartChosen(); return; }   // the SELECT button under the digger's achievements
                 int hov = camp != null && camp.lineup && !GameInput.UsingStick ? camp.LineAt(MouseWorld()) : -1;
                 if (camp != null) camp.Hover = hov;
                 if (GameInput.MouseClicked() && hov >= 0)
@@ -813,6 +817,8 @@ namespace DigDeep
             float dt = Mathf.Min(Time.deltaTime, 1f / 30f);
             if (player != null && player.Cursed(Curse.Speed)) dt *= 1.5f;   // CURSE OF SPEED: everything 1.5x as fast
             time += dt;
+            Hallucination.Tick(dt);
+            CloudWeather.Tick(dt);
 
             if (state == State.Dead)
             {
@@ -855,6 +861,11 @@ namespace DigDeep
             if (toAdd.Count > 0) { ents.AddRange(toAdd); toAdd.Clear(); }
             ents.RemoveAll(e => e.dead);
             altars.RemoveAll(a => a.dead);
+            if (World.Void)   // the void bosses wash purple, whatever colours they paint themselves
+                for (int i = 0; i < ents.Count; i++)
+                {
+                    if (ents[i] is Boss || ents[i] is WormSegment) ((Enemy)ents[i]).VoidHueTick(dt);
+                }
 
             // approaching the God-Diamond: time slows, the world whitens
             if (diamond != null && diamond.Unlocked && player.mode != Player.Mode.Dead && state == State.Playing)
@@ -948,6 +959,7 @@ namespace DigDeep
                     GUI.color = Color.white;
                 }
             }
+            if (state == State.Playing || state == State.Paused || state == State.Dead) Hallucination.Draw();   // the spores' colour wash
             UnlockPopup.Draw();   // the unlock cards on top of everything
             if (Settings.ShowFps) PixelFont.Draw(4f, 4f, Mathf.RoundToInt(fps) + " FPS", Mathf.Max(1f, Mathf.Floor(Screen.height / 540f)), new Color(0.6f, 1f, 0.6f));
         }
@@ -1022,6 +1034,7 @@ namespace DigDeep
 
             foreach (var e in ents)
                 if (!e.dead && !(e is Altar) && (e is BossArena || lighting.InView(e.pos, 8f))) e.AddLight(lighting);
+            Decor.Tick(cam.pos, cam.halfW, cam.halfH, lighting);   // (the newer biomes' decorations: sway, and glow)
             // altars may light things far from their own position (burning fuse tip, finish flag)
             foreach (var a in altars)
                 if (!a.dead) a.AddLight(lighting);
@@ -1033,6 +1046,19 @@ namespace DigDeep
                 {
                     Block tb = world.Peek(x, y);
                     var d = Tiles.Def(tb);
+                    // the fungal hollows' glowing mushrooms light the dark around them
+                    if (tb == Block.Air && (world.Flags(x, y) & World.Grass) != 0 && ((x + y) & 1) == 0 && Biomes.At(x, y).idx == Biomes.Fungal)
+                    {
+                        lighting.Add(new Vector2(x + 0.5f, y + 0.3f), 1.5f * (1f + Mathf.Sin(time * 2f + x * 0.7f) * 0.08f), 0.42f);
+                        continue;
+                    }
+                    // the neon canopy glows: its grass and leaves light the dark (and so do the coral reef's corals, faintly)
+                    if (((x * 3 + y) % 3) == 0 && (tb == Block.Leaf || (tb == Block.Air && (world.Flags(x, y) & World.Grass) != 0)) && Biomes.At(x, y).idx == Biomes.Neon)
+                    {
+                        lighting.Add(new Vector2(x + 0.5f, y + 0.4f), 1.7f * (1f + Mathf.Sin(time * 1.6f + x * 0.5f) * 0.1f), 0.45f);
+                        continue;
+                    }
+                    if (tb == Block.Coral && ((x + y * 2) % 4) == 0) { lighting.Add(new Vector2(x + 0.5f, y + 0.5f), 1.3f, 0.25f); continue; }
                     if (d.light <= 0f) continue;
                     float flick = 1f + Mathf.Sin(time * 5f + x * 1.3f + y * 0.7f) * 0.06f;
                     if (tb == Block.Chest || tb == Block.Crate)
@@ -1088,7 +1114,7 @@ namespace DigDeep
                     vis[j * visN + i] = false;
                     visSolid[j * visN + i] = Tiles.Solid(world.Peek(visX0 + i, visY0 + j));
                 }
-            float seenR2 = r * r * 0.8f;
+            float seenR2 = (r + 0.6f) * (r + 0.6f);   // everything you can see is remembered (vision items too)
             // open cells: a ray to the centre or a corner must get through without passing rock
             for (int j = 0; j < visN; j++)
                 for (int i = 0; i < visN; i++)
@@ -1196,6 +1222,13 @@ namespace DigDeep
                     float roll = (float)r.NextDouble();
                     byte liquid = c.lt[ly * World.W + x];
                     bool storm = Biomes.Index(depth) == Biomes.Storm;
+                    int nb = Biomes.Index(depth);
+                    if (nb >= Biomes.Cloud && !(World.Void && nb == Biomes.Kingdom))
+                    {
+                        // the newer biomes have their own creatures (see BiomeSpawns)
+                        if (b == Block.Air) SpawnNewBiome(c, x, y, depth, nb, liquid, roll, pr, r);
+                        continue;
+                    }
                     if (liquid != Fluids.None)
                     {
                         // slimes live in the water (eels in the storm caverns)
@@ -1216,8 +1249,15 @@ namespace DigDeep
                     {
                         if (roll >= pr && roll < 0.9994f) { if (World.Void && roll < pr * 1.3f && depth > 25) TryVoidSpike(x, y, depth); continue; }
                         if (roll >= 0.9994f) { TryShrine(x, y, depth, r); continue; }
+                        if (TinyPocket(x, y)) continue;   // no foes in 1x1 or 1x2 holes in the rock
                         bool floor = Tiles.Solid(world.Peek(x, y - 1));
                         bool ceil = Tiles.Solid(world.Peek(x, y + 1));
+                        // the fungal hollows: now and then a giant mushroom to stand on (never two crowded together)
+                        if (floor && !World.Void && Biomes.Index(depth) == Biomes.Fungal && r.NextDouble() < 0.06 && Open(x, y, 3, 6) && !MushroomNear(x, y) && !MushroomCap.BurntAt(x, y))
+                        {
+                            Spawn(new MushroomCap(x, y, 2 + r.Next(3), 1.1f + (float)r.NextDouble() * 0.9f, r));
+                            continue;
+                        }
                         float k = (float)r.NextDouble();
                         bool jungle = Biomes.Index(depth) == Biomes.Jungle;
                         float k2 = (float)r.NextDouble();
@@ -1248,18 +1288,22 @@ namespace DigDeep
                         else if (ceil && depth > 12)
                         {
                             // bats roost in packs of 1-3 along the same ceiling (imps down in the heat)
-                            bool impPack = Biomes.Index(depth) >= Biomes.Magma && k < 0.6f;
+                            bool impPack = (Biomes.Index(depth) == Biomes.Magma || Biomes.Index(depth) == Biomes.Kingdom) && k < 0.6f;
                             int pack = 1 + r.Next(3);
                             for (int i = 0, bx = x; i < pack && bx < World.W - 2; i++, bx += 1 + r.Next(2))
                                 if (!Tiles.Solid(world.Peek(bx, y)) && Tiles.Solid(world.Peek(bx, y + 1))) Spawn(new Bat(bx, y, depth, impPack));
                         }
-                        else if (Biomes.Index(depth) >= Biomes.Magma && k < 0.3f) Spawn(new Bat(x, y, depth, true));
+                        else if ((Biomes.Index(depth) == Biomes.Magma || Biomes.Index(depth) == Biomes.Kingdom) && k < 0.3f) Spawn(new Bat(x, y, depth, true));
                     }
                     else if (b == Block.Chest && r.NextDouble() < 0.004) Spawn(new MimicLurker(x, y));   // insanely rare
                     else if (b == Block.Dirt && depth > 22 && roll < pr * 0.15f)
                     {
                         world.PokeRaw(c, x, y, Block.Air);
-                        Spawn(new Mole(x, y, depth));
+                        // past the first biome some moles are bandits or miners
+                        int msl = Biomes.SlotOf(depth);
+                        double mk = r.NextDouble();
+                        var mkind = msl >= 1 && mk < 0.3 ? Mole.Kind.Bandit : msl >= 2 && mk < 0.55 ? Mole.Kind.Miner : Mole.Kind.Plain;
+                        Spawn(new Mole(x, y, depth, mkind));
                     }
                     else if ((b == Block.Dirt || b == Block.Stone || b == Block.HardStone) && depth > 55 && roll < pr * 0.02f)
                         Spawn(new Worm(x, y, depth));
@@ -1275,6 +1319,25 @@ namespace DigDeep
                 carve.spawned = true;
                 carve.Spawn(this, r);
             }
+        }
+
+        // is this open cell part of a hole of 2 cells or fewer (1x1, 1x2 or 2x1)?
+        readonly List<Vector2Int> pocketQ = new List<Vector2Int>();
+        bool TinyPocket(int x, int y)
+        {
+            pocketQ.Clear();
+            pocketQ.Add(new Vector2Int(x, y));
+            for (int i = 0; i < pocketQ.Count && pocketQ.Count < 3; i++)
+            {
+                var c = pocketQ[i];
+                for (int d = 0; d < 4 && pocketQ.Count < 3; d++)
+                {
+                    var n = new Vector2Int(c.x + (d == 0 ? 1 : d == 1 ? -1 : 0), c.y + (d == 2 ? 1 : d == 3 ? -1 : 0));
+                    if (n.x < 0 || n.x >= World.W || Tiles.Solid(world.Peek(n.x, n.y)) || pocketQ.Contains(n)) continue;
+                    pocketQ.Add(n);
+                }
+            }
+            return pocketQ.Count < 3;
         }
 
         bool Open(int x, int y, int w, int h)
@@ -1296,7 +1359,7 @@ namespace DigDeep
         {
             double k = r.NextDouble();
             int bi = Biomes.Index(depth);
-            if (ceil && (bi == Biomes.Crystal || bi == Biomes.Storm || bi == Biomes.Jungle)) { Spawn(new GliderBat(x, y, depth)); return true; }
+            if (ceil && (bi == Biomes.Crystal || bi == Biomes.Storm || bi == Biomes.Jungle) && !Tiles.Solid(world.Peek(x, y - 1))) { Spawn(new GliderBat(x, y, depth)); return true; }   // (it hangs two blocks tall)
             if (!floor) return false;
             switch (bi)
             {
@@ -1304,7 +1367,6 @@ namespace DigDeep
                     if (depth < 25) return false;
                     if (k < 0.3) { Spawn(new Turtle(x, y, depth)); return true; }
                     if (k < 0.75 && depth > 30) { Spawn(new Wolf(x, y, depth)); if (Open(x + 2, y, 1, 1) && FloorUnder(x + 2, y, 1)) Spawn(new Wolf(x + 2, y, depth)); return true; }
-                    if (k < 0.85 && depth > 45 && Open(x, y, 1, 2)) { Spawn(new RockMage(x, y, depth)); return true; }
                     return false;
                 case Biomes.Jungle:
                     if (k < 0.35) { Spawn(new Turtle(x, y, depth)); return true; }
@@ -1314,8 +1376,9 @@ namespace DigDeep
                     if (k < 0.08 && Open(x, y, 3, 4) && FloorUnder(x, y, 3)) { Spawn(new MushroomElite(x, y, depth)); return true; }
                     if (k < 0.45) { var sk = new Skeleton(x, y, depth); Spawn(sk); sk.Bury(); return true; }
                     return false;
-                case Biomes.Crystal:
-                    if (k < 0.4 && Open(x, y, 1, 2)) { Spawn(new RockMage(x, y, depth)); return true; }
+                case Biomes.Magma:
+                    // the lava mages live down here, and only here
+                    if (k < 0.35 && Open(x, y, 1, 2)) { Spawn(new RockMage(x, y, depth)); return true; }
                     return false;
                 case Biomes.Kingdom:
                     if (k < 0.5) { var sk = new Skeleton(x, y, depth); Spawn(sk); sk.Bury(); return true; }
@@ -1348,7 +1411,7 @@ namespace DigDeep
         void TryShrine(int x, int y, int depth, System.Random r)
         {
             if (depth < 20 || !Open(x, y, 3, 3) || !FloorUnder(x, y, 3)) return;
-            foreach (int d in shrineDepths) if (Mathf.Abs(d - depth) < 30) return;
+            foreach (int d in shrineDepths) if (Mathf.Abs(d - depth) < 85) return;   // (rarer now)
             shrineDepths.Add(depth);
             double k = r.NextDouble();
             if (k < 0.07 && depth > 60 && !fuseSpawned) { fuseSpawned = true; Spawn(new FuseAltar(x, y)); return; }   // rare: one a run at most
@@ -1398,6 +1461,12 @@ namespace DigDeep
             }
         }
 
+        bool MushroomNear(int x, int y)
+        {
+            foreach (var m in MushroomCap.All) if (!m.dead && Mathf.Abs(m.pos.x - x) < 6f && Mathf.Abs(m.pos.y - y) < 8f) return true;
+            return false;
+        }
+
         // Raiders travel in small squads.
         void SpawnRaiders(Chunk c, int x, int y, int depth, System.Random r)
         {
@@ -1407,6 +1476,13 @@ namespace DigDeep
                 int xx = x + i * 2 * (r.NextDouble() < 0.5 ? -1 : 1);
                 if (i > 0 && (xx < 2 || xx >= World.W - 2 || Tiles.Solid(world.Peek(xx, y)) || !Tiles.Solid(world.Peek(xx, y - 1)))) continue;
                 double k = r.NextDouble();
+                // half the squad (or so) are bandits with blades: they run at you while the guns hang back
+                if (r.NextDouble() < 0.5)
+                {
+                    var bk = k < 0.45 ? Bandit.Kind.Sword : k < 0.75 || depth < 60 ? Bandit.Kind.Dagger : Bandit.Kind.Axe;
+                    Spawn(new Bandit(xx, y, depth, bk));
+                    continue;
+                }
                 var kind = Raider.Kind.Gunner;
                 if (depth > 225 && k < 0.2) kind = Raider.Kind.Bomber;
                 else if (depth > 140 && k < 0.45) kind = Raider.Kind.Marksman;
@@ -1492,10 +1568,15 @@ namespace DigDeep
             if (s.blackSun && !(e is WormSegment))
             {
                 float off = Random.value * 45f;
+                var bw = player.weapon;
+                bool gun = bw != null && !bw.def.Melee && !bw.def.spear && bw.def.type != WType.Rail;
                 for (int k = 0; k < 8; k++)
                 {
                     float a = (off + k * 45f) * Mathf.Deg2Rad;
-                    Spawn(Bullet.Pet(e.pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 16f, player.Dmg(2f), new Color(0.35f, 0.2f, 0.5f)));
+                    Vector2 dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                    // the same shots you're firing right now (a blade or a rail: dark orbs instead)
+                    if (gun) Spawn(new Bullet(player, bw, e.pos + dir * 0.4f, dir * bw.def.speed, false));
+                    else Spawn(Bullet.Pet(e.pos, dir * 16f, player.Dmg(2f), new Color(0.35f, 0.2f, 0.5f)));
                 }
                 fx.Ring(e.pos, 1.4f, new Color(0.35f, 0.2f, 0.5f));
             }
@@ -1515,7 +1596,7 @@ namespace DigDeep
                 fx.Ring(e.pos, 2.8f, new Color(0.55f, 1f, 0.35f));
                 sfx.Play("splat", 0.5f, 0.6f);
             }
-            if (Chance.Roll("aledrop", player.Lucky(0.012f))) Spawn(new LootPickup(e.pos, DB.Ale, 0.3f));
+            if (Chance.Roll("aledrop", player.Lucky(0.007f))) Spawn(new LootPickup(e.pos, DB.Ale, 0.3f));
             // CURSE OF THE RESTLESS DEAD: some of the fallen get back up as bats
             if (player.Cursed(Curse.Restless) && !(e is Bat) && !(e is Boss) && !(e is WormSegment) && Chance.Roll("restless", 0.3f))
             {
@@ -1677,7 +1758,8 @@ namespace DigDeep
             int depth = Mathf.Max(0, -Mathf.FloorToInt(p.y));
             // rewards are rolled as if you were already in the next biome
             int next = depth + 60;
-            foreach (var b in Biomes.All) if (b.start > depth) { next = b.start + 15; break; }
+            int nsl = Biomes.SlotOf(depth) + 1;
+            if (nsl < Biomes.Slots) next = Biomes.SlotStart(nsl) + 15;
             double k = rng.NextDouble();
             if (k < 0.35)
             {
@@ -1853,13 +1935,18 @@ namespace DigDeep
             }
             Unlocks.BlastKills(Unlocks.BlastCount);
             Unlocks.BlastCount = outerCount;
+            for (int mi = MushroomCap.All.Count - 1; mi >= 0; mi--)
+            {
+                var mc = MushroomCap.All[mi];
+                if (!mc.dead && Mathf.Abs(mc.pos.x - c.x) < r + 1.5f && Mathf.Abs(mc.Top - c.y) < r + 0.8f) mc.Blast(dmg);   // blasts shake (and burn) the giant mushrooms
+            }
             HitAltars(c, new Vector2(r, r), Src.Explosion);
             if (byPlayer) PlayerBlastExtras(c, r, dmg);
             float pd = (player.pos - c).magnitude;
             if (!safe && !player.s.blastProof && player.mode != Player.Mode.Dead && pd < r + 0.3f)
             {
                 Player.Cause = byPlayer ? "YOUR OWN BLAST" : "AN EXPLOSION";
-                player.Hurt(Mathf.RoundToInt(70f + maxDepth * 0.3f), c);
+                player.Hurt(Player.Haz(35), c);   // (blasts are part of the world: the same at any depth)
             }
             // every blast throws the player away, even ones that can't hurt them (rocket jumps!)
             float reach = r * 1.7f + 0.5f;

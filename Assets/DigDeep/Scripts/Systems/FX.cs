@@ -305,10 +305,13 @@ namespace DigDeep
                 if (!p.on) continue;
                 p.life -= dt;
                 if (p.life <= 0f) { p.on = false; p.go.SetActive(false); continue; }
-                p.v.y -= p.g * dt;
+                // debris sinking through water drifts down slowly (the water carries most of its weight and slows it)
+                bool wetP = p.collide && p.g > 0f && w.FluidAtPoint(p.p) is byte fl && (fl == Fluids.Water || fl == Fluids.Lava || fl == Fluids.Poison || fl == Fluids.Acid || fl == Fluids.Haste);
+                p.v.y -= p.g * (wetP ? 0.25f : 1f) * dt;
+                if (wetP) p.v *= 1f - Mathf.Min(1f, 3f * dt);
                 if (p.drag > 0f) p.v *= 1f - Mathf.Min(1f, p.drag * dt);
                 Vector2 np = p.p + p.v * dt;
-                if (p.collide && w.Solid(Mathf.FloorToInt(np.x), Mathf.FloorToInt(np.y)))
+                if (p.collide && w.SolidAt(np))   // (minding the short chests and crates: bits settle on their lids)
                 {
                     if (p.stain)
                     {

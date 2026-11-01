@@ -31,7 +31,7 @@ namespace DigDeep
         int spearVolley, splitStep;
         float splitLast = -9f;
 
-        public int MagSize(Weapon w) => w == null || w.def.mag <= 0 ? 0 : Mathf.Max(1, Mathf.RoundToInt(w.def.mag * s.magMul));
+        public int MagSize(Weapon w) => w == null || w.def.mag <= 0 ? 0 : Mathf.Max(1, Mathf.RoundToInt(w.def.mag * s.magMul * (w.Has(Mod.AmmoPlus) ? 1.5f : 1f)));   // AMMO+
         public float ReloadFrac
         {
             get
@@ -511,7 +511,7 @@ namespace DigDeep
                 splitLast = Time.time;
                 if (splitStep == 2) { quake = true; dmg *= 2.4f; reach *= 1.9f; fireCd += 0.25f; }
             }
-            int power = Mathf.Max(1, s.digPower) * d.mine * (w.Has(Mod.WallBreaker) ? 3 : 1) * (hc ? 2 : 1);
+            int power = Mathf.Max(1, s.digPower) * d.mine * (hc ? 2 : 1);
             if (quake) power *= 2;
 
             var cells = new HashSet<Vector2Int>();
@@ -549,8 +549,8 @@ namespace DigDeep
                     if (dist > d.closeR && Vector2.Angle(dir, v) > d.arc * 0.5f + d.arcPad) continue;   // each blade's own hit shape
                     hitSet.Add(en);
                     float dd = dmg * Backstab(en);
-                    bool weak = w.Has(Mod.Sharpshooter) && v.magnitude < reach * 0.55f;
-                    if (weak) dd *= 2f;
+                    bool weak = w.Has(Mod.PointBlank);
+                    if (weak) dd *= 1.2f;   // POINT-BLANK (a blade is always up close)
                     if (en.Poisoned) dd *= 1.25f;
                     if (v.magnitude < 1.3f) dd *= 1.3f;   // point blank: getting this close is a risk, so it pays
                     Vector2 kn = dir * d.knock * (hc ? 1.8f : 1f) * s.knockMul + Vector2.up * 2f;
@@ -564,7 +564,7 @@ namespace DigDeep
                         OnWeaponHit(en, w, dd, en.pos, dir);
                         MeleeStatus(en);
                         if (crit) G.Popup(en.pos + Vector2.up, "CRIT!", new Color(1f, 0.4f, 0.3f));
-                        else if (weak) G.Popup(en.pos + Vector2.up, "WEAK SPOT!", Mods.Col(Mod.Sharpshooter));
+                        else if (weak && Random.value < 0.3f) G.Popup(en.pos + Vector2.up, "POINT BLANK!", Mods.Col(Mod.PointBlank));
                     }
                 }
                 G.HitAltars(c0 + dir * reach * 0.6f, new Vector2(reach * 0.6f, reach * 0.6f), Src.Weapon);
@@ -864,7 +864,7 @@ namespace DigDeep
             bool hc = w.Has(Mod.HighCaliber);
             bool crit = Chance.Roll("crit", CritChance + (w.Has(Mod.Crit) ? 0.2f : 0f)) || (echo && Combo("echochamber") && Chance.Roll("echocrit", 0.5f));
             float dmg = Dmg(d.dmg) * (0.35f + 0.65f * power) * (hc ? 2.5f : 1f) * (crit ? s.critMul : 1f) * (s.megaLaser ? 1.5f : 1f) * (s.swordShots ? 1.2f * s.meleeMul : 1f);
-            int minePow = Mathf.CeilToInt(Mathf.Max(1, s.digPower) * d.mine * power) * (w.Has(Mod.WallBreaker) ? 3 : 1);
+            int minePow = Mathf.CeilToInt(Mathf.Max(1, s.digPower) * d.mine * power);
             Vector2 o = GunPivot, p = o;
             var hitE = new HashSet<Enemy>();
             var done = new HashSet<Vector2Int>();
@@ -876,18 +876,19 @@ namespace DigDeep
             Color beamCol = ShotTint(d.col, w);
             float thick = (0.1f + 0.25f * power) * (s.megaLaser ? 2.4f : 1f);
             p = o + aimDir * 0.3f;
+            bool mirrored = false;
             for (float t = 0.3f; t < len; t += 0.2f)
             {
                 // homing bends the beam towards foes it can see; the beam is drawn as a chain of straight pieces
                 if (s.shotHoming && Mathf.Repeat(t, 1f) < 0.2f)
                 {
-                    Enemy best = null; float bs = 9f;
+                    Enemy best = null; float bestD = 9f;
                     foreach (var e0 in G.ents)
                         if (!e0.dead && e0 is Enemy en0 && !en0.Intangible && !hitE.Contains(en0))
                         {
                             Vector2 v = en0.pos - p;
                             float dd0 = v.magnitude;
-                            if (dd0 < bs && Vector2.Angle(aimDir, v) < 70f && Wd.LineClear(p, en0.pos)) { bs = dd0; best = en0; }
+                            if (dd0 < bestD && Vector2.Angle(aimDir, v) < 70f && Wd.LineClear(p, en0.pos)) { bestD = dd0; best = en0; }
                         }
                     if (best != null)
                     {
@@ -911,9 +912,21 @@ namespace DigDeep
                     if (e.dead || !(e is Enemy en) || hitE.Contains(en) || en.Intangible || en.thrall) continue;
                     if (!U.Overlap(p, hb, en.pos, en.half)) continue;
                     hitE.Add(en);
+                    // a MIRROR BEETLE: the beam stops dead and a bolt of it flies back at you
+                    if (en.Reflects)
+                    {
+                        en.OnReflect();
+                        G.sfx.PlayAt(p, "reflect", 0.7f, 0.9f);
+                        G.fx.Sparks(p, new Color(0.7f, 1f, 1f));
+                        var back = new Bullet(p, (GunPivot - p).normalized * 22f, en.team, dmg, 50, "b_laser", new Color(1f, 0.45f, 0.95f), 1.2f, 2f);
+                        G.Spawn(back);
+                        mirrored = true;
+                        break;
+                    }
                     float dd = en.Poisoned ? dmg * 1.25f : dmg;
                     if (en.TakeShot(dd, aimDir * d.knock * power)) OnWeaponHit(en, w, dd, p, aimDir);
                 }
+                if (mirrored) break;
                 foreach (var a in G.altars)
                     if (!a.dead && a.Active && !touchedAltars.Contains(a) && U.Overlap(p, new Vector2(0.3f, 0.3f), a.pos, a.Half)) { touchedAltars.Add(a); a.OnHit(Src.Weapon); }
             }
@@ -1083,7 +1096,7 @@ namespace DigDeep
             buff = (Buff)Random.Range(1, 4);
             buffT = 6f;
             string what = buff == Buff.Speed ? "+SPEED" : buff == Buff.Damage ? "+DAMAGE" : "+FIRE RATE";
-            G.hud.Banner("HUNTED!", what + " FOR 6 SECONDS", Mods.Col(Mod.Hunter));
+            G.Popup(pos + Vector2.up * 1.1f, what, Mods.Col(Mod.Hunter));   // (a small word, not a banner in your face)
             G.fx.Ring(pos, 2.5f, Mods.Col(Mod.Hunter));
             G.sfx.Play("chest", 0.6f, 1.4f);
         }

@@ -33,10 +33,13 @@ namespace DigDeep
                 var c = q.Dequeue();
                 if (Wd.Solid(c.x, c.y)) continue;
                 byte lt = Wd.LiquidType(c.x, c.y);
-                if (lt != Fluids.None && lt != Fluids.Water && lt != Fluids.Steam) continue;   // lava and the like stop it
+                // other liquids (lava, poison...) don't take the new water, but it washes past them and lands round
+                // them, where it meets them (water on lava: rock and steam)
+                bool other = lt != Fluids.None && lt != Fluids.Water && lt != Fluids.Steam;
                 float have = lt == Fluids.Water ? Wd.LiquidAmount(c.x, c.y) : 0f;
-                float add = Mathf.Min(1f - have, budget);
+                float add = other ? 0f : Mathf.Min(1f - have, budget);
                 if (add > 0.01f) { Wd.SetLiquid(c.x, c.y, Fluids.Water, have + add); budget -= add; }
+                else if (other) budget -= 0.05f;
                 foreach (var d in new[] { new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1) })
                 {
                     var n = c + d;

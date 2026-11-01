@@ -15,6 +15,7 @@ namespace DigDeep
         // ---- the character lineup (main menu): every digger stands by the fire, you pick one
         public readonly bool lineup;
         readonly List<(GameObject g, SpriteRenderer r, Vector2 feet)> line = new List<(GameObject, SpriteRenderer, Vector2)>();
+        readonly List<int> lineChar = new List<int>();   // which digger (index into Chars.All) stands at each place: only unlocked ones
         GameObject marker;
         public int Hover = -1;   // set by the menu: the digger under the mouse
 
@@ -41,6 +42,8 @@ namespace DigDeep
             var logR = Piece(new CampProp("LogRight", Art.CampLog, new Vector2(floor.x + 3.2f, floor.y), 4, 8f, new Color(0.5f, 0.35f, 0.2f)));
             logL.unbreakable = logR.unbreakable = true;
 
+            if (!lineup) G.Spawn(new WallText(new Vector2(floor.x, floor.y + 2.9f)));   // just above the campfire   // the controls, chalked on the wall behind the fire
+
             // the other diggers: two per log, facing the fire. They ride along if their log falls.
             float[] seats = { -3.9f, -2.5f, 2.5f, 3.9f };
             int seat = 0;
@@ -49,7 +52,7 @@ namespace DigDeep
             if (lineup) BuildLineup(floor);
             for (int i = 0; i < Chars.All.Count && !lineup; i++)
             {
-                if (i == playerChar) continue;
+                if (i == playerChar || !Unlocks.CharOpen(Chars.All[i])) continue;   // (only diggers you've unlocked sit at the fire)
                 var c = Chars.All[i];
                 if (seat >= seats.Length)
                 {
@@ -101,11 +104,15 @@ namespace DigDeep
         // every digger in a row either side of the fire, the leftmost first
         void BuildLineup(Vector2 floor)
         {
-            int n = Chars.All.Count;
+            // only the diggers you've unlocked come to the fire (a new one turns up here once it's unlocked)
+            lineChar.Clear();
+            for (int ci = 0; ci < Chars.All.Count; ci++) if (Unlocks.CharOpen(Chars.All[ci])) lineChar.Add(ci);
+            int n = lineChar.Count;
             int left = (n + 1) / 2;
-            for (int i = 0; i < n; i++)
+            for (int li = 0; li < n; li++)
             {
-                float dx = i < left ? -1.7f - (left - 1 - i) * 2.05f : 1.7f + (i - left) * 2.05f;
+                int i = lineChar[li];
+                float dx = li < left ? -1.7f - (left - 1 - li) * 2.05f : 1.7f + (li - left) * 2.05f;
                 var feet = new Vector2(floor.x + dx, floor.y);
                 for (int k = 0; k < 6 && Wd.Solid(Mathf.FloorToInt(feet.x), Mathf.FloorToInt(feet.y + 0.05f)); k++) feet.y = Mathf.Floor(feet.y + 0.05f) + 1f;
                 var g = new GameObject("Lineup " + Chars.All[i].name);
@@ -124,7 +131,9 @@ namespace DigDeep
         }
 
         public int LineCount => line.Count;
-        public Vector2 LineFeet(int i) => line[Mathf.Clamp(i, 0, line.Count - 1)].feet;
+        public bool HasLine(int charIndex) => lineChar.IndexOf(charIndex) >= 0 && lineChar.IndexOf(charIndex) < line.Count;
+        // where a digger (by its index in Chars.All) stands in the line
+        public Vector2 LineFeet(int charIndex) => line[Mathf.Clamp(Mathf.Max(0, lineChar.IndexOf(charIndex)), 0, line.Count - 1)].feet;
 
         // which digger (if any) is at this world point
         public int LineAt(Vector2 w)
@@ -132,7 +141,7 @@ namespace DigDeep
             for (int i = 0; i < line.Count; i++)
             {
                 var f = line[i].feet;
-                if (Mathf.Abs(w.x - f.x) < 0.8f && w.y > f.y - 0.2f && w.y < f.y + 1.9f) return i;
+                if (Mathf.Abs(w.x - f.x) < 0.8f && w.y > f.y - 0.2f && w.y < f.y + 1.9f) return i < lineChar.Count ? lineChar[i] : -1;   // (as a digger index)
             }
             return -1;
         }
@@ -147,17 +156,18 @@ namespace DigDeep
             {
                 var (g, r, feet) = line[i];
                 if (g == null) continue;
-                bool on = i == sel;
+                int ci = i < lineChar.Count ? lineChar[i] : 0;
+                bool on = ci == sel;
                 float bob = on ? Mathf.Abs(Mathf.Sin(t * 5f)) * 0.12f : 0f;
                 g.transform.position = new Vector3(U.Snap(feet.x), U.Snap(feet.y + bob), 0f);
-                float k = !choosing ? 0.85f : on ? 1f : i == Hover ? 0.8f : 0.45f;
-                r.color = Unlocks.CharOpen(Chars.All[i]) ? new Color(k, k, k * (on ? 1f : 1.05f), 1f) : new Color(0f, 0f, 0f, 1f);   // a locked digger is a black shape
-                r.sprite = Chars.All[i].frames[on && ((int)(t * 3f)) % 4 == 0 ? 3 : 0];
+                float k = !choosing ? 0.85f : on ? 1f : ci == Hover ? 0.8f : 0.45f;
+                r.color = new Color(k, k, k * (on ? 1f : 1.05f), 1f);
+                r.sprite = Chars.All[ci].frames[on && ((int)(t * 3f)) % 4 == 0 ? 3 : 0];
                 g.transform.localScale = on ? new Vector3(1.12f, 1.12f, 1f) : Vector3.one;
             }
-            if (marker != null && sel >= 0 && sel < line.Count)
+            if (marker != null && sel >= 0 && HasLine(sel))
             {
-                var f = line[sel].feet;
+                var f = LineFeet(sel);
                 marker.transform.position = new Vector3(U.Snap(f.x), U.Snap(f.y + 2.3f + Mathf.Sin(t * 4f) * 0.12f), 0f);
             }
         }
@@ -168,7 +178,7 @@ namespace DigDeep
             for (int i = 0; i < line.Count; i++)
             {
                 if (line[i].g == null) continue;
-                if (i != chosen) G.fx.Smoke(line[i].feet + Vector2.up * 0.8f, 3, 0.7f);
+                if ((i < lineChar.Count ? lineChar[i] : -1) != chosen) G.fx.Smoke(line[i].feet + Vector2.up * 0.8f, 3, 0.7f);
                 Object.Destroy(line[i].g);
             }
             line.Clear();
@@ -353,6 +363,118 @@ namespace DigDeep
                 any = true;
             }
             return any;
+        }
+    }
+
+    // The controls, chalked on the cave wall behind the campfire in pixel letters (a picture in the world, not on the
+    // HUD), and they stay there for the whole run. They're redrawn when you switch between keyboard and pad.
+    public class WallText : Entity
+    {
+        string shown;
+
+        public WallText(Vector2 at)
+        {
+            pos = at;
+            MakeGO("WallText", null, 1);   // just in front of the cave's back wall, behind everything else
+            Build();
+        }
+
+        public override bool AlwaysActive => true;
+
+        static string P(Btn b) => GameInput.Prompt(b);
+
+        // each line is a run of pieces: plain chalk words, and the keys to press (drawn as bright keycaps so they pop)
+        static (string t, bool key)[] K(params object[] parts)
+        {
+            var r = new (string, bool)[parts.Length];
+            for (int i = 0; i < parts.Length; i++) r[i] = parts[i] is Btn bb ? (P(bb), true) : parts[i] is string ks && ks.StartsWith("@") ? (ks.Substring(1), true) : ((string)parts[i], false);
+            return r;
+        }
+
+        (string t, bool key)[][] Lines()
+        {
+            var h1 = GameInput.UsingStick
+                ? K(GameInput.SwapSticks ? "@R-STICK" : "@L-STICK", " MOVE   ", GameInput.SwapSticks ? "@L-STICK" : "@R-STICK", " AIM   ", Btn.Jump, " JUMP   ", Btn.Attack, " SHOOT")
+                : K(Btn.Left, "/", Btn.Right, " MOVE   ", Btn.Jump, " JUMP   ", "@MOUSE", " AIM   ", "@CLICK", " SHOOT");
+            var h2 = K(Btn.Special, " SPECIAL   ", Btn.Reload, " RELOAD   ", Btn.Item, " ITEM   ", Btn.Cycle, " CYCLE   ", Btn.Swap, " SWAP");
+            var h3 = K(Btn.Interact, " BUY / TAKE   ", GameInput.UsingStick ? "@MENU" : "@ESC", " PAUSE");
+            return new[] { h1, h2, h3 };
+        }
+
+        const int Pad = 2;   // a keycap's padding either side of its letters
+        static int Width((string t, bool key)[] line)
+        {
+            int w = 0;
+            foreach (var pc in line) w += pc.t.Length * PixelFont.CW + (pc.key ? Pad * 2 + 1 : 0);
+            return w;
+        }
+
+        void Build()
+        {
+            var lines = Lines();
+            var sb = new System.Text.StringBuilder();
+            foreach (var l in lines) { foreach (var pc in l) sb.Append(pc.key ? "[" + pc.t + "]" : pc.t); sb.Append('|'); }
+            string key = sb.ToString();
+            if (key == shown) return;
+            shown = key;
+            const int cw = PixelFont.CW, lh = PixelFont.CHT + 7;
+            int w = 2, h = lines.Length * lh + 4;
+            foreach (var l in lines) w = Mathf.Max(w, Width(l) + 4);
+            var px = new Color32[w * h];
+            var chalk = new Color32(222, 198, 160, 150);     // pale chalk, half sunk into the rock
+            var groove = new Color32(20, 14, 12, 110);        // the scratch's shadow
+            var capBg = new Color32(36, 24, 30, 235);         // a keycap: dark, with a bright rim and bright letters
+            Color32 capRim = new Color32(255, 196, 92, 255), capRimD = new Color32(170, 104, 40, 255);
+            var capInk = new Color32(255, 244, 200, 255);
+            for (int li = 0; li < lines.Length; li++)
+            {
+                var l = lines[li];
+                int cx = (w - Width(l)) / 2, top = h - 4 - li * lh;   // (texture rows go up from the bottom)
+                foreach (var pc in l)
+                {
+                    int x0 = cx;
+                    if (pc.key)
+                    {
+                        // the cap: from a row above the letters to two below, its bottom edge darker (it stands out of the wall)
+                        int bw = pc.t.Length * cw + Pad * 2, by0 = top - PixelFont.CHT, by1 = top + 2;
+                        for (int y = by0; y <= by1; y++)
+                            for (int x = cx; x < cx + bw; x++)
+                            {
+                                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                                bool edge = x == cx || x == cx + bw - 1 || y == by1 || y == by0;
+                                bool corner = (x == cx || x == cx + bw - 1) && (y == by0 || y == by1);
+                                if (corner) continue;
+                                px[y * w + x] = edge ? (y == by0 ? capRimD : capRim) : capBg;
+                            }
+                        x0 = cx + Pad;
+                    }
+                    for (int ci = 0; ci < pc.t.Length; ci++)
+                    {
+                        var g = PixelFont.Glyph(pc.t[ci]);
+                        for (int gy = 0; gy < g.Length; gy++)
+                            for (int gx = 0; gx < g[gy].Length; gx++)
+                            {
+                                if (g[gy][gx] != '#') continue;
+                                int x = x0 + ci * cw + gx, y = top - gy;
+                                if (!pc.key && x + 1 < w && y - 1 >= 0 && px[(y - 1) * w + x + 1].a == 0) px[(y - 1) * w + x + 1] = groove;
+                                if (x >= 0 && y >= 0 && x < w && y < h) px[y * w + x] = pc.key ? capInk : chalk;
+                            }
+                    }
+                    cx += pc.t.Length * cw + (pc.key ? Pad * 2 + 1 : 0);
+                }
+            }
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            tex.SetPixels32(px);
+            tex.Apply();
+            sr.sprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), Art.PPU, 0, SpriteMeshType.FullRect);
+            go.transform.position = new Vector3(U.Snap(pos.x), U.Snap(pos.y), 0f);
+        }
+
+        float checkT;
+        public override void Tick(float dt)
+        {
+            checkT -= dt;
+            if (checkT <= 0f) { checkT = 0.5f; Build(); }
         }
     }
 }

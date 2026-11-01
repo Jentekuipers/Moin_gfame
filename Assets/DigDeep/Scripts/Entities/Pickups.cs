@@ -51,7 +51,7 @@ namespace DigDeep
             }
             else
             {
-                vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt);
+                vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt); vel.x = Fluids.Drag(pos, vel.x, dt);
                 Vector2 p = pos;
                 if (Wd.MoveX(ref p, H, vel.x * dt, out _)) vel.x *= -0.5f;
                 if (Wd.MoveY(ref p, H, vel.y * dt, out _))
@@ -130,7 +130,7 @@ namespace DigDeep
         {
             bob += dt; noPick -= dt;
             PickupUtil.Unbury(Wd, ref pos, ref vel, H.y);
-            vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt);
+            vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt); vel.x = Fluids.Drag(pos, vel.x, dt);
             vel.x = U.Approach(vel.x, 0f, 4f * dt);
             Vector2 p = pos;
             if (Wd.MoveX(ref p, H, vel.x * dt, out _)) vel.x = 0f;
@@ -306,7 +306,7 @@ namespace DigDeep
                 G.fx.Burst(pos + new Vector2(Random.Range(-0.4f, 0.4f), Random.Range(-0.2f, 0.5f)), 1, Curses.Col(w.curse), 0.6f, 0.7f, -2f, 1f, false);
             bob += dt; noPick -= dt;
             PickupUtil.Unbury(Wd, ref pos, ref vel, H.y);
-            vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt);
+            vel.y = Fluids.Sink(pos, Mathf.Max(vel.y - 30f * dt, -15f), dt); vel.x = Fluids.Drag(pos, vel.x, dt);
             vel.x = U.Approach(vel.x, 0f, 4f * dt);
             Vector2 p = pos;
             if (Wd.MoveX(ref p, H, vel.x * dt, out _)) vel.x = 0f;
@@ -322,7 +322,8 @@ namespace DigDeep
             if (!nearW && hovW && mine) G.hud.WeaponLabel(pos + Vector2.up * 0.9f, w, null, pl, true);
             if (nearW)
             {
-                bool free = pl.slots[0] == null || pl.slots[1] == null;
+                bool free = false;
+                for (int si = 0; si < pl.slots.Length; si++) if (pl.slots[si] == null) free = true;
                 G.hud.WeaponLabel(pos + Vector2.up * 0.9f, w, free ? "PRESS " + GameInput.Prompt(Btn.Interact) + " TO TAKE" : "PRESS " + GameInput.Prompt(Btn.Interact) + " TO SWAP", pl, G.MouseOver(pos, 0.6f));
                 if (noPick <= 0f && GameInput.Take(Btn.Interact)) { pl.PickUpWeapon(w); Kill(); return; }
             }

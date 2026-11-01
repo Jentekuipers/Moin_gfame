@@ -476,12 +476,36 @@ namespace DigDeep
 
     // MAGPIE: snaps up the gold and gems lying around (before you can), and once it has hoarded 200 gold worth,
     // it drops 4 treasures of the kind found at this depth.
+    // MAGPIE: it collects the gold lying about, saving up for three treasures. What it will bring is decided when it
+    // starts saving (just like a chest in the biome you're in at that moment), and so is the price: 100 gold for a
+    // common thing, 150 uncommon, 200 rare, 250 mythic, 300 ultra. Three commons: 300 gold.
     public class PetMagpie : Pet
     {
         Coin prey;
-        int stash;
-        const int Goal = 200;
-        public PetMagpie(Player p) : base(p, "magpie") { }
+        int stash, goal;
+        readonly System.Collections.Generic.List<Def> hoard = new System.Collections.Generic.List<Def>();
+        public PetMagpie(Player p) : base(p, "magpie") { NewQuest(); }
+
+        static int Price(Def d)
+        {
+            if (d is SkillDef sk && sk.ultra) return 300;
+            var r = d is SkillDef sd ? sd.rarity : d is AttackDef ad ? ad.rarity : Rarity.Common;
+            return r == Rarity.Relic ? 250 : r == Rarity.Rare ? 200 : r == Rarity.Uncommon ? 150 : 100;
+        }
+
+        void NewQuest()
+        {
+            hoard.Clear(); goal = 0;
+            var rng = new System.Random(Random.Range(0, int.MaxValue));
+            for (int i = 0; i < 3; i++)
+            {
+                var d = DB.RollChest(owner.Depth, owner, rng);
+                if (d == null) continue;
+                hoard.Add(d);
+                goal += Price(d);
+            }
+            if (goal == 0) goal = 300;
+        }
 
         protected override void Behave(float dt)
         {
@@ -504,25 +528,22 @@ namespace DigDeep
                     prey.Kill();
                     prey = null;
                     G.sfx.Play("coin", 0.25f, 1.6f);
-                    if (stash >= Goal) PayOut();
+                    if (stash >= goal) PayOut();
                 }
             }
             else Follow(owner.pos + new Vector2(-owner.facing * 0.9f, 1.3f + Mathf.Sin(t * 2f) * 0.2f), 5f, dt);
-            if (stash > 0) G.hud.Label(pos + Vector2.up * 0.6f, stash + "/" + Goal, new Color(1f, 0.85f, 0.35f));
+            if (stash > 0) G.hud.Label(pos + Vector2.up * 0.6f, stash + "/" + goal, new Color(1f, 0.85f, 0.35f));
         }
 
         void PayOut()
         {
-            stash -= Goal;
-            var rng = new System.Random(Random.Range(0, int.MaxValue));
-            for (int i = 0; i < 4; i++)
-            {
-                var d = DB.RollChest(owner.Depth, owner, rng);
-                if (d != null) G.Spawn(new LootPickup(pos + new Vector2((i - 1.5f) * 0.4f, 0.2f), d, 0.6f));
-            }
-            G.hud.Banner("MAGPIE'S HOARD", "4 TREASURES", new Color(1f, 0.85f, 0.35f));
+            stash -= goal;
+            for (int i = 0; i < hoard.Count; i++)
+                G.Spawn(new LootPickup(pos + new Vector2((i - 1f) * 0.5f, 0.2f), hoard[i], 0.6f));
+            G.hud.Banner("MAGPIE'S HOARD", hoard.Count + " TREASURES", new Color(1f, 0.85f, 0.35f));
             G.sfx.Play("chest", 0.8f, 1.3f);
             G.fx.Burst(pos, 30, new Color(1f, 0.85f, 0.35f), 7f, 0.6f, 5f);
+            NewQuest();   // and it starts saving for the next three
         }
     }
 

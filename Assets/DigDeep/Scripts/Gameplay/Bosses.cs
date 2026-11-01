@@ -13,24 +13,26 @@ namespace DigDeep
         public const int AW = 30, IH = 10;      // outer width, interior height
         public readonly int D, index, ax0;      // D = depth of the bedrock floor's top row
 
-        public const int Final = 645;          // Ornin's throne room: the bottom of the world
-        // the halls, in order (index 0..7, then the final one): the biomes are long, so each hall is a way down
-        public const int A0 = 94, A1 = 150, A2 = 190, A3 = 246, A4 = 304, A5 = 360, A6 = 436, A7 = 500;
+        const int L = Biomes.Len;
+        public const int Final = Biomes.Slots * L - 6;    // Ornin's throne room: the bottom of the world (end of the kingdom)
         public const int Bottom = Final + 2;   // everything below is bedrock
         public bool IsFinal => D == Final;
 
+        // the halls, in order: one at the end of each biome of the run, and one more halfway down the jungle and the
+        // magma core (when the run goes through them), then Ornin's throne room
         public static IEnumerable<int> Depths(int max)
         {
-            yield return A0;     // end of Topsoil: the Mole King (or the Boulder Troll)
-            yield return A1;     // the Devourer, a giant worm (or the Bone Slime)
-            yield return A2;     // end of the Overgrown Jungle: the Verdant Maw (or the Hive Queen, or Viridis)
-            yield return A3;     // end of Fungal Hollows: the Spore Mother (or the Toadstool King)
-            yield return A4;     // end of Crystal Depths: the Crystal Colossus (or Unda)
-            yield return A5;     // end of the Storm Caverns: Captain Vask (or Voltar)
-            yield return A6;     // the Ash Wraith
-            yield return A7;     // end of Magma Core: the Cinder Lord (or the Forge Golem, or Ignis)
+            var order = Biomes.Order;
+            for (int s = 0; s < Biomes.Slots - 1; s++)
+            {
+                int b = order[s];
+                if (b == Biomes.Jungle || b == Biomes.Magma) yield return s * L + L / 2;
+                yield return (s + 1) * L - 6;
+            }
             yield return Final;  // King Ornin, guarding the God-Diamond
         }
+        public bool Midway => D % L == L / 2;   // a hall halfway down a biome (not at its end)
+        public int Biome => Biomes.Index(Midway ? D : D - 3);
 
         // 3-5 unbreakable one-block ledges to dodge onto. Bosses pass straight through them.
         readonly HashSet<long> plats = new HashSet<long>();
@@ -114,7 +116,8 @@ namespace DigDeep
         // every boss the arenas can hold (also the test mode's list)
         public static readonly string[] BossKinds = { "MOLE KING", "SPORE MOTHER", "CRYSTAL COLOSSUS", "CINDER LORD", "KING ORNIN", "THE DEVOURER",
             "CAPTAIN VASK", "ASH WRAITH", "VERDANT MAW", "UNDA, WATER DRAGON", "IGNIS, FIRE DRAGON", "IGNIS AND UNDA (BOTH)",
-            "BOULDER TROLL", "HIVE QUEEN", "TOADSTOOL KING", "FORGE GOLEM", "BONE SLIME", "VOID ARCHMAGE", "VIRIDIS, JUNGLE DRAGON", "NIHIL, VOID DRAGON", "VOLTAR, STORM DRAGON" };
+            "BOULDER TROLL", "HIVE QUEEN", "TOADSTOOL KING", "FORGE GOLEM", "BONE SLIME", "VOID ARCHMAGE", "VIRIDIS, JUNGLE DRAGON", "NIHIL, VOID DRAGON", "VOLTAR, STORM DRAGON",
+            "NIMBUS", "IRIS, RAINBOW DRAGON", "THE HEARTWOOD", "THE BLOODSTAG", "THE KING CRAB", "THE KRAKEN", "LUMINA, NEON JAGUAR", "THE ABYSSAL ANGLER" };
         public bool Cleared => cleared;
         public void MarkCleared() { started = true; cleared = true; }   // (restoring a saved run)
 
@@ -198,19 +201,26 @@ namespace DigDeep
             Unlocks.BossFightStarted();
             SetPerimeter(Block.Seal);
             int kind;   // (remembered in bossKind for the records)
-            switch (room.D)
+            int bio = room.Biome;
+            bool mid = room.Midway;
+            switch (bio)
             {
-                case ArenaRoom.A0: kind = 0; break;
-                case ArenaRoom.A1: kind = 5; break;
-                case ArenaRoom.A2: kind = 8; break;
-                case ArenaRoom.A3: kind = 1; break;
-                case ArenaRoom.A4: kind = 2; break;   // the Crystal Colossus guards the crystal depths
-                case ArenaRoom.A5: kind = 6; break;   // the Raider Captain holds the storm caverns
-                case ArenaRoom.A6: kind = 7; break;
+                case Biomes.Topsoil: kind = 0; break;
+                case Biomes.Jungle: kind = mid ? 5 : 8; break;
+                case Biomes.Fungal: kind = 1; break;
+                case Biomes.Crystal: kind = 2; break;   // the Crystal Colossus guards the crystal depths
+                case Biomes.Storm: kind = 6; break;     // the Raider Captain holds the storm caverns
+                case Biomes.Magma: kind = mid ? 7 : 3; break;
+                case Biomes.Cloud: kind = 21; break;
+                case Biomes.Crimson: kind = 23; break;
+                case Biomes.Beach: kind = 25; break;
+                case Biomes.Neon: kind = 27; break;
+                case Biomes.Reef: kind = 28; break;
                 default: kind = 3; break;
             }
-            float hpMul = 2f * (0.8f + (room.D + Enemy.VoidDeeper) / Biomes.Stretch / 400f);   // twice as tough as before, and tougher the deeper the arena
-            hpMul *= 1.15f + 0.12f * room.index + (World.Void ? 0.3f : 0f);                          // and tougher still the deeper you are
+            float hpMul = 2f * (0.8f + room.D / Biomes.Stretch / 400f);   // twice as tough as before, and tougher the deeper the arena
+            hpMul *= 1.15f + 0.12f * room.index;                           // and tougher still the deeper you are
+            // (in the void every boss becomes its void self: twenty times the health, see Enemy.MakeVoid)
             var spawnAt = new Vector2(CenterX + (G.player.pos.x < CenterX ? 7f : -7f), FloorY);
             if (room.IsFinal) kind = 4;
             // the dragon worms: the water dragon may rule the crystal depths, the fire dragon the storm caverns;
@@ -218,14 +228,23 @@ namespace DigDeep
             var rr = new System.Random(Gen.Seed * 13 + room.D);
             int wins = PlayerPrefs.GetInt("digdeep_wins", 0);
             float twin = Mathf.Min(0.6f, 0.12f + 0.2f * wins);
-            if (room.D == ArenaRoom.A4 && rr.NextDouble() < 0.5) kind = rr.NextDouble() < twin ? 11 : 9;
-            if (room.D == ArenaRoom.A5 && rr.NextDouble() < 0.5) kind = 20;   // the storm caverns: Captain Vask, or Voltar the storm dragon
-            // every biome's second boss: half the time the hall holds that one instead
-            if (room.D == ArenaRoom.A0 && rr.NextDouble() < 0.5) kind = 12;
-            if (room.D == ArenaRoom.A2) { double jr = rr.NextDouble(); if (jr < 0.33) kind = 13; else if (jr < 0.66) kind = 18; }   // the Hive Queen, the jungle dragon, or the Maw
-            if (room.D == ArenaRoom.A3 && rr.NextDouble() < 0.5) kind = 14;
-            if (room.D == ArenaRoom.A7) { double mr = rr.NextDouble(); if (mr < 0.33) kind = 15; else if (mr < 0.66) kind = 10; }   // the magma core: the Forge Golem, Ignis, or the Cinder Lord
-            if (room.D == ArenaRoom.A1 && rr.NextDouble() < 0.5) kind = 16;   // the Bone Slime, or the Devourer
+            if (!room.IsFinal)
+            {
+                if (bio == Biomes.Crystal && rr.NextDouble() < 0.5) kind = rr.NextDouble() < twin ? 11 : 9;
+                if (bio == Biomes.Storm && rr.NextDouble() < 0.5) kind = 20;   // the storm caverns: Captain Vask, or Voltar the storm dragon
+                // every biome's second boss: half the time the hall holds that one instead
+                if (bio == Biomes.Topsoil && rr.NextDouble() < 0.5) kind = 12;
+                if (bio == Biomes.Jungle && !mid) { double jr = rr.NextDouble(); if (jr < 0.33) kind = 13; else if (jr < 0.66) kind = 18; }   // the Hive Queen, the jungle dragon, or the Maw
+                if (bio == Biomes.Fungal && rr.NextDouble() < 0.5) kind = 14;
+                if (bio == Biomes.Magma && !mid) { double mr = rr.NextDouble(); if (mr < 0.33) kind = 15; else if (mr < 0.66) kind = 10; }   // the magma core: the Forge Golem, Ignis, or the Cinder Lord
+                if (bio == Biomes.Jungle && mid && rr.NextDouble() < 0.5) kind = 16;   // the Bone Slime, or the Devourer
+                // the newer biomes' second bosses
+                if (bio == Biomes.Cloud && rr.NextDouble() < 0.5) kind = 22;      // Nimbus, or Iris the rainbow dragon
+                if (bio == Biomes.Crimson && rr.NextDouble() < 0.5) kind = 24;    // the Heartwood, or the Bloodstag
+                if (bio == Biomes.Beach && rr.NextDouble() < 0.5) kind = 26;      // the King Crab, or the Kraken
+                if (bio == Biomes.Neon && rr.NextDouble() < 0.35) kind = 18;      // Lumina, or Viridis the jungle dragon
+                if (bio == Biomes.Reef && rr.NextDouble() < 0.4) kind = 9;        // the Abyssal Angler, or Unda the water dragon
+            }
             if (room.IsFinal && World.Void) kind = 17;              // the bottom of the void: the Void Archmage
             else if (World.Void && !G.voidDragonDone && rr.NextDouble() < 0.25) { kind = 19; G.voidDragonDone = true; }   // once a void run: the void dragon
             if (kind == 16 && Biomes.Index(room.D) == Biomes.Magma) kind = 5;   // the Bone Slime has no business in the magma core
@@ -252,6 +271,14 @@ namespace DigDeep
                 case 19: boss = new Dragon(this, Dragon.Elem.Void, 260f * hpMul, false); break;
                 case 20: boss = new Dragon(this, Dragon.Elem.Storm, 250f * hpMul, false); break;
                 case 17: boss = new VoidLord(this, 900f * hpMul); break;
+                case 21: boss = new Nimbus(this, 230f * hpMul); break;
+                case 22: boss = new Dragon(this, Dragon.Elem.Rainbow, 250f * hpMul, false); break;
+                case 23: boss = new Heartwood(this, new Vector2(CenterX, FloorY), 260f * hpMul); break;
+                case 24: boss = new Bloodstag(this, spawnAt, 230f * hpMul); break;
+                case 25: boss = new KingCrab(this, spawnAt, 220f * hpMul); break;
+                case 26: boss = new Kraken(this, 240f * hpMul); break;
+                case 27: boss = new Lumina(this, spawnAt, 220f * hpMul); break;
+                case 28: boss = new AbyssAngler(this, 240f * hpMul); break;
                 case 11:
                     {
                         var f = new Dragon(this, Dragon.Elem.Fire, 175f * hpMul, true);
@@ -269,7 +296,8 @@ namespace DigDeep
             bosses.Add(boss);
             G.boss = boss;
             G.music.PlayBoss();
-            if (kind == 11) G.hud.Banner("IGNIS AND UNDA", "THE TWIN DRAGONS", new Color(1f, 0.35f, 0.3f));
+            if (World.Void) foreach (var vb in bosses) vb.VoidName();
+            if (kind == 11) G.hud.Banner(World.Void ? "VOID IGNIS AND UNDA" : "IGNIS AND UNDA", "THE TWIN DRAGONS", new Color(1f, 0.35f, 0.3f));
             else G.hud.Banner(boss.title, boss.subtitle, new Color(1f, 0.35f, 0.3f));
             G.sfx.Play("rumble", 1f, 0.7f);
             G.sfx.Play("explode", 0.6f, 0.5f);
@@ -298,7 +326,7 @@ namespace DigDeep
                 Unlocks.BossBeaten();
             }
             SetPerimeter(Block.Brick);
-            if (G.player.s.adamant && !G.player.NoHealing()) { G.player.s.hp = G.player.s.maxHp; G.sfx.Play("heal", 0.8f); }   // ADAMANT HEART
+            if (G.player.s.adamant && !G.player.NoHealing()) { G.player.s.hp = Mathf.Min(G.player.s.maxHp, G.player.s.hp + G.player.s.maxHp / 2); G.sfx.Play("heal", 0.8f); }   // ADAMANT HEART: half your health back
             if (room.IsFinal && World.Void)
             {
                 G.OnVoidDefeated(new Vector2(CenterX, FloorY + 3f));
@@ -488,24 +516,68 @@ namespace DigDeep
         // THE VOID WORLD: a darker shade, and every few seconds a strike of the void: a ring of black shards,
         // or spikes stabbing up from the floor under you
         public void TintVoid() { tint = Color.Lerp(tint, new Color(0.62f, 0.45f, 0.82f), 0.6f); }
+        public void VoidName() { if (!string.IsNullOrEmpty(title) && !title.Contains("VOID")) title = "VOID " + title; }
+
+        // a void boss strikes out every few seconds, cycling through four void attacks
         int voidN;
+        static readonly Color VoidShard = new Color(0.6f, 0.3f, 1f), VoidBody = new Color(0.35f, 0.15f, 0.6f);
         protected override void VoidStrike()
         {
             if (arena == null) return;
             voidN++;
-            if (voidN % 2 == 1)
+            switch (voidN % 4)
             {
-                int n = Phase2 ? 16 : 12;
-                float off = Random.value * 30f;
-                for (int i = 0; i < n; i++)
-                {
-                    float a = (off + i * 360f / n) * Mathf.Deg2Rad;
-                    var b = Shot(pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 4.5f, Art.Circle, new Color(0.6f, 0.3f, 1f), 0f, 0.3f, 0.4f);
-                    b.body = new Color(0.35f, 0.15f, 0.6f);
-                }
-                G.sfx.Play("shoot", 0.6f, 0.5f);
+                case 1:
+                    {
+                        // two rings of void shards, the second slower and twisted, so they cross
+                        int n = Phase2 ? 18 : 14;
+                        float off = Random.value * 30f;
+                        for (int ring = 0; ring < 2; ring++)
+                            for (int i = 0; i < n; i++)
+                            {
+                                float a = (off + i * 360f / n + ring * 180f / n) * Mathf.Deg2Rad;
+                                var b = Shot(pos, new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * (ring == 0 ? 5f : 3.2f), Art.Circle, VoidShard, 0f, 0.3f + ring * 0.25f, 0.4f);
+                                b.body = VoidBody;
+                            }
+                        G.sfx.Play("shoot", 0.6f, 0.5f);
+                        break;
+                    }
+                case 2:
+                    VoidSpike.Erupt(new Vector2(P.pos.x, P.pos.y), Phase2 ? 7 : 5, ContactDmg(arena.Depth));
+                    break;
+                case 3:
+                    {
+                        // VOID RAIN: shards fall from the roof all across the hall, with a gap or two to stand in
+                        float span = arena.MaxX - arena.MinX;
+                        int n = Phase2 ? 14 : 11;
+                        int gap = Random.Range(1, n - 1);
+                        for (int i = 0; i < n; i++)
+                        {
+                            if (i == gap || (Phase2 && i == (gap + n / 2) % n)) continue;
+                            float x = arena.MinX + 0.5f + span * (i + 0.5f) / n;
+                            var b = Shot(new Vector2(x, arena.CeilY - 0.4f), new Vector2(0f, -1.5f), Art.Circle, VoidShard, 14f, 0.6f + (i % 3) * 0.12f, 0.45f);
+                            b.body = VoidBody;
+                        }
+                        G.sfx.Play("charge", 0.5f, 0.5f);
+                        break;
+                    }
+                default:
+                    {
+                        // VOID COLLAPSE: a cage of shards closes in on where you stand, after a beat to get out
+                        int n = Phase2 ? 14 : 10;
+                        Vector2 c = P.pos;
+                        for (int i = 0; i < n; i++)
+                        {
+                            float a = i * Mathf.PI * 2f / n;
+                            Vector2 d = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                            var b = Shot(c + d * 4.5f, -d * 3.4f, Art.Circle, VoidShard, 0f, 0.8f, 0.4f);
+                            b.body = VoidBody;
+                        }
+                        G.fx.Ring(c, 4.5f, VoidShard);
+                        G.sfx.Play("charge", 0.6f, 0.4f);
+                        break;
+                    }
             }
-            else VoidSpike.Erupt(new Vector2(P.pos.x, P.pos.y), Phase2 ? 5 : 3, ContactDmg(arena.Depth));
         }
         protected virtual void OnDefeatedFree() { }   // a boss outside any arena (the God above the clouds)
 
@@ -558,7 +630,8 @@ namespace DigDeep
                 if (e.dead) continue;
                 if (e is ArenaWater aw) { aw.Drain(); continue; }   // the flood drains away
                 bool mine = e is BossShot || e is Hazard || e is BeamStrike || e is HomingSkull || e is FloorFire || (e is Bullet b && b.team == Team.Boss) || (this is VerdantMaw && e is Snapper) || (this is HiveQueen && e is Bee) || e is SlugEmber
-                            || (this is BoneSlime && (e is Slime || e is Skeleton)) || (this is VoidLord && e is VoidMage) || (e is VoidSpike vs && !vs.Permanent);
+                            || (this is BoneSlime && (e is Slime || e is Skeleton)) || (this is VoidLord && e is VoidMage) || (e is VoidSpike vs && !vs.Permanent)
+                            || (this is Heartwood && e is Weepling) || (this is Nimbus && e is Puffling) || (this is AbyssAngler && e is Fish);
                 if (!mine) continue;
                 G.fx.Burst(e.pos, 4, new Color(1f, 0.9f, 0.7f, 0.8f), 2f, 0.3f, 0f, 1f, false);
                 e.Kill();

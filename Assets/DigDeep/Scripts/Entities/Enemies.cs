@@ -91,14 +91,39 @@ namespace DigDeep
         float voidT = 4f;
         public static readonly Color VoidTint = new Color(0.55f, 0.38f, 0.72f);
         public bool IsVoid => voidDone;
+        public bool crimson;   // a creature of the crimson forest: it heals in blood
         void MakeVoid()
         {
             voidDone = true;
-            hp *= 1.6f; maxHp *= 1.6f;
+            float hm = this is Boss ? 20f : 1.6f;   // THE VOID BOSSES: twenty times the health
+            hp *= hm; maxHp *= hm;
             dmg = dmg * 3 / 2;
             gold = Mathf.Max(gold + 1, gold * 3 / 2);
-            if (this is Boss b) b.TintVoid();
+            if (this is Boss b) { b.TintVoid(); b.VoidName(); }
         }
+        // THE VOID BOSSES: whatever colours a boss paints itself, the void washes them purple (every part of it)
+        SpriteRenderer[] hueRends;
+        Color[] hueSet;
+        float hueScan;
+        public static Color VoidHue(Color c) => new Color(c.r * 0.68f + 0.04f, c.g * 0.42f, Mathf.Min(1f, c.b * 0.9f + 0.22f), c.a);
+        public void VoidHueTick(float dt)
+        {
+            if (!IsVoid || go == null) return;
+            hueScan -= dt;
+            if (hueRends == null || hueScan <= 0f)
+            {
+                hueScan = 1f;
+                hueRends = go.GetComponentsInChildren<SpriteRenderer>(true);
+                hueSet = new Color[hueRends.Length];
+            }
+            for (int i = 0; i < hueRends.Length; i++)
+            {
+                var r = hueRends[i];
+                if (r == null || r.color == hueSet[i]) continue;   // (already washed, and the boss hasn't repainted it)
+                hueSet[i] = r.color = VoidHue(r.color);
+            }
+        }
+
         // void creatures burst into a ring of void shards when they die; void bosses also strike out every few seconds
         protected virtual void VoidStrike() { }
 
@@ -509,7 +534,7 @@ namespace DigDeep
         protected float EnemyShotDamage => 2f * (1f + (depth + VoidDeeper) / Biomes.Stretch / 110f);
 
         // What a touch (or a normal enemy bullet) does to you, in health points. A heart is 100.
-        public static int ContactDmg(int depth) => Mathf.RoundToInt(60f + Mathf.Max(0, depth + VoidDeeper) / Biomes.Stretch * 0.25f);
+        public static int ContactDmg(int depth) => Mathf.RoundToInt(35f + Mathf.Max(0, depth + VoidDeeper) / Biomes.Stretch * 0.3f);   // gentle up top (bats were biting too hard), as nasty as ever at the bottom
         // the void lies under the whole world: there, depth carries on from the bottom
         public static int VoidDeeper => World.Void ? ArenaRoom.Final : 0;
 
@@ -712,7 +737,7 @@ namespace DigDeep
             }
             animT += dt; flash -= dt; hurtCd -= dt; contactCd -= dt; frostCd -= dt; shockCd -= dt;
             if (elitePending) { elitePending = false; if (CanBeElite) MakeElite(); }
-            if (!voidDone && World.Void && !(this is SkyGod)) MakeVoid();
+            if (!voidDone && World.Void) MakeVoid();
             if (voidDone && this is Boss && !intangible && HasPlayerNear(14f))
             {
                 voidT -= dt;
@@ -722,6 +747,12 @@ namespace DigDeep
             if (dead) return;
             TickWaterHurt(dt);
             if (dead) return;
+            // CRIMSON creatures heal in blood (never the bosses)
+            if (crimson && !(this is Boss) && hp < maxHp && Wd.BloodyAt(pos))
+            {
+                hp = Mathf.Min(maxHp, hp + maxHp * 0.3f * dt);
+                if (Random.value < dt * 8f) G.fx.Burst(pos + Random.insideUnitCircle * 0.3f, 1, new Color(1f, 0.25f, 0.3f), 1.2f, 0.5f, -3f, 1f, false);
+            }
             if (elite) EliteTick(dt);
             if (poisonT > 0f)
             {
@@ -798,6 +829,9 @@ namespace DigDeep
             lastYOff = yOff;
             int fi = ((int)(animT * 6f)) % frames.Length;
             sr.sprite = flash > 0f ? whites[fi] : frames[fi];
+            // HALLUCINATING (mushroom spores): it looks like some other creature altogether
+            if (Hallucination.Seeing && !(this is Boss) && Art.Enemy.TryGetValue(Hallucination.DisguiseFor(GetHashCode()), out var fake) && fake != null && fake.Length > 0)
+                sr.sprite = fake[((int)(animT * 6f)) % fake.Length];
             sr.flipX = facing < 0;
             if (!(this is Boss))
             {
@@ -806,6 +840,7 @@ namespace DigDeep
                 if (burnT > 0f) c = Color.Lerp(new Color(1f, 0.7f, 0.4f), new Color(1f, 0.4f, 0.15f), 0.5f + 0.5f * Mathf.Sin(Time.time * 30f));
                 if (G.player.huntMark == this) c = Color.Lerp(c, new Color(1f, 0.9f, 0.2f), 0.5f + 0.5f * Mathf.Sin(Time.time * 10f));
                 if (G.InReveal(pos)) c = Color.Lerp(c, new Color(1f, 0.25f, 0.25f), (0.45f + 0.15f * Mathf.Sin(Time.time * 6f)) * G.RevealFade);
+                if (BloodSight.On) c = Color.Lerp(c, new Color(1f, 0.3f, 0.3f), 0.25f + 0.1f * Mathf.Sin(Time.time * 5f));
                 if (voidDone) c = Color.Lerp(c, VoidTint, 0.55f) * new Color(0.75f, 0.7f, 0.85f, 1f);
                 if (elite) c = Color.Lerp(c, EliteColor, 0.35f + 0.15f * Mathf.Sin(Time.time * 5f));
                 if (thrall) c = Color.Lerp(c, new Color(0.75f, 0.55f, 1f, 0.85f), 0.55f + 0.1f * Mathf.Sin(Time.time * 4f));   // risen: ghostly violet
@@ -882,7 +917,7 @@ namespace DigDeep
         void WeakSpot()
         {
             var w = G.player.weapon;
-            bool on = w != null && w.Has(Mod.Sharpshooter) && !intangible;
+            bool on = false;   // (SHARPSHOOTER no longer has a weak spot: it rewards range)
             if (!on) { if (weakGo != null && weakGo.activeSelf) weakGo.SetActive(false); return; }
             if (weakGo == null)
             {
@@ -905,7 +940,7 @@ namespace DigDeep
             if (burnT > 0f) { l.Add(pos, 3.2f, 0.85f); return; }   // burning things light up the cave
             if (G.player.huntMark == this) l.Add(pos, 2.6f, 0.85f);
             // eyes glow faintly so you can spot things in the dark (much more with the OWL SIGHT combo)
-            else if (G.player.Combo("owl")) l.Add(pos, 2.4f, 0.7f);
+            else if (G.player.Combo("owl") || BloodSight.On) l.Add(pos, 2.4f, 0.7f);   // (soaked in blood you see them too)
             else l.Add(pos, 1.1f, 0.25f);
         }
     }
@@ -1071,15 +1106,41 @@ namespace DigDeep
         readonly float stepTime;
         static readonly Vector2Int[] Dirs = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
 
-        public Mole(int x, int y, int depth)
+        // the deeper biomes have their own moles: MOLE BANDITS (a mask, a knife: they snatch your gold and run off
+        // with it; kill one to get it back) and MINER MOLES (a hard hat and a lamp: tougher, and they dig through stone)
+        public enum Kind { Plain, Bandit, Miner }
+        public readonly Kind kind;
+        int stolen;
+        float fleeT;
+
+        public Mole(int x, int y, int depth, Kind kind = Kind.Plain)
         {
+            this.kind = kind;
             cell = new Vector2Int(x, y);
             pos = new Vector2(x + 0.5f, y + 0.5f);
             half = new Vector2(0.38f, 0.38f);
-            Setup("Mole", "mole", 3, depth);
-            stepTime = Mathf.Max(0.22f, 0.5f - depth / 800f);
-            gold = 3;
+            string key = kind == Kind.Bandit && Art.Enemy.ContainsKey("mole_bandit") ? "mole_bandit" : kind == Kind.Miner && Art.Enemy.ContainsKey("mole_miner") ? "mole_miner" : "mole";
+            Setup(kind == Kind.Bandit ? "Mole Bandit" : kind == Kind.Miner ? "Miner Mole" : "Mole", key, kind == Kind.Miner ? 7 : kind == Kind.Bandit ? 4 : 3, depth);
+            stepTime = Mathf.Max(0.22f, 0.5f - depth / 800f) * (kind == Kind.Bandit ? 0.7f : kind == Kind.Miner ? 1.15f : 1f);
+            gold = kind == Kind.Plain ? 3 : 6;
             blood = new Color(1f, 0.5f, 0.3f);
+        }
+
+        // a mole bandit's touch: a fistful of your gold, and it's off
+        protected override void OnTouch(Player p)
+        {
+            if (kind != Kind.Bandit || fleeT > 0f || p.s.gold <= 0) return;
+            int take = Mathf.Min(p.s.gold, 8 + Mathf.Max(0, depth) / 12);
+            p.s.gold -= take; stolen += take; gold += take;
+            fleeT = 7f;
+            G.Popup(pos + Vector2.up, "-" + take + " GOLD!", new Color(1f, 0.8f, 0.25f));
+            G.sfx.Play("coin", 0.6f, 0.7f);
+        }
+
+        public override void AddLight(Lighting l)
+        {
+            if (kind == Kind.Miner && !dead) l.Add(pos + new Vector2(facing * 0.4f, 0.35f), 3.2f, 0.6f);   // its helmet lamp
+            else base.AddLight(l);
         }
 
         public override void Tick(float dt)
@@ -1087,23 +1148,15 @@ namespace DigDeep
             BaseTick(dt);
             if (dead) return;
             vel = Vector2.zero;
+            fleeT -= dt;
             if (!moving)
             {
                 FindTarget(14f, false, dt);
                 if (!HasTarget) { Draw(0f); return; }
                 Vector2 tp = TPos;
-                Vector2Int best = Vector2Int.zero;
-                float bestScore = float.MaxValue;
-                foreach (var dir in Dirs)
-                {
-                    var n = cell + dir;
-                    Block b = Wd.Get(n.x, n.y);
-                    var def = Tiles.Def(b);
-                    bool ok = b == Block.Air || (def.soft && def.solid && !def.gravity);
-                    if (!ok) continue;
-                    float score = (new Vector2(n.x + 0.5f, n.y + 0.5f) - tp).sqrMagnitude + Random.value * 3f + (b != Block.Air ? 1.5f : 0f);
-                    if (score < bestScore) { bestScore = score; best = dir; }
-                }
+                if (fleeT > 0f) tp = pos + (pos - tp).normalized * 12f;   // running off with your gold
+                // it finds its way: round bricks and stone it can't dig, through dirt it can (see PathStep)
+                Vector2Int best = PathStep(new Vector2Int(Mathf.FloorToInt(tp.x), Mathf.FloorToInt(tp.y)));
                 if (best == Vector2Int.zero) { Draw(0f); return; }
                 from = cell; to = cell + best;
                 if (Wd.Get(to.x, to.y) != Block.Air) Wd.Break(to.x, to.y, false, 1f, false);
@@ -1114,6 +1167,54 @@ namespace DigDeep
             pos = Vector2.Lerp(new Vector2(from.x + 0.5f, from.y + 0.5f), new Vector2(to.x + 0.5f, to.y + 0.5f), Mathf.Min(mt, 1f));
             if (mt >= 1f) { moving = false; cell = to; }
             Draw(0f);
+        }
+
+        static bool MinerDigs(int x, int y) { Block b = Wd.Get(x, y); return b == Block.Stone || b == Block.HardStone; }   // a miner's pick takes stone too
+
+        static bool Passable(int x, int y)
+        {
+            Block b = Wd.Get(x, y);
+            if (b == Block.Air) return true;
+            var def = Tiles.Def(b);
+            return def.soft && def.solid && !def.gravity;   // soft dirt it tunnels through; not bricks, stone or sand
+        }
+
+        // The first step of the cheapest way to the target within a box around it (open cells cost 1, dirt to dig 2):
+        // a small Dijkstra, so it goes round walls of brick instead of pushing its nose into them. If there's no way at
+        // all it heads for the reachable cell closest to you.
+        static readonly Dictionary<Vector2Int, int> pathCost = new Dictionary<Vector2Int, int>();
+        static readonly Dictionary<Vector2Int, Vector2Int> pathFirst = new Dictionary<Vector2Int, Vector2Int>();
+        static readonly List<(int cost, Vector2Int c)> pathOpen = new List<(int, Vector2Int)>();
+        Vector2Int PathStep(Vector2Int goal)
+        {
+            const int R = 16;
+            pathCost.Clear(); pathFirst.Clear(); pathOpen.Clear();
+            pathCost[cell] = 0;
+            pathOpen.Add((0, cell));
+            Vector2Int bestFirst = Vector2Int.zero; int bestD = Mathf.Abs(cell.x - goal.x) + Mathf.Abs(cell.y - goal.y);   // (already as close as it can get: it waits)
+            int guard = 0;
+            while (pathOpen.Count > 0 && guard++ < 1400)
+            {
+                int bi = 0;
+                for (int i = 1; i < pathOpen.Count; i++) if (pathOpen[i].cost < pathOpen[bi].cost) bi = i;
+                var (cc, c) = pathOpen[bi];
+                pathOpen.RemoveAt(bi);
+                if (pathCost.TryGetValue(c, out int known) && known < cc) continue;
+                int dist = Mathf.Abs(c.x - goal.x) + Mathf.Abs(c.y - goal.y);
+                if (c != cell && dist < bestD) { bestD = dist; bestFirst = pathFirst[c]; }
+                if (dist == 0) break;
+                foreach (var dir in Dirs)
+                {
+                    var n = c + dir;
+                    if (Mathf.Abs(n.x - cell.x) > R || Mathf.Abs(n.y - cell.y) > R || !(Passable(n.x, n.y) || (kind == Kind.Miner && MinerDigs(n.x, n.y)))) continue;
+                    int nc = cc + (Wd.Get(n.x, n.y) == Block.Air ? 2 : 3) + (Random.value < 0.15f ? 1 : 0);
+                    if (pathCost.TryGetValue(n, out int old) && old <= nc) continue;
+                    pathCost[n] = nc;
+                    pathFirst[n] = c == cell ? dir : pathFirst[c];
+                    pathOpen.Add((nc, n));
+                }
+            }
+            return bestFirst;
         }
 
         protected override void OnLaunchEnd()
@@ -1211,7 +1312,7 @@ namespace DigDeep
         {
             pos = at; vel = v; this.type = type; this.grains = grains; this.dmg = dmg; this.owner = owner;
             MakeGO("Glob", Art.Bullets.TryGetValue("b_spit", out var s) ? s : Art.Bullets["b_enemy"], 20);
-            sr.color = type == Fluids.Acid ? new Color(0.9f, 1f, 0.35f) : new Color(0.45f, 0.9f, 0.3f);
+            sr.color = type == Fluids.Acid ? new Color(0.9f, 1f, 0.35f) : type == Fluids.Lava ? new Color(1f, 0.45f, 0.12f) : type == Fluids.Blood ? new Color(0.8f, 0.1f, 0.18f) : type == Fluids.Water ? new Color(0.5f, 0.8f, 1f) : new Color(0.45f, 0.9f, 0.3f);
             go.transform.localScale = Vector3.one * 1.4f;
             Place();
         }
@@ -1228,7 +1329,12 @@ namespace DigDeep
                 hit = true;
                 pl.Hurt(dmg, pos);
                 if (type == Fluids.Poison) pl.Poison(3f);
+                if (type == Fluids.Lava) pl.SetOnFire();
             }
+            // your shots (and blades' air slices) can burst it in the air: it spills right there
+            if (!hit)
+                foreach (var e in G.ents)
+                    if (!e.dead && e is Bullet b && b.team == Team.Player && (b.pos - next).sqrMagnitude < 0.3f) { hit = true; b.Kill(); break; }
             if (!hit) { pos = next; if (Random.value < 0.5f) G.fx.Burst(pos, 1, sr.color, 0.5f, 0.3f, 8f); Place(); return; }
             Fluids.Spill(pos - vel.normalized * 0.15f, type, grains, vel);
             G.fx.Burst(pos, 10, sr.color, 4f, 0.35f, 15f);

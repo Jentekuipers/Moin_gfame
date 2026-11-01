@@ -8,7 +8,7 @@ namespace DigDeep
     public enum Kind { Attack, Special, Skill, Item, Upgrade, Mod }
     public enum Rarity { Common, Uncommon, Rare, Relic }
     public enum Sp { Dash, Grapple, SuperJump, Rope, Invincible, QuickDig, Blink, Kick, Tide, Phase, Parry, Camo }
-    public enum It { Bomb, Ale, Flare, Bore, SuperBomb, Glimmer, Sentry, Reroll }
+    public enum It { Bomb, Ale, Flare, Bore, SuperBomb, Glimmer, Sentry, Reroll, Grapple }
 
     // Isaac-style stat changes carried by a trinket (or a character's base line).
     public struct St
@@ -190,57 +190,58 @@ namespace DigDeep
             Tr("heart", "STOUT HEART", "AT FULL HEALTH, SHOTS PIERCE", "heart", red, Rarity.Common, 3, new St { hp = 25 }, p => p.s.fullPierce = true);
             Tr("whetstone", "WHETSTONE", "THE FIRST HIT ON A FOE CRITS", "rock", steel, Rarity.Rare, 1, new St { dmg = 0.5f }, p => p.s.firstCrit = true);
             Tr("diamondbit", "HAIR TRIGGER", "HOLD FIRE: IT SPINS UP FASTER", "gem", cyan, Rarity.Uncommon, 2, new St { swing = 0.2f }, p => p.s.spinUp = true);
-            Tr("swift", "SWIFT BOOTS", "SPRINTING KICKS UP BURNING SPARKS", "boot", green, Rarity.Common, 2, new St { speed = 0.15f }, p => p.s.sparkTrail = true);
+            Tr("swift", "SWIFT BOOTS", "YOU RUN FASTER", "boot", green, Rarity.Common, 2, new St { speed = 0.15f }, p => { });
             Tr("spring", "SPRING BOOTS", "+1 MID-AIR JUMP", "boot", blue, Rarity.Common, 2, new St { jump = 0.15f }, p => p.s.airJumps++);
             Tr("marble", "LUCKY MARBLE", "CRITS KNOCK COINS LOOSE", "orb", lime, Rarity.Common, 2, new St { luck = 1f }, p => p.s.critCoin = true);
-            Tr("jerky", "MOLE JERKY", "FOES SOMETIMES DROP A SNACK", "rock", meat, Rarity.Common, 2, new St { hp = 25 }, p => { p.s.hp = Mathf.Min(p.s.maxHp, p.s.hp + 25); p.s.jerkyDrop = true; }).weight = 5;
+            Tr("jerky", "MOLE JERKY", "HEAL 15, FOES SOMETIMES DROP A SNACK", "rock", meat, Rarity.Common, 2, new St { hp = 25 }, p => { p.s.hp = Mathf.Min(p.s.maxHp, p.s.hp + 15); p.s.jerkyDrop = true; }).weight = 5;
             Tr("coffee", "MINER'S COFFEE", "KILLS GIVE A RUSH OF SPEED", "potion", coffee, Rarity.Common, 1, new St { swing = 0.15f, speed = 0.1f }, p => p.s.killRush = true);
-            Tr("lantern", "LANTERN OIL", "YOUR SHOTS LIGHT UP THE DARK", "potion", orange, Rarity.Common, 2, default, p => { p.s.lightMul += 0.3f; p.s.lanternShots = true; });
-            Tr("prospector", "PROSPECTOR", "ORE BURSTS INTO SHRAPNEL", "gem", gold, Rarity.Rare, 1, new St { luck = 0.5f }, p => { p.s.goldMul += 0.3f; p.s.oreShrapnel = true; });
+            Tr("lantern", "LANTERN OIL", "MORE LIGHT, AND YOUR SHOTS LIGHT THE DARK", "potion", orange, Rarity.Common, 2, default, p => { p.s.lightMul += 0.3f; p.s.lanternShots = true; });
+            Tr("prospector", "PROSPECTOR", "+30% GOLD FROM ORE, WHICH BURSTS INTO SHRAPNEL", "gem", gold, Rarity.Rare, 1, new St { luck = 0.5f }, p => { p.s.goldMul += 0.3f; p.s.oreShrapnel = true; });
             Tr("magnet", "MAGNET", "PULLS IN GOLD FROM FAR AWAY", "horseshoe", red, Rarity.Common, 1, default, p => p.s.magnet = Mathf.Max(p.s.magnet * 5f, 8f));
-            Tr("thick", "THICK SKIN", "GETTING HIT FIRES A RING OF SHOTS", "shield", brown, Rarity.Common, 1, new St { hp = 20 }, p => { p.s.invulnBonus += 0.6f; p.s.hitRing = true; });
+            Tr("thick", "THICK SKIN", "LONGER INVULNERABILITY, HITS FIRE A SHOT RING", "shield", brown, Rarity.Common, 1, new St { hp = 20 }, p => { p.s.invulnBonus += 0.6f; p.s.hitRing = true; });
             Tr("lucky", "LUCKY COIN", "DUG BLOCKS SOMETIMES DROP GOLD", "coin", lime, Rarity.Common, 1, new St { luck = 1f }, p => p.s.luckyChance += 0.06f);
-            Tr("greedy", "GREEDY GLOVES", "PICKING UP GOLD RELOADS A SHOT", "fist", gold, Rarity.Common, 1, new St { dmg = 0.3f }, p => { p.s.coinMul += 0.25f; p.s.goldReload = true; });
-            Tr("nighteyes", "NIGHT EYES", "SHOTS FLY 50% FURTHER", "eye", purple, Rarity.Common, 1, default, p => { p.s.lightMul += 0.15f; p.s.longShots = true; });
+            Tr("greedy", "GREEDY GLOVES", "+25% GOLD, PICKING UP GOLD RELOADS A SHOT", "fist", gold, Rarity.Common, 1, new St { dmg = 0.3f }, p => { p.s.coinMul += 0.25f; p.s.goldReload = true; });
+            Tr("nighteyes", "NIGHT EYES", "SEE MUCH FURTHER IN THE DARK", "eye", purple, Rarity.Common, 1, default, p => p.s.lightMul += 0.35f);
+            Tr("extender", "BULLET EXTENDER", "SHOTS FLY 50% FURTHER", "barrel2", steel, Rarity.Common, 1, default, p => p.s.longShots = true).tags = new[] { "gunslinger" };
             Tr("feather", "FEATHER", "HOLD JUMP TO FALL SLOWLY", "feather", white, Rarity.Common, 1, new St { jump = 0.1f }, p => p.s.glide = Mathf.Max(p.s.glide, 1));
-            Tr("moss", "MOSS BANDAGE", "HEAL 40 HP EVERY 60 DEPTH", "leaf", green, Rarity.Uncommon, 1, default, p => { p.s.mossEvery = 60; p.nextMoss = p.Depth + 60; }).weight = 2;
+            Tr("moss", "MOSS BANDAGE", "HEAL 28 HP EVERY 60 DEPTH", "leaf", green, Rarity.Uncommon, 1, default, p => { p.s.mossEvery = 60; p.nextMoss = p.Depth + 60; }).weight = 2;
             Tr("hardhat", "HARD HAT", "FALLING BOULDERS CAN'T CRUSH YOU", "helmet", yellow, Rarity.Common, 1, new St { hp = 15 }, p => p.s.hardhat = true);
 
             // uncommon
             Tr("cloud", "CLOUD STEP", "+1 MID-AIR JUMP", "wing", pale, Rarity.Uncommon, 2, new St { jump = 0.1f }, p => p.s.airJumps++);
-            Tr("pouch", "BATTERY PACK", "+1 CHARGE. SPECIALS LEAVE A BLAST", "bag", blue, Rarity.Uncommon, 1, default, p => { p.s.extraCharges++; p.s.specialBlast = true; });
-            Tr("fuse", "DYNAMO", "MOVING CHARGES YOUR SPECIAL", "hourglass", orange, Rarity.Uncommon, 1, default, p => { p.s.chargeMul *= 0.75f; p.s.moveCharge = true; });
-            Tr("hymn", "WAR HYMN", "3 QUICK KILLS: FIRE RATE UP", "hourglass", blue, Rarity.Uncommon, 1, default, p => { p.s.killEnergy *= 1.4f; p.s.streakRate = true; });
-            Tr("sparkplug", "SPARK PLUG", "SPECIALS ZAP FOES AROUND YOU", "coil", yellow, Rarity.Uncommon, 1, default, p => { p.s.chargeMul *= 0.85f; p.s.specialZap = true; });
-            Tr("soul", "SOUL JAR", "A CHARGE COMING BACK: NEXT SHOT CRITS", "potion", pink, Rarity.Uncommon, 1, default, p => { p.s.killEnergy *= 2f; p.s.readyCrit = true; });
+            Tr("pouch", "BATTERY PACK", "+1 CHARGE, SPECIALS LEAVE A BLAST", "bag", blue, Rarity.Uncommon, 1, default, p => { p.s.extraCharges++; p.s.specialBlast = true; });
+            Tr("fuse", "DYNAMO", "SPECIALS CHARGE 25% FASTER, MOVING CHARGES THEM", "hourglass", orange, Rarity.Uncommon, 1, default, p => { p.s.chargeMul *= 0.75f; p.s.moveCharge = true; });
+            Tr("hymn", "WAR HYMN", "KILLS CHARGE 40% MORE, 3 QUICK KILLS: FIRE RATE UP", "hourglass", blue, Rarity.Uncommon, 1, default, p => { p.s.killEnergy *= 1.4f; p.s.streakRate = true; });
+            Tr("sparkplug", "SPARK PLUG", "SPECIALS CHARGE 15% FASTER AND ZAP FOES NEARBY", "coil", yellow, Rarity.Uncommon, 1, default, p => { p.s.chargeMul *= 0.85f; p.s.specialZap = true; });
+            Tr("soul", "SOUL JAR", "KILLS CHARGE 2X, A NEW CHARGE MAKES THE NEXT SHOT CRIT", "potion", pink, Rarity.Uncommon, 1, default, p => { p.s.killEnergy *= 2f; p.s.readyCrit = true; });
             Tr("ember", "EMBER CORE", "DUG BLOCKS SPARK AND BURN ENEMIES", "orb", orange, Rarity.Uncommon, 1, new St { dmg = 0.3f }, p => p.s.ember = Mathf.Max(p.s.ember, 1));
             Tr("echo", "ECHO CHAMBER", "20% CHANCE EACH ATTACK FIRES TWICE", "ring", purple, Rarity.Uncommon, 1, default, p => p.s.echoChance += 0.2f);
             Tr("thorns", "THORN MAIL", "GETTING HIT HURTS ENEMIES NEARBY", "shield", green, Rarity.Uncommon, 1, new St { hp = 40 }, p => p.s.thorns = Mathf.Max(p.s.thorns, 3));
             Tr("stomp", "STOMP BOOTS", "JUMP ON ENEMIES TO HURT THEM", "boot", brown, Rarity.Uncommon, 1, new St { speed = 0.1f }, p => p.s.stomp = Mathf.Max(p.s.stomp, 2));
-            Tr("sharp", "SHARP EDGE", "+15% CRITS. CRITS PIERCE", "blade", grey, Rarity.Uncommon, 1, new St { dmg = 0.5f }, p => { p.s.critChance += 0.15f; p.s.critPierce = true; });
-            Tr("powder", "BLACK POWDER", "BIGGER BLASTS. YOURS LAUNCH YOU", "potion", dark, Rarity.Uncommon, 1, default, p => { p.s.blastMul *= 1.35f; p.s.rocketBoost = true; });
-            Tr("goldtooth", "GOLD TOOTH", "HEAL 40 HP PER 250 GOLD PICKED UP", "tooth", gold, Rarity.Rare, 1, default, p => { if (p.s.goldToothEvery == 0) p.s.goldToothEvery = 250; }).weight = 1;
+            Tr("sharp", "SHARP EDGE", "+15% CRIT CHANCE, CRITS PIERCE", "blade", grey, Rarity.Uncommon, 1, new St { dmg = 0.5f }, p => { p.s.critChance += 0.15f; p.s.critPierce = true; });
+            Tr("powder", "BLACK POWDER", "+35% BLAST SIZE, YOUR BLASTS LAUNCH YOU", "potion", dark, Rarity.Uncommon, 1, default, p => { p.s.blastMul *= 1.35f; p.s.rocketBoost = true; });
+            Tr("goldtooth", "GOLD TOOTH", "HEAL 28 HP PER 250 GOLD PICKED UP", "tooth", gold, Rarity.Rare, 1, default, p => { if (p.s.goldToothEvery == 0) p.s.goldToothEvery = 250; }).weight = 1;
             Tr("coil", "COIL SPRING", "HOLD DOWN + JUMP: SUPER JUMP", "coil", grey, Rarity.Common, 1, new St { jump = 0.1f }, p => p.s.coil = true);
             Tr("bombbag", "BOMB BAG", "+1 ITEM SLOT AND A FREE BOMB", "bag", dark, Rarity.Uncommon, 1, default, p => { p.s.itemCap++; p.AddItem(Bomb, 1); });
             Tr("lasersight", "LASER SIGHT", "TIGHT AIM, RED LASER", "eye", red, Rarity.Uncommon, 1, default, p => { p.s.laserSight = true; p.s.spreadMul *= 0.45f; });
-            Tr("speedloader", "SPEED LOADER", "RELOADING SHOVES FOES AWAY", "ring", steel, Rarity.Common, 2, default, p => { p.s.reloadMul *= 0.75f; p.s.reloadPush = true; });
+            Tr("speedloader", "SPEED LOADER", "RELOAD 25% FASTER, RELOADING SHOVES FOES AWAY", "ring", steel, Rarity.Common, 2, default, p => { p.s.reloadMul *= 0.75f; p.s.reloadPush = true; });
             Tr("extmag", "TERMINAL ROUND", "THE LAST ROUND IN THE MAG HITS 2X", "bag", grey, Rarity.Uncommon, 1, default, p => p.s.lastShots = true);
             Tr("steady", "STEADY HANDS", "-50% DAMAGE WHILE RELOADING", "shield", steel, Rarity.Uncommon, 1, default, p => p.s.reloadArmor = Mathf.Max(p.s.reloadArmor, 0.5f));
-            Tr("heatsink", "HEAT SINK", "OVERHEATING FREEZES FOES NEARBY", "coil", cyan, Rarity.Uncommon, 1, default, p => { p.s.heatMul *= 0.75f; p.s.coolMul *= 1.5f; p.s.ventNova = true; });
+            Tr("heatsink", "HEAT SINK", "-25% HEAT, COOL 50% FASTER, OVERHEATING FREEZES FOES", "coil", cyan, Rarity.Uncommon, 1, default, p => { p.s.heatMul *= 0.75f; p.s.coolMul *= 1.5f; p.s.ventNova = true; });
             Tr("tactical", "TACTICAL RELOAD", "ATTACK AFTER RELOAD: 2X DAMAGE", "blade", orange, Rarity.Rare, 1, default, p => p.s.tactical = true);
             Tr("rage", "RAGE MUSHROOM", "LOW HEALTH: FIRE RATE X1.5", "mushroom", red, Rarity.Uncommon, 1, new St { dmg = 1f, swing = 0.1f, speed = -0.1f }, p => p.s.rageLow = true);
 
             // rare (chests from depth 50, shops, altars)
-            Tr("venom", "VENOM GLAND", "POISON STACKS UP. 10% OF ATTACKS POISON", "drop", lime, Rarity.Rare, 1, default, p => { p.s.poisonStack = true; p.s.poisonChance += 0.1f; });
+            Tr("venom", "VENOM GLAND", "POISON STACKS UP, 10% OF ATTACKS POISON", "drop", lime, Rarity.Rare, 1, default, p => { p.s.poisonStack = true; p.s.poisonChance += 0.1f; });
             Tr("trophy", "TROPHY CASE", "+1 BOSS REWARD TO CHOOSE FROM", "crown", gold, Rarity.Common, 3, default, p => p.s.bossExtra++).weight = 5;
             Tr("seeall", "YOU SEE ALL", "NO MORE DARKNESS", "eye", gold, Rarity.Rare, 1, default, p => p.s.seeAll = true).weight = 3;
             Tr("blast", "BLAST PROOF", "IMMUNE TO EXPLOSIONS", "shield", red, Rarity.Rare, 1, default, p => p.s.blastProof = true);
-            Tr("fangs", "VAMPIRE FANGS", "HEAL 30 HP EVERY 12 KILLS", "tooth", red, Rarity.Rare, 1, new St { dmg = 0.3f }, p => { if (p.s.vampire == 0) p.s.vampire = 12; }).weight = 1;
+            Tr("fangs", "VAMPIRE FANGS", "HEAL 20 HP EVERY 12 KILLS", "tooth", red, Rarity.Rare, 1, new St { dmg = 0.3f }, p => { if (p.s.vampire == 0) p.s.vampire = 12; }).weight = 1;
             Tr("midas", "MIDAS TOUCH", "ENEMIES DROP DOUBLE GOLD", "fist", gold, Rarity.Rare, 1, new St { luck = 1f }, p => p.s.killGoldMul = 2);
             Tr("chain", "CHAIN REACTION", "ENEMIES EXPLODE WHEN THEY DIE", "skull", orange, Rarity.Uncommon, 1, default, p => p.s.chainExplode = Mathf.Max(p.s.chainExplode, 1));
-            Tr("glass", "GLASS CANNON", "3X DAMAGE. YOU TAKE 3X DAMAGE", "gem", pale, Rarity.Rare, 1, default, p => { p.s.dmgMult *= 3f; p.s.glassBody = true; });
+            Tr("glass", "GLASS CANNON", "3X DAMAGE DEALT, BUT 3X DAMAGE TAKEN", "gem", pale, Rarity.Rare, 1, default, p => { p.s.dmgMult *= 3f; p.s.glassBody = true; });
             Tr("starmap", "STAR MAP", "AN ARROW POINTS TO NEARBY ALTARS", "star", gold, Rarity.Uncommon, 1, new St { luck = 1f }, p => p.s.starmap = Mathf.Max(p.s.starmap, 1));
-            Tr("capacitor", "CAPACITOR", "+1 CHARGE. SPECIALS FIRE A VOLLEY", "hourglass", yellow, Rarity.Rare, 1, default, p => { p.s.extraCharges++; p.s.chargeMul *= 0.8f; p.s.specialVolley = true; });
+            Tr("capacitor", "CAPACITOR", "+1 CHARGE, CHARGE 20% FASTER, SPECIALS FIRE A VOLLEY", "hourglass", yellow, Rarity.Rare, 1, default, p => { p.s.extraCharges++; p.s.chargeMul *= 0.8f; p.s.specialVolley = true; });
             Tr("ironlung", "IRON LUNG", "BARGE THROUGH WEAK BLOCKS", "heart", grey, Rarity.Rare, 1, new St { hp = 75, speed = -0.1f }, p => p.s.bulldozer = Mathf.Max(p.s.bulldozer, 1));
 
             // diggers' own skills: each one starts with theirs. Win with a digger and theirs can turn up for everyone.
@@ -263,15 +264,17 @@ namespace DigDeep
             // relics: only from puzzle altars
             Tr("ghostload", "GHOST RELOAD", "UNTOUCHABLE WHILE RELOADING", "feather", purple, Rarity.Relic, 1, default, p => p.s.reloadGhost = true);
             Tr("phoenix", "PHOENIX FEATHER", "CHEAT DEATH ONCE", "feather", orange, Rarity.Rare, 1, default, p => p.s.phoenix++);
-            Tr("adamant", "ADAMANT HEART", "FULL HEAL AFTER EVERY BOSS", "heart", purple, Rarity.Relic, 1, new St { hp = 120 }, p => { p.s.hp = p.s.maxHp; p.s.adamant = true; });
+            Tr("adamant", "ADAMANT HEART", "HEAL HALF YOUR HEALTH AFTER EVERY BOSS", "heart", purple, Rarity.Relic, 1, new St { hp = 120 }, p => { p.s.hp = p.s.maxHp; p.s.adamant = true; });
             Tr("worldeater", "WORLD EATER", "MYTHIC. SHOTS EAT THROUGH ROCK", "skull", purple, Rarity.Relic, 1, new St { dmg = 1.5f, swing = 0.15f }, p => p.s.rockEater = true);
             Tr("crown", "MINER'S CROWN", "MYTHIC. GOLD HEALS YOU", "crown", gold, Rarity.Relic, 1, new St { hp = 60, dmg = 0.5f, swing = 0.2f, speed = 0.1f, jump = 0.1f, luck = 1f }, p => p.s.goldToothEvery = p.s.goldToothEvery == 0 ? 120 : Mathf.Min(p.s.goldToothEvery, 120));
             Tr("bottle", "LIGHTNING BOTTLE", "+1 CHARGE, SPECIALS 2X FASTER", "potion", cyan, Rarity.Relic, 1, default, p => { p.s.extraCharges++; p.s.chargeMul *= 0.5f; });
             // the dragons' hearts: only ever dropped by the dragons themselves
-            Tr("heart_unda", "HEART OF UNDA", "BREATHE WATER. WATER HURTS FOES", "heart", U.C(90, 170, 255), Rarity.Relic, 1, new St { hp = 100 },
+            Tr("heart_unda", "HEART OF UNDA", "BREATHE WATER, WATER HURTS FOES", "heart", U.C(90, 170, 255), Rarity.Relic, 1, new St { hp = 100 },
                 p => { p.s.gills = true; p.s.flippers = true; p.s.waterHurt = true; }).owner = "_boss";
-            Tr("heart_ignis", "HEART OF IGNIS", "FIRE-PROOF. ATTACKS BURN", "heart", U.C(255, 110, 40), Rarity.Relic, 1, new St { hp = 100 },
+            Tr("heart_ignis", "HEART OF IGNIS", "FIRE-PROOF, ATTACKS BURN", "heart", U.C(255, 110, 40), Rarity.Relic, 1, new St { hp = 100 },
                 p => { p.s.fireImmune = true; p.s.lavaImmune = true; p.s.shotFire = true; }).owner = "_boss";
+            Tr("heart_iris", "HEART OF IRIS", "SHOTS CYCLE THE RAINBOW: EACH COLOUR ITS OWN EFFECT", "heart", U.C(255, 150, 230), Rarity.Relic, 1, new St { hp = 100 },
+                p => { p.s.rainbowShots = true; }).owner = "_boss";
 
 
             // ---------- run-changers (Isaac-style): every shot, your stats, how you move ----------
@@ -283,7 +286,7 @@ namespace DigDeep
             Tr("dragon", "DRAGON'S BREATH", "ATTACKS SET THINGS ALIGHT", "flame", orange, Rarity.Rare, 1, default, p => p.s.shotFire = true).tags = new[] { "inferno" };
             Tr("viper", "VIPER FANG", "ALL SHOTS POISON", "tooth", lime, Rarity.Uncommon, 1, default, p => p.s.shotPoison = true).tags = new[] { "plague" };
             Tr("frostheart", "FROST HEART", "ATTACKS FREEZE FOES", "snowflake", cyan, Rarity.Rare, 1, default, p => p.s.shotFrost = true).tags = new[] { "tech" };
-            Tr("cap", "BLASTING CAP", "ATTACKS EXPLODE (NOT ON YOU)", "bomb", orange, Rarity.Rare, 1, default, p => p.s.shotExplode = true).tags = new[] { "bombardier" };
+            Tr("cap", "BLASTING CAP", "ATTACKS EXPLODE, NEVER ON YOU", "bomb", orange, Rarity.Rare, 1, default, p => p.s.shotExplode = true).tags = new[] { "bombardier" };
             Tr("lens", "LASER LENS", "ATTACKS BECOME PIERCING LASERS", "lens", lens, Rarity.Rare, 1, default, p => p.s.shotLaser = true).tags = new[] { "tech" };
             Tr("seekeye", "SEEKER'S EYE", "MYTHIC. ALL SHOTS HOME IN ON FOES", "eye", violet, Rarity.Relic, 1, new St { dmg = 1f }, p => p.s.shotHoming = true).tags = new[] { "tech" };
             Tr("hunch", "HUNTER'S HUNCH", "SHOTS DRIFT TOWARDS FOES", "eye", U.C(150, 120, 200), Rarity.Rare, 1, default, p => p.s.softHoming = true).tags = new[] { "tech" };
@@ -292,16 +295,16 @@ namespace DigDeep
             prism.tags = new[] { "bombardier", "tech" }; prism.weight = 1;
             Tr("chamber", "PRESSURE CHAMBER", "HOLD TO CHARGE ATTACKS", "chamber", steel, Rarity.Rare, 1, default, p => p.s.chargeShot = true).tags = new[] { "gunslinger", "tech" };
             // more barrels: they add up (DOUBLE + TRIPLE = 5 shots), and multiply with the TRIPLE modifier
-            Tr("double", "DOUBLE BARREL", "ATTACKS FIRE TWICE. -25% RATE", "barrel2", steel, Rarity.Uncommon, 1, default, p => AddBarrels(p, 2)).tags = new[] { "gunslinger" };
-            Tr("triple", "TRIPLE BARREL", "ATTACKS FIRE 3X. -40% RATE", "barrel3", steel, Rarity.Rare, 1, default, p => AddBarrels(p, 3)).tags = new[] { "gunslinger" };
-            var quad = Tr("quad", "QUAD BARREL", "ATTACKS FIRE 4X. -50% RATE", "barrel4", steel, Rarity.Rare, 1, default, p => AddBarrels(p, 4));
+            Tr("double", "DOUBLE BARREL", "ATTACKS FIRE TWICE, -25% FIRE RATE", "barrel2", steel, Rarity.Rare, 1, default, p => AddBarrels(p, 2)).tags = new[] { "gunslinger" };
+            Tr("triple", "TRIPLE BARREL", "ATTACKS FIRE 3X, -40% FIRE RATE", "barrel3", steel, Rarity.Rare, 1, default, p => AddBarrels(p, 3)).tags = new[] { "gunslinger" };
+            var quad = Tr("quad", "QUAD BARREL", "ATTACKS FIRE 4X, -50% FIRE RATE", "barrel4", steel, Rarity.Rare, 1, default, p => AddBarrels(p, 4));
             quad.tags = new[] { "gunslinger" }; quad.weight = 1;
             // multipliers
-            var ogre = Tr("ogre", "OGRE'S SKULL", "DAMAGE X1.5. HITS SHOVE HARD", "skull", green, Rarity.Rare, 1, new St { dmg = 0.5f }, p => { p.s.dmgMult *= 1.5f; p.s.knockMul *= 1.5f; });
+            var ogre = Tr("ogre", "OGRE'S SKULL", "DAMAGE X1.5, HITS SHOVE HARD", "skull", green, Rarity.Rare, 1, new St { dmg = 0.5f }, p => { p.s.dmgMult *= 1.5f; p.s.knockMul *= 1.5f; });
             ogre.tags = new[] { "behemoth" }; ogre.look = "horns";
             var truffle = Tr("truffle", "MAGIC TRUFFLE", "YOU GROW: STOMP ON FOES", "mushroom", violet, Rarity.Rare, 1, new St { hp = 50, speed = 0.1f, jump = 0.05f }, p => { p.s.dmgMult *= 1.25f; p.s.bodyScale += 0.12f; p.s.stomp = Mathf.Max(p.s.stomp, 1); });
             truffle.tags = new[] { "behemoth", "plague" };
-            Tr("hummingbird", "HUMMINGBIRD HEART", "FIRE RATE X2.2, DAMAGE X0.5", "heart", pink, Rarity.Uncommon, 1, default, p => { p.s.rateMult *= 2.2f; p.s.dmgMult *= 0.5f; p.s.shotSize *= 0.85f; }).tags = new[] { "gunslinger" };
+            Tr("hummingbird", "HUMMINGBIRD HEART", "FIRE RATE X2.2, DAMAGE X0.5, SMALLER SHOTS", "heart", pink, Rarity.Uncommon, 1, default, p => { p.s.rateMult *= 2.2f; p.s.dmgMult *= 0.5f; p.s.shotSize *= 0.85f; }).tags = new[] { "gunslinger" };
             Tr("snail", "SNAIL SHELL", "SLOW, HUGE, 2.6X DAMAGE", "snail", shell, Rarity.Uncommon, 1, default, p => { p.s.rateMult *= 0.45f; p.s.dmgMult *= 2.6f; p.s.shotSize *= 1.3f; }).tags = new[] { "behemoth" };
             // flight
             var wings = Tr("wings", "WINGS OF ICARUS", "UNLIMITED MID-AIR JUMPS", "wing", gold, Rarity.Rare, 1, default, p => p.s.wings = true);
@@ -316,9 +319,9 @@ namespace DigDeep
             Tr("linger", "LINGERING SHOTS", "ATTACKS HANG IN THE AIR", "hourglass", violet, Rarity.Uncommon, 1, default, p => p.s.linger = true).tags = new[] { "tech" };
             var ray = Tr("godray", "GOD-RAY", "MYTHIC. ATTACKS ARE HUGE LASERS", "lens", gold, Rarity.Relic, 1, new St { dmg = 0.5f }, p => p.s.megaLaser = true);
             ray.tags = new[] { "tech" }; ray.look = "visor";
-            Tr("blades", "THOUSAND BLADES", "MYTHIC. ATTACKS ARE FLYING SWORDS. +15% MELEE", "blade", steel, Rarity.Relic, 1, default, p => { p.s.swordShots = true; p.s.meleeMul += 0.15f; }).tags = new[] { "brawler" };
+            Tr("blades", "THOUSAND BLADES", "MYTHIC. ATTACKS ARE FLYING SWORDS, +15% MELEE", "blade", steel, Rarity.Relic, 1, default, p => { p.s.swordShots = true; p.s.meleeMul += 0.15f; }).tags = new[] { "brawler" };
             // melee
-            Tr("knuckles", "BRASS KNUCKLES", "MELEE KILLS BURST", "fist", gold, Rarity.Common, 2, default, p => { p.s.meleeMul += 0.3f; p.s.meleeBoom = true; }).tags = new[] { "brawler" };
+            Tr("knuckles", "BRASS KNUCKLES", "+30% MELEE DAMAGE, MELEE KILLS BURST", "fist", gold, Rarity.Common, 2, default, p => { p.s.meleeMul += 0.3f; p.s.meleeBoom = true; }).tags = new[] { "brawler" };
             Tr("steeltoe", "STEEL TOE CAPS", "KICKS AND STOMPS HIT 2X", "boot", steel, Rarity.Uncommon, 1, default, p => p.s.kickMul *= 2f).tags = new[] { "brawler" };
             Tr("gauntlet", "GIANT'S GAUNTLET", "MELEE 1.6X, LONGER REACH", "fist", red, Rarity.Rare, 1, default, p => { p.s.meleeMul *= 1.6f; p.s.meleeReach *= 1.25f; }).tags = new[] { "brawler", "behemoth" };
             // pets
@@ -338,7 +341,7 @@ namespace DigDeep
             // shots
             Tr("bouncy", "BOUNCY ROUNDS", "ATTACKS BOUNCE OFF WALLS", "ring", lime, Rarity.Uncommon, 3, default, p => p.s.extraBounces++).tags = new[] { "gunslinger" };
             Tr("swell", "SWELL SHOT", "ATTACKS START HUGE, THEN SHRINK", "orb", pink, Rarity.Rare, 1, default, p => p.s.swell = true).tags = new[] { "behemoth" };
-            Tr("giantrounds", "GIANT ROUNDS", "ATTACKS 2X BIGGER", "coin", steel, Rarity.Uncommon, 1, default, p => { p.s.shotSize *= 2f; p.s.dmgMult *= 1.15f; }).tags = new[] { "behemoth" };
+            Tr("giantrounds", "GIANT ROUNDS", "ATTACKS 2X BIGGER, +15% DAMAGE", "coin", steel, Rarity.Uncommon, 1, default, p => { p.s.shotSize *= 2f; p.s.dmgMult *= 1.15f; }).tags = new[] { "behemoth" };
             Tr("wasp", "WASP NEST", "2.5X RATE, TINY WEAK ATTACKS", "bag", yellow, Rarity.Uncommon, 1, default, p => { p.s.rateMult *= 2.5f; p.s.dmgMult *= 0.6f; p.s.shotSize *= 0.6f; }).tags = new[] { "gunslinger" };
             Tr("spectral", "SPECTRAL SHOTS", "ATTACKS GHOST ON THROUGH ROCK", "skull", ghostC, Rarity.Rare, 1, default, p => p.s.spectral = true).tags = new[] { "tech" };
             Tr("splinters", "SOUL SPLINTERS", "ATTACKS RELEASE HOMING GHOSTS", "feather", ghostC, Rarity.Rare, 1, default, p => p.s.ghostSwarm = true).tags = new[] { "tech" };
@@ -347,12 +350,12 @@ namespace DigDeep
             // knockback
             Tr("slugs", "HEAVY SLUGS", "KNOCKBACK X2", "rock", steel, Rarity.Common, 1, new St { dmg = 0.3f }, p => p.s.knockMul *= 2f).tags = new[] { "brawler" };
             Tr("gale", "GALE CHARM", "KNOCKBACK X1.6", "feather", cyan, Rarity.Uncommon, 1, new St { speed = 0.1f }, p => p.s.knockMul *= 1.6f).tags = new[] { "seraph" };
-            Tr("ram", "BATTERING RAM", "HARD HITS SEND FOES FLYING", "skull", brown, Rarity.Rare, 1, default, p => { p.s.ramming = true; p.s.knockMul *= 1.3f; }).tags = new[] { "brawler" };
+            Tr("ram", "BATTERING RAM", "+30% KNOCKBACK, HARD HITS SEND FOES FLYING", "skull", brown, Rarity.Rare, 1, default, p => { p.s.ramming = true; p.s.knockMul *= 1.3f; }).tags = new[] { "brawler" };
             // mythic (relic tier: altars, golden crates, and now and then a chest)
             Tr("supernova", "SUPERNOVA SPLASH", "MYTHIC. ATTACKS SPLIT IN 4", "drop", gold, Rarity.Relic, 1, default, p => p.s.splash4 = true).tags = new[] { "gunslinger" };
             Tr("cloudburst", "CLOUD BURST", "MYTHIC. ATTACKS SPLIT AND HANG", "drop", ghostC, Rarity.Relic, 1, default, p => p.s.cloudSplit = true).tags = new[] { "tech" };
             Tr("mirror", "MIRROR SOUL", "MYTHIC. ATTACKS FIRE TWICE", "gem", ghostC, Rarity.Relic, 1, default, p => p.s.freeDouble = true).tags = new[] { "gunslinger" };
-            Tr("writhing", "THE WRITHING", "MYTHIC. ATTACKS HATCH WORMS", "coil", pink, Rarity.Relic, 1, default, p => p.s.wormShots = true).tags = new[] { "pets" };
+            Tr("writhing", "THE WRITHING", "ULTRA. ATTACKS HATCH WORMS", "coil", pink, Rarity.Relic, 1, default, p => p.s.wormShots = true).tags = new[] { "pets" };
             // defence
             var buck = Tr("buckler", "BUCKLER", "A SHIELD EATS ENEMY ATTACKS", "shield", steel, Rarity.Rare, 1, default, p => p.s.buckler = true);
             buck.look = "buckler"; buck.tags = new[] { "brawler" };
@@ -361,7 +364,7 @@ namespace DigDeep
             Tr("fireproof", "FIREPROOF CLOAK", "YOU CAN'T BE SET ALIGHT", "shield", orange, Rarity.Uncommon, 1, default, p => p.s.fireImmune = true).tags = new[] { "inferno" };
             Tr("antidote", "ANTIDOTE", "POISON CAN'T HURT YOU", "potion", lime, Rarity.Uncommon, 1, default, p => p.s.poisonImmune = true).tags = new[] { "plague" };
             Tr("flak", "FLAK SUIT", "BLAST-PROOF, BUT HEAVY", "shield", dark, Rarity.Uncommon, 1, new St { speed = -0.15f, jump = -0.1f }, p => p.s.blastProof = true).tags = new[] { "bombardier" };
-            Tr("stormheart", "STORM HEART", "SHOCK-PROOF. WATER ZAPS FOES", "hourglass", stormC, Rarity.Rare, 1, default, p => { p.s.shockImmune = true; p.s.electrify = true; }).tags = new[] { "tech" };
+            Tr("stormheart", "STORM HEART", "SHOCK-PROOF, WATER ZAPS FOES", "hourglass", stormC, Rarity.Rare, 1, default, p => { p.s.shockImmune = true; p.s.electrify = true; }).tags = new[] { "tech" };
             // cheating death
             Tr("rabbitfoot", "RABBIT'S FOOT", "MAYBE GET BACK UP WHEN YOU DIE", "fist", lime, Rarity.Rare, 1, new St { luck = 1f }, p => p.s.gambleRevive = true);
             Tr("ankh", "ANKH", "COME BACK ONCE WITH FULL HEALTH", "crown", gold, Rarity.Rare, 1, default, p => p.s.ankh++).weight = 2;
@@ -379,8 +382,9 @@ namespace DigDeep
             Pet("petfox", "ACE FOX", "WAVEDASHES AND SHINES", "feather", gold, Rarity.Relic, "fox");
             // ULTRA RARE: a tier of its own, rarer than mythic
             Ultra("petfox");
+            Ultra("writhing");   // rainbow: rarer than mythic
             Tr("blacksun", "BLACK SUN", "EVERY KILL BURSTS INTO A RING OF SHOTS", "star", dark, Rarity.Rare, 1, default, p => p.s.blackSun = true);
-            Tr("loadeddie", "LOADED DIE", "EVERY CHANCE IN YOUR FAVOUR IS DOUBLED", "gem", white, Rarity.Rare, 1, default, p => p.s.loadedDie = true);
+            Tr("loadeddie", "LOADED DIE", "ALL CHANCES ARE DOUBLED", "gem", white, Rarity.Rare, 1, default, p => p.s.loadedDie = true);
             // the hand-drawn pets show themselves as their icon
             foreach (var (pid, pk) in new[] { ("petdog", "dog"), ("petslime", "slime"), ("petskel", "skeleton"), ("petdragon", "dragon"), ("petfox", "fox") })
                 if (ById.TryGetValue(pid, out var pd)) { var pf = Art.PetFrames(pk); if (pf != null && pf.Length > 0) pd.icon = pf[0]; }
@@ -468,9 +472,11 @@ namespace DigDeep
 
             // ---------- consumables (C) ----------
             Ale = Itm("ale", "DWARVEN ALE", "HEALS 100 HP", I["ale"], It.Ale, 60);
+            Ale.weight = 4;   // a little rarer than the other consumables
             Bomb = Itm("bomb", "BOMB", "BIG BLAST. THROWN", I["bomb"], It.Bomb, 45);
             Itm("flare", "FLARE", "LIGHTS UP THE DARK", I["flare"], It.Flare, 25);
             Itm("bore", "BORE CHARGE", "DRILLS A SHAFT STRAIGHT DOWN", I["bore"], It.Bore, 50);
+            Itm("grapplehook", "GRAPPLE HOOK", "ONE THROW: HOOK A WALL WHERE YOU AIM, ZIP TO IT", I["grapple"], It.Grapple, 40);
             Itm("glimmer", "GLIMMER STONE", "LIGHTS UP THE SCREEN FOR 15S", Art.Trinket("orb", cyan), It.Glimmer, 55);
             Itm("sentry", "SENTRY", "A TURRET FOR 10S", I["sentry"], It.Sentry, 90).minDepth = 15;
             var rr = Itm("reroll", "SPELL - REROLL CIRCLE", "", Art.Rune(U.C(170, 110, 255), 'R'), It.Reroll, 120);
@@ -686,7 +692,8 @@ namespace DigDeep
             foreach (var c in Combos)
             {
                 if (c.IsTransform || System.Array.IndexOf(c.needs, a.id) < 0 || System.Array.IndexOf(c.needs, b.id) < 0) continue;
-                if (p.Combo(c.id) || Records.Seen("c", c.id)) return true;
+                if (p.Combo(c.id)) { if (p.Owns(a.id)) return true; continue; }   // (a pickup for a combo you already have: no hint)
+                if (Records.Seen("c", c.id)) return true;
             }
             return false;
         }
@@ -701,7 +708,7 @@ namespace DigDeep
 
         public static int Price(Def d, int depth, Player p)
         {
-            float f = d.price * (1f + depth / 220f);
+            float f = d.price * (1f + Biomes.LootTune(depth) / 220f);
             if (p != null) f *= p.s.shopMul;                     // MEMBER'S CARD
             if (d.id == "pick+") f *= 1f + 0.6f * p.s.pickBought;
             return Mathf.Max(5, Mathf.RoundToInt(f / 5f) * 5);
@@ -709,6 +716,7 @@ namespace DigDeep
 
         static T Pick<T>(List<T> list, int depth, System.Random r, System.Func<T, bool> ok, System.Func<T, float> weight = null) where T : Def
         {
+            depth = Biomes.LootTune(depth);   // (minDepth is on the old, shorter scale)
             float total = 0f;
             foreach (var d in list)
                 if (!d.altarOnly && d.minDepth <= depth && Unlocks.Open(d) && ok(d)) total += weight != null ? weight(d) : d.weight;
@@ -728,6 +736,7 @@ namespace DigDeep
         // Better rarities fade in with depth, so the first biome mostly offers common gear.
         public static float DepthWeight(Rarity rar, int depth)
         {
+            depth = Biomes.LootTune(depth);
             switch (rar)
             {
                 // (slow: the biomes are long, so rare and mythic finds ramp up over most of the run)
@@ -768,7 +777,7 @@ namespace DigDeep
             // which rarity comes out of a marble bag (so a rare find is never a long drought or a silly streak),
             // then which trinket of that rarity
             var tiers = new float[4];
-            foreach (var t in Trinkets) if (!t.altarOnly && t.minDepth <= depth && ok(t)) tiers[(int)t.rarity] += wt(t);
+            foreach (var t in Trinkets) if (!t.altarOnly && t.minDepth <= Biomes.LootTune(depth) && ok(t)) tiers[(int)t.rarity] += wt(t);
             int tier = Chance.Pick("trinket_rarity", tiers);
             if (tier < 0) return null;
             return Pick(Trinkets, depth, r, d => ok(d) && (int)d.rarity == tier, wt);
@@ -789,8 +798,8 @@ namespace DigDeep
         {
             // now and then a chest holds a mythic (relic) trinket, more often with luck and depth
             // once in a very long while: something ULTRA RARE
-            if (Chance.Roll("ultra", p.Lucky(0.0025f + depth * 0.000006f))) { var u = RollUltra(p); if (u != null) return u; }
-            if (Chance.Roll("chestmythic", p.Lucky(0.002f + depth * 0.000025f)))
+            if (Chance.Roll("ultra", p.Lucky(0.0025f + Biomes.LootTune(depth) * 0.000006f))) { var u = RollUltra(p); if (u != null) return u; }
+            if (Chance.Roll("chestmythic", p.Lucky(0.002f + Biomes.LootTune(depth) * 0.000025f)))
             {
                 var mythic = new List<SkillDef>();
                 foreach (var t in Trinkets) if (t.rarity == Rarity.Relic && !t.ultra && p.SkillCount(t.id) < t.cap && Unlocked(t) && !p.SeenOnce(t.id)) mythic.Add(t);

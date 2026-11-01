@@ -16,7 +16,7 @@ namespace DigDeep
     // hot biomes boil exposed water away.
     public class Fluids
     {
-        public const byte None = 0, Water = 1, Lava = 2, Steam = 3, Haste = 4;   // HASTE: a white mist-liquid; everything in it runs twice as fast
+        public const byte None = 0, Water = 1, Lava = 2, Blood = 3, Haste = 4, Steam = 8;   // (steam is a gas: it never needs a grain value, so it moved up to make room for BLOOD)   // HASTE: a white mist-liquid; everything in it runs twice as fast
         // POISON: green, poisons whatever soaks in it while it's strong (it thins out in water); ACID: eats whatever it
         // touches (and itself as it does); FUMES: the poisonous green gas they give off (a gas, like steam: per block)
         public const byte Poison = 5, Acid = 6, Fumes = 7;
@@ -27,9 +27,9 @@ namespace DigDeep
         // MOMENTUM: a grain that was moving sideways keeps going (0x08: to the right; 0x30: how strongly, 0..3), and
         // shoves the water in its way along with it, so a surge rushes out across a pool instead of just seeping
         const byte MomRight = 0x08, MomMask = 0x30;
-        public static bool IsLiq(byte t) => t == Water || t == Lava || t == Haste || t == Poison || t == Acid;
+        public static bool IsLiq(byte t) => t == Water || t == Lava || t == Haste || t == Poison || t == Acid || t == Blood;
         public static bool IsGas(byte t) => t == Steam || t == Fumes;
-        static bool Solute(byte t) => t == Haste || t == Poison || t == Acid;   // they mix into water
+        static bool Solute(byte t) => t == Haste || t == Poison || t == Acid || t == Blood;   // they mix into water (blood thins into a red tint)
         static byte Mom(int dir, int m) => m <= 0 ? (byte)0 : (byte)((Mathf.Min(m, 3) << 4) | (dir > 0 ? MomRight : 0));
 
         readonly World w;
@@ -81,12 +81,23 @@ namespace DigDeep
 
         // Liquids flow around and through chests, crates and spikes like real water; only real blocks stop them.
         // Things sinking through water or lava slow right down.
-        public static float Sink(Vector2 p, float vy, float dt)
+        // Things sinking through water (or lava) fall slowly, like in real life: the liquid holds back part of their
+        // weight and drags them down to a gentle sinking speed. Heavy things (boulders, blocks) sink faster.
+        public static float Sink(Vector2 p, float vy, float dt, bool heavy = false)
         {
             byte f = Game.I.world.FluidAtPoint(p);
-            if (f != Water && f != Lava) return vy;
-            float cap = f == Lava ? -2f : -3.2f;
-            return vy < cap ? Mathf.MoveTowards(vy, cap, 90f * dt) : vy;
+            if (f != Water && f != Lava && f != Poison && f != Acid && f != Haste && f != Blood) return vy;
+            float cap = f == Lava ? (heavy ? -3f : -1.6f) : (heavy ? -5f : -2.4f);
+            if (vy < 0f) vy += (heavy ? 14f : 22f) * dt;   // buoyancy: much of its weight is carried
+            return vy < cap ? Mathf.MoveTowards(vy, cap, 60f * dt) : vy;
+        }
+
+        // a sideways drift through liquid dies down too
+        public static float Drag(Vector2 p, float vx, float dt)
+        {
+            byte f = Game.I.world.FluidAtPoint(p);
+            if (f == 0 || f == Steam || f == Fumes) return vx;
+            return vx * Mathf.Exp(-(f == Lava ? 4f : 2.2f) * dt);
         }
 
         public static bool Blocks(Block b) => Tiles.Solid(b) && b != Block.Chest && b != Block.Crate && b != Block.Supply && b != Block.Spikes;
@@ -97,7 +108,7 @@ namespace DigDeep
         public static void Ensure(Chunk c)
         {
             if (c.sub != null) return;
-            c.mixP = new float[World.W * World.CH]; c.mixH = new float[World.W * World.CH];
+            c.mixP = new float[World.W * World.CH]; c.mixH = new float[World.W * World.CH]; c.mixB = new float[World.W * World.CH];
             c.sub = new byte[World.W * World.CH * SN];
             c.cnt = new byte[World.W * World.CH];
             for (int i = 0; i < c.lt.Length; i++)
@@ -119,25 +130,27 @@ namespace DigDeep
         static void Recount(Chunk c, int i)
         {
             int b = i * SN, n = 0;
-            int c1 = 0, c2 = 0, c4 = 0, c5 = 0, c6 = 0;
+            int c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0;
             for (int k = 0; k < SN; k++)
             {
                 switch (c.sub[b + k] & TypeMask)
                 {
                     case Water: c1++; break;
                     case Lava: c2++; break;
+                    case Blood: c3++; break;
                     case Haste: c4++; break;
                     case Poison: c5++; break;
                     case Acid: c6++; break;
                 }
             }
-            n = c1 + c2 + c4 + c5 + c6;
+            n = c1 + c2 + c3 + c4 + c5 + c6;
             c.cnt[i] = (byte)n;
             if (n > 0)
             {
                 // the block reads as whatever most of it is (water wins a tie)
                 byte best = Water; int bn = c1;
                 if (c2 > bn) { best = Lava; bn = c2; }
+                if (c3 > bn) { best = Blood; bn = c3; }
                 if (c4 > bn) { best = Haste; bn = c4; }
                 if (c5 > bn) { best = Poison; bn = c5; }
                 if (c6 > bn) { best = Acid; bn = c6; }
@@ -313,13 +326,13 @@ namespace DigDeep
             // DISSOLVING: haste-mist and poison mixed with water spread through it and thin out (turning into plain water
             // bit by bit), so a little of either in a pool soon does nothing; acid doesn't thin, it eats the water (Chem)
             // (slowly when it all lies still, much faster where the liquids are moving)
-            if (Solute(t) && Random.value < (mm > 0 || (v & Fell) != 0 ? 0.14f : 0.03f))
+            if (Solute(t) && Random.value < (mm > 0 || (v & Fell) != 0 ? 0.14f : t == Poison ? 0.1f : 0.03f))   // poison seeps through still water quicker
             {
                 int dir = Random.Range(0, 4);
                 int ox = dir == 0 ? 1 : dir == 1 ? -1 : 0, oy = dir == 2 ? 1 : dir == 3 ? -1 : 0;
                 if (Res(gx + ox, gy + oy, out var dc0, out var dti0, out var dsi0) && !Rock(dc0, dti0, dsi0) && (dc0.sub[dsi0] & TypeMask) == Water)
                 {
-                    if (t != Acid && Random.value < 0.12f) { ch.sub[si] = (byte)(Water | parity); AddMix(ch, i, t); Recount(ch, i); return; }   // it's thinned away (and tints the water)
+                    if (Random.value < (t == Acid ? 0.025f : t == Poison ? 0.2f : 0.12f)) { ch.sub[si] = (byte)(Water | parity); AddMix(ch, i, t); Recount(ch, i); return; }   // it's thinned away (and tints the water); water slowly wins over everything, even acid
                     byte wv0 = dc0.sub[dsi0];
                     dc0.sub[dsi0] = (byte)((v & ~Moved) | parity);
                     ch.sub[si] = (byte)((wv0 & ~Moved) | parity);
@@ -501,9 +514,11 @@ namespace DigDeep
             MixTile(ch, i, x, y);
             if (Chem(ch, i, x, y)) return;
             byte t = ch.lt[i];
+            // the x2 mist makes things grow: grass on the floors it lies on (and beside it), vines from the roof over it
+            if (t == Haste && Random.value < 0.02f) Grow(x, y);
             float a = ch.liq[i];
             int bi = Biomes.Index(-y);
-            if (t == Water)
+            if (t == Water || t == Haste || t == Blood)   // (the haste-mist and blood meet lava just like water does)
             {
                 // a few lava grains sinking through the water: they glow on a moment, boiling the water round them, then
                 // they're gone (or, a big enough lump of it, set to rock)
@@ -512,7 +527,7 @@ namespace DigDeep
                 if (ln > 0)
                 {
                     var at = new Vector2(x + Random.value, y + Random.value);
-                    if (Random.value < 0.3f && RemoveTop(ch, i, Water, 1) > 0 && Random.value < 0.5f) Bubble(at, Random.Range(2.5f, 4.5f));
+                    if (Random.value < 0.3f && RemoveTop(ch, i, t, 1) > 0 && Random.value < 0.5f) Bubble(at, Random.Range(2.5f, 4.5f));
                     if (Random.value < 0.03f) Hiss(at);
                     if (Random.value < Mathf.Min(0.05f, 0.015f + (SN - ln) * 0.0005f))
                     {
@@ -523,7 +538,7 @@ namespace DigDeep
                             if (n.ok && n.c.lt[n.i] == Lava && n.c.cnt != null) clump += n.c.cnt[n.i];
                         }
                         for (int k = 0; k < SN; k++) if ((ch.sub[lb + k] & TypeMask) == Lava) ch.sub[lb + k] = 0;
-                        RemoveTop(ch, i, Water, ln / 2);
+                        RemoveTop(ch, i, t, ln / 2);
                         Recount(ch, i);
                         Hiss(at);
                         if (clump >= SN * 3 / 4) { Clear(me); w.Set(x, y, Block.Stone); AddGas(Cell(x, y + 1), 0.5f); return; }
@@ -533,7 +548,7 @@ namespace DigDeep
                 }
                 // cold biome: water freezes solid, but only after a while: it skins over from the surface and from
                 // ice it touches (a few seconds), and still pools freeze through on their own given time
-                if (bi == Biomes.Crystal)
+                if (bi == Biomes.Crystal && t == Water)
                 {
                     bool nearIce = w.Get(x + 1, y) == Block.Ice || w.Get(x - 1, y) == Block.Ice || w.Get(x, y + 1) == Block.Ice || w.Get(x, y - 1) == Block.Ice;
                     var abv = Cell(x, y + 1);
@@ -542,7 +557,7 @@ namespace DigDeep
                     if (a > 0.6f && Random.value < chance * Step * 30f) { Clear(me); w.Set(x, y, Block.Ice); return; }
                 }
                 // hot biome: exposed water boils away
-                if (bi == Biomes.Magma)
+                if (bi == Biomes.Magma && t == Water)
                 {
                     var up = Cell(x, y + 1);
                     if (!Solid(up) && up.c.lt[up.i] != Water && Random.value < 0.25f * Step * 30f)
@@ -565,7 +580,7 @@ namespace DigDeep
                 int touch = WaterTouch(ch, i, x, y, out var wc, out var wAt);
                 if (touch > 0)
                 {
-                    if (Random.value < 0.3f && RemoveTop(wc.c, wc.i, Water, 1) > 0 && Random.value < 0.5f) Bubble(wAt + new Vector2(Random.Range(-0.3f, 0.3f), 0.1f), Random.Range(2.5f, 4.5f));
+                    if (Random.value < 0.3f && RemoveTop(wc.c, wc.i, Wet(wc.c.lt[wc.i]) ? wc.c.lt[wc.i] : Water, 1) > 0 && Random.value < 0.5f) Bubble(wAt + new Vector2(Random.Range(-0.3f, 0.3f), 0.1f), Random.Range(2.5f, 4.5f));
                     if (Random.value < 0.08f) { Game.I.fx.Smoke(wAt, 1, 0.6f); AddGas(Cell(x, y + 1), 0.05f); }
                     if (Random.value < 0.03f) Hiss(wAt);
                     if (Random.value < Mathf.Min(0.05f, 0.015f + touch * 0.001f)) { Quench(x, y, me, wc, new Vector2(Mathf.Floor(wAt.x), Mathf.Floor(wAt.y))); return; }
@@ -591,24 +606,26 @@ namespace DigDeep
             return false;
         }
 
+        static bool Wet(byte t) => t == Water || t == Haste || t == Blood;   // what quenches lava: water, and the haste-mist alike
+
         // how many water grains sit right against this block's lava grains (in it, or across its edges), and where
         int WaterTouch(Chunk ch, int i, int x, int y, out C water, out Vector2 at)
         {
             water = default; at = Vector2.zero;
             int n = 0, b = i * SN;
             for (int k = 0; k < SN; k++)
-                if ((ch.sub[b + k] & TypeMask) == Water) { n++; if (!water.ok) { water = new C { c = ch, i = i, ok = true }; at = new Vector2(x + ((k & 7) + 0.5f) / SUB, y + ((k >> 3) + 0.5f) / SUB); } }
+                if (Wet((byte)(ch.sub[b + k] & TypeMask))) { n++; if (!water.ok) { water = new C { c = ch, i = i, ok = true }; at = new Vector2(x + ((k & 7) + 0.5f) / SUB, y + ((k >> 3) + 0.5f) / SUB); } }
             for (int d = 0; d < 4; d++)
             {
                 int dx = d == 0 ? 1 : d == 1 ? -1 : 0, dy = d == 2 ? 1 : d == 3 ? -1 : 0;
                 var o = Cell(x + dx, y + dy);
-                if (!o.ok || Blocks(o.c.t[o.i]) || o.c.lt[o.i] != Water || o.c.sub == null) continue;
+                if (!o.ok || Blocks(o.c.t[o.i]) || !Wet(o.c.lt[o.i]) || o.c.sub == null) continue;
                 for (int e = 0; e < SUB; e++)
                 {
                     // my edge grain and the one across from it
                     int mx = dx > 0 ? SUB - 1 : dx < 0 ? 0 : e, my = dy > 0 ? SUB - 1 : dy < 0 ? 0 : e;
                     int ox = dx > 0 ? 0 : dx < 0 ? SUB - 1 : e, oy = dy > 0 ? 0 : dy < 0 ? SUB - 1 : e;
-                    if ((ch.sub[b + my * SUB + mx] & TypeMask) != Lava || (o.c.sub[o.i * SN + oy * SUB + ox] & TypeMask) != Water) continue;
+                    if ((ch.sub[b + my * SUB + mx] & TypeMask) != Lava || !Wet((byte)(o.c.sub[o.i * SN + oy * SUB + ox] & TypeMask))) continue;
                     n++;
                     if (!water.ok) { water = o; at = new Vector2(x + dx + (ox + 0.5f) / SUB, y + dy + (oy + 0.5f) / SUB); }
                 }
@@ -631,7 +648,7 @@ namespace DigDeep
             if (stone) w.Set(x, y, Block.Stone);
             if (water.ok && water.c.cnt != null)
             {
-                RemoveTop(water.c, water.i, Water, stone ? 20 : 10);
+                RemoveTop(water.c, water.i, Wet(water.c.lt[water.i]) ? water.c.lt[water.i] : Water, stone ? 20 : 10);
                 if (water.c.cnt[water.i] == 0) { Clear(water); AddGas(water, 0.7f); }
                 else AddGas(Cell((int)wAt.x, (int)wAt.y + 1), stone ? 0.8f : 0.5f);
             }
@@ -747,6 +764,25 @@ namespace DigDeep
         }
 
         // ------------------------------------------------------------------ chemistry: poison, acid
+        static bool Has(Chunk c, int i, byte t)
+        {
+            if (c.sub == null) return false;
+            int b = i * SN;
+            for (int k = 0; k < SN; k++) if ((c.sub[b + k] & TypeMask) == t) return true;
+            return false;
+        }
+
+        // turns up to n grains of one liquid into another, in place
+        int ConvertType(Chunk c, int i, byte from, byte to, int n)
+        {
+            if (c.sub == null || n <= 0) return 0;
+            int b = i * SN, got = 0;
+            for (int k = 0; k < SN && got < n; k++)
+                if ((c.sub[b + k] & TypeMask) == from) { c.sub[b + k] = (byte)((c.sub[b + k] & ~TypeMask & ~MomMask & ~MomRight) | to); got++; }
+            if (got > 0) Recount(c, i);
+            return got;
+        }
+
         int TakeType(Chunk c, int i, byte t, int n)
         {
             if (c.sub == null || n <= 0) return 0;
@@ -764,6 +800,7 @@ namespace DigDeep
             if (c.mixP == null) return;
             if (t == Poison) c.mixP[i] = Mathf.Min(1f, c.mixP[i] + 1f / 40f);
             else if (t == Haste) c.mixH[i] = Mathf.Min(1f, c.mixH[i] + 1f / 40f);
+            else if (t == Blood && c.mixB != null) c.mixB[i] = Mathf.Min(1f, c.mixB[i] + 1f / 30f);
         }
 
         void MixTile(Chunk ch, int i, int x, int y)
@@ -789,25 +826,25 @@ namespace DigDeep
                     }
                 }
             }
-            // a grain of haste-mist or poison with water beside it slowly thins away into it
-            if (Random.value < 0.25f)
+            // a grain of haste-mist or poison with water beside it slowly thins away into it (poison quickly)
+            if (Random.value < 0.25f || (ch.cnt != null && Random.value < 0.35f && Has(ch, i, Poison)))
             {
                 int k = Random.Range(0, SN);
                 byte t = (byte)(ch.sub[b + k] & TypeMask);
-                if ((t == Poison || t == Haste))
+                if ((t == Poison || t == Haste || t == Blood || t == Acid))
                 {
                     int sx = k & 7, sy = k >> 3;
                     bool wet = (sx > 0 && (ch.sub[b + k - 1] & TypeMask) == Water) || (sx < 7 && (ch.sub[b + k + 1] & TypeMask) == Water)
                         || (sy > 0 && (ch.sub[b + k - SUB] & TypeMask) == Water) || (sy < 7 && (ch.sub[b + k + SUB] & TypeMask) == Water);
-                    if (wet && Random.value < 0.12f) { ch.sub[b + k] = (byte)(Water | parity); AddMix(ch, i, t); Recount(ch, i); }
+                    if (wet && Random.value < (t == Acid ? 0.04f : t == Poison ? 0.35f : 0.12f)) { ch.sub[b + k] = (byte)(Water | parity); AddMix(ch, i, t); Recount(ch, i); }
                 }
             }
             // the tint spreads through the water and fades (very slowly) as it dilutes away
             if (ch.mixP == null) return;
-            float mp = ch.mixP[i], mh = ch.mixH[i];
-            if (mp <= 0.002f && mh <= 0.002f) { ch.mixP[i] = 0f; ch.mixH[i] = 0f; return; }
-            if (ch.lt[i] != Water) { ch.mixP[i] = 0f; ch.mixH[i] = 0f; return; }
-            mp *= 0.9993f; mh *= 0.9993f;
+            float mp = ch.mixP[i], mh = ch.mixH[i], mb = ch.mixB != null ? ch.mixB[i] : 0f;
+            if (mp <= 0.002f && mh <= 0.002f && mb <= 0.002f) { ch.mixP[i] = 0f; ch.mixH[i] = 0f; if (ch.mixB != null) ch.mixB[i] = 0f; return; }
+            if (ch.lt[i] != Water) { ch.mixP[i] = 0f; ch.mixH[i] = 0f; if (ch.mixB != null) ch.mixB[i] = 0f; return; }
+            mp *= 0.9993f; mh *= 0.9993f; mb *= 0.9995f;
             for (int d = 0; d < 4; d++)
             {
                 var n = Cell(x + (d == 0 ? 1 : d == 1 ? -1 : 0), y + (d == 2 ? 1 : d == 3 ? -1 : 0));
@@ -815,8 +852,9 @@ namespace DigDeep
                 float fp = (mp - n.c.mixP[n.i]) * 0.03f, fh = (mh - n.c.mixH[n.i]) * 0.03f;
                 if (fp > 0f) { n.c.mixP[n.i] += fp; mp -= fp; }
                 if (fh > 0f) { n.c.mixH[n.i] += fh; mh -= fh; }
+                if (n.c.mixB != null) { float fb = (mb - n.c.mixB[n.i]) * 0.03f; if (fb > 0f) { n.c.mixB[n.i] += fb; mb -= fb; } }
             }
-            ch.mixP[i] = mp; ch.mixH[i] = mh;
+            ch.mixP[i] = mp; ch.mixH[i] = mh; if (ch.mixB != null) ch.mixB[i] = mb;
         }
 
         // ACID won't touch these: steel, the void, gilded brick, ore and minerals, glass (and anything unbreakable)
@@ -837,18 +875,28 @@ namespace DigDeep
         // a tile with poison or acid in it: what they do to each other, to water and lava, and to the blocks round them
         bool Chem(Chunk ch, int i, int x, int y)
         {
-            int b = i * SN, nW = 0, nL = 0, nP = 0, nA = 0;
+            int b = i * SN, nW = 0, nL = 0, nP = 0, nA = 0, nH = 0;
             for (int k = 0; k < SN; k++)
             {
                 switch (ch.sub[b + k] & TypeMask)
                 {
-                    case Water: nW++; break;
+                    case Water: case Blood: nW++; break;   // (to acid, blood is just water)
                     case Lava: nL++; break;
                     case Poison: nP++; break;
                     case Acid: nA++; break;
+                    case Haste: nH++; break;
                 }
             }
             if (nP == 0 && nA == 0) return false;
+            // haste-mist and poison react into ACID (the mist is used up, the poison turns)
+            if (nP > 0 && nH > 0 && Random.value < 0.35f)
+            {
+                int n = Mathf.Min(2, Mathf.Min(nP, nH));
+                TakeType(ch, i, Haste, n);
+                ConvertType(ch, i, Poison, Acid, n);
+                nP -= n; nH -= n; nA += n;
+                if (Random.value < 0.06f) Game.I.sfx.PlayAt(at0(x, y), "fizz", 0.25f, Random.Range(1.1f, 1.4f));
+            }
             Vector2 at = new Vector2(x + 0.5f, y + 0.5f);
             // the void swallows them fast
             if (VoidTouch(x, y))
@@ -867,6 +915,8 @@ namespace DigDeep
                 if (nP > 0 && Random.value < 0.25f) { TakeType(ch, i, Acid, 1); TakeType(ch, i, Poison, 1); AddFumes(x, y + 1, 0.05f); if (Random.value < 0.04f) PoisonPop(at); }
                 // acid eats water, boiling it off as steam (and spending itself)
                 if (nW > 0 && Random.value < 0.3f) { TakeType(ch, i, Water, 2); TakeType(ch, i, Acid, 1); SteamUp(x, y + 1, 0.05f); if (Random.value < 0.05f) Hiss(at); }
+                // and the haste-mist just the same
+                if (nH > 0 && Random.value < 0.3f) { TakeType(ch, i, Haste, 2); TakeType(ch, i, Acid, 1); SteamUp(x, y + 1, 0.05f); if (Random.value < 0.05f) Hiss(at); }
                 // acid eats the blocks it touches: the more acid against it, the faster (and the acid is used up doing it)
                 nA = 0;
                 for (int k = 0; k < SN; k++) if ((ch.sub[b + k] & TypeMask) == Acid) nA++;
@@ -889,6 +939,8 @@ namespace DigDeep
             }
             return ch.cnt[i] == 0;
         }
+
+        static Vector2 at0(int x, int y) => new Vector2(x + 0.5f, y + 0.5f);
 
         // the little poisonous blast acid makes with lava or poison
         void PoisonPop(Vector2 at)
@@ -967,6 +1019,25 @@ namespace DigDeep
         }
 
         // a blob of liquid thrown about (a spitter's glob): it bursts into flying drops that land as grains
+        void Grow(int x, int y)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int gx = x + dx;
+                if (w.Solid(gx, y)) continue;
+                if (w.Solid(gx, y - 1) && w.Get(gx, y - 1) != Block.Spikes) w.AddFlags(gx, y, World.Grass);
+                if (dx == 0 && w.Solid(gx, y + 1)) w.AddFlags(gx, y, World.Vine);
+            }
+        }
+
+        // a falling raindrop (from a rain cloud)
+        public static void RainDrop(Vector2 p)
+        {
+            var f = Game.I != null ? Game.I.fluids : null;
+            if (f == null) return;
+            f.AddDrop(p, new Vector2(Random.Range(-0.3f, 0.3f), -4f), Water);
+        }
+
         public static void Spill(Vector2 p, byte t, int n, Vector2 v)
         {
             var f = Game.I != null ? Game.I.fluids : null;
@@ -1443,7 +1514,7 @@ namespace DigDeep
         readonly SpriteRenderer sr;
         Texture2D tex;
         Color32[] buf;
-        float[] tintP, tintH;   // per block in view: how much poison / haste-mist is dissolved in its water
+        float[] tintP, tintH, tintB;   // per block in view: how much poison / haste-mist is dissolved in its water
         byte[] kind;   // per texture pixel: 0 empty, 1 water, 2 lava, 3 a block, 4 haste (9: a hidden spike, while smoothing)
         static bool KL(byte k) => k == 1 || k == 2 || k == 4 || k == 5 || k == 6;
         readonly System.Collections.Generic.List<Vector2Int> boulders = new System.Collections.Generic.List<Vector2Int>();
@@ -1470,8 +1541,8 @@ namespace DigDeep
             int phase = (int)(time * 8f);
             bool zap = Electric.Any;
             int spark = Time.frameCount;   // sparks re-scatter every frame
-            if (tintP == null || tintP.Length != cw * chh) { tintP = new float[cw * chh]; tintH = new float[cw * chh]; }
-            System.Array.Clear(tintP, 0, tintP.Length); System.Array.Clear(tintH, 0, tintH.Length);
+            if (tintP == null || tintP.Length != cw * chh) { tintP = new float[cw * chh]; tintH = new float[cw * chh]; tintB = new float[cw * chh]; }
+            System.Array.Clear(tintP, 0, tintP.Length); System.Array.Clear(tintH, 0, tintH.Length); System.Array.Clear(tintB, 0, tintB.Length);
             // gather the grains (and draw steam, which is per block)
             for (int cy = 0; cy < chh; cy++)
                 for (int cx = 0; cx < cw; cx++)
@@ -1506,7 +1577,7 @@ namespace DigDeep
                         continue;
                     }
                     Ensure(k.c);
-                    if (k.c.mixP != null) { tintP[cy * cw + cx] = k.c.mixP[k.i]; tintH[cy * cw + cx] = k.c.mixH[k.i]; }
+                    if (k.c.mixP != null) { tintP[cy * cw + cx] = k.c.mixP[k.i]; tintH[cy * cw + cx] = k.c.mixH[k.i]; tintB[cy * cw + cx] = k.c.mixB != null ? k.c.mixB[k.i] : 0f; }
                     int b = k.i * SN;
                     for (int sy = 0; sy < SUB; sy++)
                         for (int sx = 0; sx < SUB; sx++)
@@ -1572,7 +1643,18 @@ namespace DigDeep
                         int ti = (py / PXL) * cw + px / PXL;
                         float tp = Mathf.Min(1f, tintP[ti] * 1.6f) * 0.75f, tht = Mathf.Min(1f, tintH[ti] * 1.6f) * 0.6f;
                         if (tp > 0.01f) col = Color32.Lerp(col, new Color32(96, 200, 84, (byte)Mathf.Max(col.a, 190)), tp);
-                        if (tht > 0.01f) col = Color32.Lerp(col, new Color32(232, 232, 236, col.a), tht);
+                        if (tht > 0.01f) col = Color32.Lerp(col, new Color32(90, 220, 255, col.a), tht);
+                        float tb = Mathf.Min(1f, tintB[ti] * 1.8f) * 0.8f;   // watered-down blood: a pinkish red
+                        if (tb > 0.01f) col = Color32.Lerp(col, new Color32(180, 40, 56, (byte)Mathf.Max(col.a, 200)), tb);
+                    }
+                    else if (v == Blood)
+                    {
+                        // BLOOD: thick and dark red, a bright wet line on top, slow dark clots below
+                        float n = U.H01((gx >> 1) + phase / 3, (gy >> 1) - phase / 4, 95);
+                        if ((!below && run < 3) || (lone && run < 2)) col = new Color32(200, 30, 46, 235);
+                        else if (run == 0) col = new Color32(232, 70, 80, 245);
+                        else if (run == 1) col = new Color32(170, 20, 36, 235);
+                        else col = n > 0.97f ? new Color32(200, 40, 56, 235) : new Color32((byte)(110 + n * 30), (byte)(8 + n * 10), (byte)(20 + n * 10), 230);
                     }
                     else if (v == Poison)
                     {
@@ -1596,10 +1678,12 @@ namespace DigDeep
                     {
                         // HASTE: a milky white mist that drifts and shimmers (not icy: soft and warm-white, see-through)
                         float n = U.H01((gx >> 2) + phase, (gy >> 2) - phase / 2, 91), n2 = U.H01((gx >> 1) - phase * 2, gy >> 1, 92);
-                        if ((!below && run < 3) || (lone && run < 2)) col = new Color32(255, 252, 246, 200);
-                        else if (run == 0) col = new Color32(255, 255, 250, 235);
-                        else if (run == 1) col = new Color32(246, 242, 236, 190);
-                        else col = new Color32((byte)(228 + n * 20), (byte)(226 + n * 18), (byte)(220 + n * 14), (byte)(105 + n * 55 + (n2 > 0.96f ? 70 : 0)));
+                        // (much more see-through now: you can make out what's behind and inside it)
+                        // a fluorescent blue now, still see-through
+                        if ((!below && run < 3) || (lone && run < 2)) col = new Color32(150, 240, 255, 150);
+                        else if (run == 0) col = new Color32(190, 250, 255, 210);
+                        else if (run == 1) col = new Color32(90, 220, 255, 130);
+                        else col = new Color32((byte)(40 + n * 30), (byte)(190 + n * 40), 255, (byte)(70 + n * 35 + (n2 > 0.96f ? 60 : 0)));
                     }
                     else
                     {
@@ -1671,7 +1755,7 @@ namespace DigDeep
                 int qx = Mathf.FloorToInt((d.p.x - ox) * PXL), qy = Mathf.FloorToInt((d.p.y - oy) * PXL);
                 if (qx < 0 || qy < 0 || qx >= tw || qy >= th) continue;
                 any = true;
-                buf[qy * tw + qx] = d.t == Lava ? new Color32(255, 210, 90, 250) : d.t == Haste ? new Color32(255, 253, 248, 220) : d.t == Poison ? new Color32(120, 220, 80, 235) : d.t == Acid ? new Color32(220, 255, 90, 240) : new Color32(200, 244, 246, 230);
+                buf[qy * tw + qx] = d.t == Lava ? new Color32(255, 210, 90, 250) : d.t == Haste ? new Color32(120, 230, 255, 170) : d.t == Poison ? new Color32(120, 220, 80, 235) : d.t == Blood ? new Color32(200, 30, 46, 235) : d.t == Acid ? new Color32(220, 255, 90, 240) : new Color32(200, 244, 246, 230);
             }
             if (zap && any) DrawBolts(ox, oy);
             sr.enabled = any;
@@ -1715,24 +1799,60 @@ namespace DigDeep
                 }
         }
 
-        // lava glows
+        // lava glows, by how much of it there is: a lone drop glows a tiny bit, a pool lights the cave (Noita-style)
+        static float[] lavaAm, lavaSum;
         public void AddLights(Lighting l, Vector2 camPos, float halfW, float halfH, float time)
         {
             int x0 = Mathf.Max(0, Mathf.FloorToInt(camPos.x - halfW - 3)), x1 = Mathf.Min(World.W - 1, Mathf.CeilToInt(camPos.x + halfW + 3));
             int y0 = Mathf.FloorToInt(camPos.y - halfH - 3), y1 = Mathf.CeilToInt(camPos.y + halfH + 3);
+            int gw = x1 - x0 + 1, gh = y1 - y0 + 1;
+            if (gw <= 0 || gh <= 0) return;
+            if (lavaAm == null || lavaAm.Length < gw * gh) { lavaAm = new float[gw * gh]; lavaSum = new float[(gw + 1) * (gh + 1)]; }
+            bool any = false;
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
                 {
                     var k = Cell(x, y);
-                    if (k.ok && k.c.lt[k.i] == Acid && ((x + y) & 1) == 0) { l.Add(new Vector2(x + 0.5f, y + 0.5f), 1.3f, 0.3f); continue; }   // acid glows faintly
-                    if (!k.ok || k.c.lt[k.i] != Lava) continue;
-                    float a = k.c.liq[k.i];
-                    // only light from the top of a pool, plus a dim glow everywhere, to keep it cheap
-                    var up = Cell(x, y + 1);
-                    bool top = !up.ok || up.c.lt[up.i] != Lava;
-                    float flick = 1f + Mathf.Sin(time * 5f + x * 1.3f + y * 0.7f) * 0.06f;
-                    if (top) l.Add(new Vector2(x + 0.5f, y + a), (1.6f + a * 1.8f) * flick, 0.85f);
-                    else if (((x + y) & 1) == 0) l.Add(new Vector2(x + 0.5f, y + 0.5f), 1.6f, 0.5f);
+                    float v = 0f;
+                    if (k.ok)
+                    {
+                        if (k.c.lt[k.i] == Lava) { v = k.c.liq[k.i]; any = true; }
+                        else if (k.c.lt[k.i] == Acid && ((x + y) & 1) == 0) l.Add(new Vector2(x + 0.5f, y + 0.5f), 1.3f, 0.3f);   // acid glows faintly
+                        else if (k.c.lt[k.i] == Haste && ((x + y) & 1) == 0) l.Add(new Vector2(x + 0.5f, y + 0.5f), 1.6f, 0.35f);   // the x2 mist glows (fluorescent blue)
+                    }
+                    lavaAm[(y - y0) * gw + (x - x0)] = v;
+                }
+            if (!any) return;
+            // a summed table, so each cell can ask how much lava lies around it
+            int sw = gw + 1;
+            for (int i = 0; i < sw; i++) lavaSum[i] = 0f;
+            for (int y = 0; y < gh; y++)
+            {
+                float row = 0f;
+                lavaSum[(y + 1) * sw] = 0f;
+                for (int x = 0; x < gw; x++)
+                {
+                    row += lavaAm[y * gw + x];
+                    lavaSum[(y + 1) * sw + x + 1] = lavaSum[y * sw + x + 1] + row;
+                }
+            }
+            const int R = 3;
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                {
+                    int gx = x - x0, gy = y - y0;
+                    float a = lavaAm[gy * gw + gx];
+                    if (a <= 0f) continue;
+                    int ax = Mathf.Max(0, gx - R), bx = Mathf.Min(gw - 1, gx + R), ay = Mathf.Max(0, gy - R), by = Mathf.Min(gh - 1, gy + R);
+                    float vol = lavaSum[(by + 1) * sw + bx + 1] - lavaSum[ay * sw + bx + 1] - lavaSum[(by + 1) * sw + ax] + lavaSum[ay * sw + ax];
+                    float k = Mathf.Clamp01(vol / 10f), kk = Mathf.Sqrt(k);
+                    bool top = gy + 1 >= gh || lavaAm[(gy + 1) * gw + gx] <= 0f;
+                    float flick = 1f + Mathf.Sin(time * 3f + x * 0.35f + y * 0.2f) * 0.04f;   // a slow, smooth shimmer (not cell by cell)
+                    if (top) l.Add(new Vector2(x + 0.5f, y + a), (0.6f + (1f + a * 1.8f) * kk) * flick, 0.35f + 0.5f * kk);
+                    else if (k > 0.5f && ((x + y) & 1) == 0) l.Add(new Vector2(x + 0.5f, y + 0.5f), 1.6f, 0.5f);
+                    // and the warm haze around it, as big and bright as the lava is plentiful
+                    if (top) l.AddGlow(new Vector2(x + 0.5f, y + a), (0.8f + (2.4f + a) * kk) * flick, 0.32f * k);
+                    else if (k > 0.4f && ((x * 3 + y) % 3) == 0) l.AddGlow(new Vector2(x + 0.5f, y + 0.5f), 2.4f * kk, 0.18f * k);
                 }
         }
     }

@@ -194,13 +194,15 @@ namespace DigDeep
         {
             modeT -= dt;
             if (poundHang > 0f) { poundHang -= dt; return; }   // a tiny hang in the air before the drop
-            vel = new Vector2(0f, -28f);
+            bool wet = Wd.FluidAtPoint(pos) != Fluids.None && !Fluids.IsGas(Wd.FluidAtPoint(pos));
+            vel = new Vector2(0f, wet ? -20f : -28f);   // (water slows it a little, but never stops it)
+            if (wet && Random.value < 0.6f) G.fx.Burst(pos + Vector2.up * 0.5f, 1, new Color(0.8f, 0.95f, 1f), 1f, 0.4f, -3f, 1f, false);
             G.HitEnemies(pos, Half + new Vector2(0.2f, 0.2f), Dmg(3f), Vector2.down * 4f);
             G.fx.Burst(pos + Vector2.up * 0.4f, 1, new Color(1f, 1f, 1f, 0.7f), 0.5f, 0.2f, 0f);
             Vector2 p = pos;
             bool landed = Wd.MoveY(ref p, Half, vel.y * dt, out _);
             pos = p;
-            if (!landed && modeT > 0f && Wd.FluidAtPoint(pos) != Fluids.Water) return;
+            if (!landed && modeT > 0f) return;
             mode = Mode.Normal;
             if (landed)
             {
@@ -439,7 +441,7 @@ namespace DigDeep
             if (Wd.LiquidType(hx, hy) == Fluids.Fumes && Wd.LiquidAmount(hx, hy) > 0.12f && fumeT <= 0f)
             {
                 fumeT = 0.8f;
-                DotDamage(Mathf.RoundToInt(2f + Depth * 0.01f), new Color(0.6f, 0.9f, 0.4f), false);
+                DotDamage(Player.Haz(1), new Color(0.6f, 0.9f, 0.4f), false);
                 if (Random.value < 0.4f) G.Popup(pos + Vector2.up, "*COUGH*", new Color(0.6f, 0.9f, 0.4f));
             }
         }
@@ -461,7 +463,7 @@ namespace DigDeep
                 {
                     burnT -= dt;
                     burnTick -= dt;
-                    if (burnTick <= 0f) { burnTick = 0.5f; DotDamage(Mathf.RoundToInt(4f + Depth * 0.05f), new Color(1f, 0.55f, 0.2f)); }
+                    if (burnTick <= 0f) { burnTick = 0.5f; DotDamage(Player.Haz(2), new Color(1f, 0.55f, 0.2f)); }
                     Fire.IgniteBox(pos, Half + new Vector2(0.08f, 0.08f));   // you set alight whatever you touch
                     foreach (var e in G.ents)
                         if (!e.dead && e is Enemy en && !en.Burning && !en.Intangible && U.Overlap(pos, Half + new Vector2(0.08f, 0.08f), en.pos, en.half)) en.Ignite(2f);   // foes included
@@ -482,18 +484,17 @@ namespace DigDeep
             {
                 poisonT -= dt;
                 poisonTick -= dt;
-                if (poisonTick <= 0f) { poisonTick = 0.5f; DotDamage(Mathf.RoundToInt(3f + Depth * 0.03f), new Color(0.5f, 1f, 0.35f), false); }   // poison never kills: it stops at 1
+                if (poisonTick <= 0f) { poisonTick = 0.5f; DotDamage(Player.Haz(2), new Color(0.5f, 1f, 0.35f), false); }   // poison never kills: it stops at 1
                 if (Random.value < 0.25f) G.fx.Burst(pos, 1, new Color(0.5f, 1f, 0.35f), 1f, 0.5f, -3f, 1f, false);
             }
         }
 
         void DotDamage(int d, Color c, bool canKill = true)
         {
-            if (mode == Mode.Dead) return;
+            if (mode == Mode.Dead || Camouflaged) return;   // (hidden in ink, nothing hurts you)
             if (s.armor > 0f) d = Mathf.Max(1, Mathf.RoundToInt(d * (1f - s.armor)));
             if (!canKill) { d = Mathf.Min(d, s.hp - 1); if (d <= 0) return; }
             s.hp -= d;
-            EndCamo();
             G.Popup(pos + Vector2.up * 0.9f, "-" + d, c);
             G.sfx.Play("hurt", 0.3f, 1.4f);
             if (s.hp <= 0) { s.hp = 1; invuln = 0f; grace = 0f; Cause = Burning ? "FIRE" : poisonT > 0f ? "POISON" : null; Hurt(1, pos); }

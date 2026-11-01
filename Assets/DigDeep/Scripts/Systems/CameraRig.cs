@@ -78,7 +78,7 @@ namespace DigDeep
             rumble = Mathf.Max(0f, rumble - dt * 0.35f);
             kick = Vector2.Lerp(kick, Vector2.zero, 1f - Mathf.Exp(-dt * 14f));   // springs back quickly
             punch = Mathf.Lerp(punch, 0f, 1f - Mathf.Exp(-dt * 10f));
-            cam.orthographicSize = BaseSize - punch;
+            cam.orthographicSize = (BaseSize - punch) * Hallucination.Zoom;   // (the spores make the view breathe)
             Apply();
         }
 
@@ -88,6 +88,7 @@ namespace DigDeep
             float s = trauma * 0.32f + trauma * trauma * 0.45f + rumble * 0.12f;
             Vector2 p = pos + kick + new Vector2(Random.Range(-s, s), Random.Range(-s, s));
             cam.transform.position = new Vector3(U.Snap(p.x), U.Snap(p.y), -10f);   // whole art pixels only
+            cam.transform.rotation = Hallucination.Level > 0.001f ? Quaternion.Euler(0f, 0f, Hallucination.Roll) : Quaternion.identity;   // ...and sway
         }
 
         Vector2 Clamp(Vector2 p)

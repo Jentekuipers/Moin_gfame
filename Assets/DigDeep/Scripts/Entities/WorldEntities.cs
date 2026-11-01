@@ -58,7 +58,7 @@ namespace DigDeep
             if (inWater && !wasWet) Fluids.Impact(pos, 1.1f, new Vector2(0f, vy));
             if (inWater) startRow = Mathf.FloorToInt(pos.y - 0.5f);
             wasWet = inWater;
-            if (b != Block.Boulder) vy = Fluids.Sink(pos, vy, dt);   // boulders plunge straight through
+            vy = Fluids.Sink(pos, vy, dt, true);   // a falling block sinks through water slowly (heavy: a bit faster than loose things)
             pos.y += vy * dt;
             int row = Mathf.FloorToInt(pos.y - 0.5f);
             if (Wd.ImpactGlass(x, row, -vy, 5f)) { vy *= 0.6f; }   // falls through glass, smashing it
@@ -72,7 +72,7 @@ namespace DigDeep
                 && Mathf.Abs(pl.pos.x - pos.x) < 0.45f + Player.Half.x - 0.15f && U.Overlap(pos, hb, pl.pos, Player.Half))
             {
                 Player.Cause = b == Block.Spikes ? "FALLING SPIKES" : "FALLING SAND";
-                pl.Hurt(b == Block.Spikes ? 60 : 20, pos + Vector2.up);   // (sand stings; it doesn't crush)
+                pl.Hurt(Player.Haz(b == Block.Spikes ? 30 : 10), pos + Vector2.up);   // (sand stings; it doesn't crush)
                 if (b == Block.Sand) pl.Extinguish();   // a load of sand smothers the flames
             }
             foreach (var e in G.ents)
@@ -413,7 +413,7 @@ namespace DigDeep
         public static readonly Vector2 H = new Vector2(0.45f, 0.45f);
         public Vector2 vel;
         int hp;
-        float topY, restT, ang, hitCd;
+        float topY, ang, hitCd;
         float pushHeld, pushedT;   // momentum: the longer you lean on it, the faster it rolls (up to a cap)
         bool grounded, wasWet = true;
 
@@ -433,6 +433,7 @@ namespace DigDeep
         public BoulderBody(int x, int y, Vector2 v, int hp)
         {
             pos = new Vector2(x + 0.5f, y + 0.5f);
+            home = pos.x; homeSet = true;   // knocked out of its cell: a little nudge rocks it straight back
             vel = v;
             this.hp = Mathf.Max(1, hp);
             topY = pos.y;
@@ -468,7 +469,6 @@ namespace DigDeep
         public void Push(Vector2 impulse)
         {
             vel += impulse;
-            restT = 0f;
         }
 
         public override void Tick(float dt)
@@ -539,9 +539,8 @@ namespace DigDeep
                             G.fx.Debris(new Vector2(sx + 0.5f, sy + 0.5f), new Color(0.65f, 0.65f, 0.7f), 8);
                             G.sfx.Play("break", 0.5f, 1.3f);
                         }
-            ang -= vel.x * dt / H.x * Mathf.Rad2Deg;
+            ang -= vel.x * dt / H.x * Mathf.Rad2Deg;   // it rolls as far as it moves (and rolls back when it rocks back)
             Place();
-            if (grounded && Mathf.Abs(vel.x) < 0.6f) ang = Mathf.MoveTowardsAngle(ang, Mathf.Round(ang / 90f) * 90f, 360f * Time.deltaTime);   // rolls to a stop flat
             go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
             Collide();
             if (dead) return;
@@ -550,17 +549,26 @@ namespace DigDeep
                 for (int i = Spear.All.Count - 1; i >= 0; i--)
                     if (i < Spear.All.Count && Spear.All[i].Touches(pos, H + new Vector2(0.05f, 0.05f))) Spear.All[i].Snap();
 
-            // stopped: slide onto the grid and become a block again
-            if (grounded && pushedT <= 0f && Mathf.Abs(vel.x) < 0.6f && Mathf.Abs(vel.y) < 0.1f)
+            // it never snaps back onto the grid: it just comes to rest wherever it stops (a loose stone, not a block).
+            // Only nudged a little from where it lay (less than about half its width), it rocks back into its old dip,
+            // like a real stone settling; pushed further, wherever it stops becomes its new resting place.
+            if (grounded && pushedT <= 0f)
             {
-                vel.x = 0f;
-                float cx = Mathf.Floor(pos.x) + 0.5f;
-                pos.x = Mathf.MoveTowards(pos.x, cx, 2.5f * dt);
-                restT += dt;
-                if (restT > 0.2f && Mathf.Abs(pos.x - cx) < 0.02f) Settle();
+                if (!homeSet) { home = pos.x; homeSet = true; }
+                float off = pos.x - home;
+                if (Mathf.Abs(off) < 0.45f && Mathf.Abs(vel.x) < 2.5f)
+                {
+                    vel.x += -off * 9f * dt;                               // pulled back towards its dip
+                    vel.x = Mathf.MoveTowards(vel.x, 0f, 3f * dt);           // and losing a little each rock
+                    if (Mathf.Abs(off) < 0.01f && Mathf.Abs(vel.x) < 0.05f) { vel.x = 0f; pos.x = home; }
+                }
+                else if (Mathf.Abs(vel.x) < 0.15f) { vel.x = 0f; home = pos.x; }
             }
-            else restT = 0f;
+            if (!grounded) homeSet = false;   // (falling: it finds a new resting place where it lands)
         }
+
+        float home;      // where it lies at rest (see above)
+        bool homeSet;
 
         bool SmashThrough(Vector2Int hit, float sp)
         {
@@ -607,7 +615,6 @@ namespace DigDeep
         {
             pushHeld += dt;
             pushedT = 0.12f;
-            restT = 0f;
             float t = PushTarget(pushHeld) * Mathf.Clamp(G.player.Speed, 0.7f, 1.4f) / Mathf.Sqrt(Chain(dir));   // two in a row: heavier going
             if (vel.x * dir < t) vel.x = Mathf.MoveTowards(vel.x, dir * t, 6f * dt);
             if (Random.value < 0.1f) G.fx.Burst(pos - new Vector2(0f, H.y), 1, new Color(0.6f, 0.5f, 0.4f), 1.5f, 0.3f, 6f);
@@ -661,7 +668,6 @@ namespace DigDeep
                         float m = (vel.x + o.vel.x) * 0.5f, bounce = closing * 0.15f;
                         vel.x = m - sd * bounce * 0.5f;
                         o.vel.x = m + sd * bounce * 0.5f;
-                        o.restT = 0f;
                         o.pushedT = Mathf.Max(o.pushedT, pushedT);
                         if (closing > 3f && bumpCd <= 0f)
                         {
@@ -725,7 +731,7 @@ namespace DigDeep
                         // damage grows with the square of its speed: a 4-block drop does ~250, a quick roll a scratch
                         int dmg = Mathf.Max(10, Mathf.RoundToInt(closing * closing * 0.83f));
                         Player.Cause = "A BOULDER";
-                        pl.Hurt(dmg, pos);
+                        pl.Hurt(Player.Haz(dmg), pos);
                         vel *= 0.6f;
                     }
                 }
@@ -770,18 +776,19 @@ namespace DigDeep
             }
         }
 
-        void Settle()
+        // (saving and quitting: a resting stone goes back into the world as a block, so the save keeps it)
+        public void Settle()
         {
             int cx = Mathf.FloorToInt(pos.x), cy = Mathf.FloorToInt(pos.y);
-            if (Wd.Solid(cx, cy)) { Shatter(); return; }
+            if (Wd.Solid(cx, cy)) return;
             // resting on a spear (not a real floor): it stays a body, lying there, instead of becoming a block that drops again
-            if (!Wd.Solid(cx, cy - 1) && Wd.Get(cx, cy - 1) != Block.Plate) { restT = 0f; return; }
+            if (!Wd.Solid(cx, cy - 1) && Wd.Get(cx, cy - 1) != Block.Plate) return;
             // never turn back into a block on top of someone: wait until the cell is clear
             Vector2 cell = new Vector2(cx + 0.5f, cy + 0.5f), ch = new Vector2(0.5f, 0.5f);
             var pl = G.player;
-            if (pl.mode != Player.Mode.Dead && U.Overlap(cell, ch, pl.pos, Player.Half)) { restT = 0f; return; }
+            if (pl.mode != Player.Mode.Dead && U.Overlap(cell, ch, pl.pos, Player.Half)) return;
             foreach (var e in G.ents)
-                if (!e.dead && e is Enemy en && !en.Intangible && U.Overlap(cell, ch, en.pos, en.half)) { restT = 0f; return; }
+                if (!e.dead && e is Enemy en && !en.Intangible && U.Overlap(cell, ch, en.pos, en.half)) return;
             Kill();
             Wd.Set(cx, cy, Block.Boulder);
             Wd.SetHp(cx, cy, hp);

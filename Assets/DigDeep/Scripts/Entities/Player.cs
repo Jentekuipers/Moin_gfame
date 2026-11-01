@@ -211,6 +211,7 @@ namespace DigDeep
             // above the clouds everyone flies the same way, whatever they carry
             bool flying = World.SkyMode || Ascent.Flying || VoidStage.CamLock;   // (and in the void's last hall)
             if (flying && mode != Mode.Normal && mode != Mode.Parry && mode != Mode.Dead) mode = Mode.Normal;
+            preMoveVy = vel.y;   // (before this frame's landing zeroes it: spikes only hurt when you fall onto them)
             switch (mode)
             {
                 case Mode.Normal: if (flying) TickSky(dt, mx, up, down); else TickNormal(dt, mx, up, down); break;
@@ -256,7 +257,7 @@ namespace DigDeep
         {
             byte head = Wd.FluidAtPoint(pos + new Vector2(0f, Half.y - 0.08f));
             byte body = Wd.FluidAtPoint(pos);
-            bool choking = head == Fluids.Water || head == Fluids.Lava || head == Fluids.Poison || head == Fluids.Acid || head == Fluids.Steam || body == Fluids.Steam || InGas(pos + new Vector2(0f, Half.y - 0.08f)) || InGas(pos);
+            bool choking = head == Fluids.Water || head == Fluids.Blood || head == Fluids.Haste || head == Fluids.Lava || head == Fluids.Poison || head == Fluids.Acid || head == Fluids.Steam || body == Fluids.Steam || InGas(pos + new Vector2(0f, Half.y - 0.08f)) || InGas(pos);
             if (s.gills && head == Fluids.Water && body != Fluids.Steam) choking = false;   // GILLS: water is air to a dolphin
             if (choking)
             {
@@ -270,7 +271,7 @@ namespace DigDeep
                     {
                         // no knockback or mercy time: you just slowly drown
                         chokeT = 0.5f;
-                        int d = Mathf.Max(5, s.maxHp / 20);
+                        int d = Haz(Mathf.Max(3, s.maxHp / 40));
                         s.hp -= d;
                         G.Popup(pos + Vector2.up * 0.9f, "-" + d, new Color(0.5f, 0.8f, 1f));
                         G.sfx.Play("hurt", 0.4f, 1.3f);
@@ -286,11 +287,12 @@ namespace DigDeep
         {
             TickBreath(dt);
             byte bodyF = Wd.FluidAtPoint(pos), feetF = Wd.FluidAtPoint(pos - new Vector2(0f, Half.y - 0.05f));
-            bool wetBody = bodyF == Fluids.Water || bodyF == Fluids.Lava || bodyF == Fluids.Poison || bodyF == Fluids.Acid;   // (you swim in poison and acid too: it's just a bad idea)
-            bool wetFeet = feetF == Fluids.Water || feetF == Fluids.Lava || feetF == Fluids.Poison || feetF == Fluids.Acid;
+            bool wetBody = bodyF == Fluids.Water || bodyF == Fluids.Blood || bodyF == Fluids.Haste || bodyF == Fluids.Lava || bodyF == Fluids.Poison || bodyF == Fluids.Acid;   // (you swim in poison and acid too: it's just a bad idea)
+            bool wetFeet = feetF == Fluids.Water || feetF == Fluids.Blood || feetF == Fluids.Haste || feetF == Fluids.Lava || feetF == Fluids.Poison || feetF == Fluids.Acid;
             bool wasSwimming = swimming;
             swimming = wetBody || (wetFeet && !grounded && vel.y <= 1.5f && !GameInput.Held(Btn.Jump));
-            deepT = wetBody ? 0.4f : deepT - dt;   // FLIPPERS only leap out of water you were really in
+            deepT = wetBody ? 0.4f : deepT - dt;
+            if (Wd.BloodyAt(pos) || Wd.BloodyAt(pos - new Vector2(0f, Half.y - 0.05f))) BloodSight.Soak();   // BLOOD: you see foes clearly for a while   // FLIPPERS only leap out of water you were really in
             if (swimming && !wasSwimming && vel.y < 0f)
             {
                 // splash: even a small drop plunges you a little way under before you bob back up
@@ -506,14 +508,15 @@ namespace DigDeep
             float target = mx * 6.4f * Speed * (s.flippers ? 1.5f : 0.55f) * (1f - FireSlow);   // FLIPPERS: 1.5x your land speed
             vel.x = U.Approach(vel.x, target, (s.flippers ? 60f : 30f) * dt);
             byte hf = Wd.FluidAtPoint(pos + new Vector2(0f, Half.y - 0.08f));
-            bool head = hf == Fluids.Water || hf == Fluids.Lava || hf == Fluids.Poison || hf == Fluids.Acid;
+            bool head = hf == Fluids.Water || hf == Fluids.Blood || hf == Fluids.Haste || hf == Fluids.Lava || hf == Fluids.Poison || hf == Fluids.Acid;
             swimBoost -= dt;
             // a jump under water is a quick kick upwards; reach the surface during it and you leap out
             if (head && GameInput.Buffered(Btn.Jump)) { GameInput.Consume(Btn.Jump); vel.y = Mathf.Max(vel.y, 9.5f); swimBoost = 0.45f; G.fx.Burst(pos, 4, new Color(0.8f, 0.95f, 1f), 2f, 0.5f, -3f, 1f, false); G.sfx.Play("splat", 0.2f, 1.5f, 0.06f); }   // (a soft kick: the leap out has the jump sound)
             waterLeapT -= dt;
+            if (swimBoost > 0f && !head && waterLeapT <= 0f && !GameInput.Held(Btn.Jump)) swimBoost = 0f;   // (a tap only kicks: you leap out only while still holding jump)
             if (swimBoost > 0f && !head && waterLeapT <= 0f) { swimBoost = 0f; waterLeapT = 0.4f; Jump(Fins ? 1.25f : 0.9f, true); MoveBody(dt, mx); return; }
             // FLIPPERS: shoot up out of the water and leap higher than a normal jump (once: not again the next frame)
-            if (Fins && !head && vel.y > 6f && waterLeapT <= 0f) { waterLeapT = 0.4f; Jump(1.25f, true); MoveBody(dt, mx); return; }
+            if (Fins && !head && vel.y > 6f && waterLeapT <= 0f && GameInput.Held(Btn.Jump)) { waterLeapT = 0.4f; Jump(1.25f, true); MoveBody(dt, mx); return; }
             if (Cursed(Curse.LeadBoots))
             {
                 // CURSE OF LEAD BOOTS: you sink like a stone; kicking only slows the fall a little
@@ -533,6 +536,8 @@ namespace DigDeep
             MoveBody(dt, mx);
             TickWeapon(dt);
             if (GameInput.Take(Btn.Swap)) SwapWeapon();
+            // GROUND SLAM works in water too: down, with room below you, and you plunge to the bottom
+            if (s.slam && !s.levitate && !s.tentacles && GameInput.Pressed(Btn.Down) && HighEnoughToSlam()) { StartPound(); return; }
             if (GameInput.Take(Btn.Special)) UseSpecial(mx, GameInput.Held(Btn.Up), down);
             if (GameInput.Take(Btn.Item)) UseItem();
             if (GameInput.Take(Btn.Cycle) && items.Count > 1) { sel = (sel + 1) % items.Count; G.sfx.Play("swing", 0.4f, 1.5f); }
@@ -747,7 +752,11 @@ namespace DigDeep
                 case Sp.Tide: Tide(); break;
                 case Sp.Phase: ok = Phase(mx, up, down); break;
                 case Sp.Parry: if (mode == Mode.Normal) StartParry(); else ok = false; break;
-                case Sp.Camo: StartCamo(); break;
+                case Sp.Camo:
+                    // INK can't vanish while burning or poisoned (the ink won't hold)
+                    if (Burning || Poisoned) { G.sfx.Play("deny", 0.35f, 1.4f); G.Popup(pos + Vector2.up, "CAN'T HIDE NOW", new Color(0.8f, 0.6f, 0.9f)); ok = false; }
+                    else StartCamo();
+                    break;
                 case Sp.Invincible:
                     invuln = Mathf.Max(invuln, 0.5f);
                     aegisT = 0.5f;
@@ -997,6 +1006,14 @@ namespace DigDeep
                 case It.Reroll:
                     Reroll.Circle(pos, 5f);
                     break;
+                case It.Grapple:
+                    {
+                        // a throwaway grappling hook: the same hook as the special, flung where you aim
+                        Vector2 hd = aimDir;
+                        G.Spawn(new Hook(pos + hd * 0.3f, hd * 30f, this, 10f));
+                        G.sfx.Play("grapple", 0.6f);
+                        break;
+                    }
                 case It.Bore:
                     G.Spawn(new BoreCharge(Mathf.FloorToInt(pos.x), Mathf.FloorToInt(pos.y - Half.y - 0.5f)));
                     snapX = Mathf.FloorToInt(pos.x) + 0.5f; snapT = 0.2f;
@@ -1162,7 +1179,7 @@ namespace DigDeep
             PerkKill(e);
             OnHuntKill(e);
             CurseKill();
-            if (s.vampire > 0 && s.kills % s.vampire == 0 && s.hp < s.maxHp) HealHp(30);   // vampire fangs
+            if (s.vampire > 0 && s.kills % s.vampire == 0 && s.hp < s.maxHp) HealHp(20);   // vampire fangs
             if (special != null && charges < MaxCharges && !special.fixedCd)
             {
                 if (s.deathEngine && Random.value < 0.25f)
@@ -1177,6 +1194,8 @@ namespace DigDeep
         }
 
         // ================================================================== damage
+
+        float preMoveVy;
 
         void Hazards()
         {
@@ -1195,7 +1214,7 @@ namespace DigDeep
                         vel.y = 14f;
                         return;
                     }
-                    if (b == Block.Spikes && !s.spikeProof && pos.y - Half.y < y + 0.5f && vel.y <= 0.5f)
+                    if (b == Block.Spikes && !s.spikeProof && pos.y - Half.y < y + 0.5f && Mathf.Min(vel.y, preMoveVy) < -3f)   // falling onto them: walking through sideways is safe
                     {
                         Cause = "SPIKES";
                         Hurt(HazardDmg, new Vector2(pos.x, y));
@@ -1219,7 +1238,9 @@ namespace DigDeep
             }
         }
 
-        int HazardDmg => Mathf.RoundToInt(50f + Depth * 0.15f);
+        int HazardDmg => Haz(25);
+        // THE VOID: everything the world itself throws at you hurts twice as much there
+        public static int Haz(int d) => World.Void ? d * 2 : d;   // the world itself hurts the same at any depth (only creatures get nastier deeper down)
 
         // dmg is in health points (a heart is 100)
         // what hurt you last (for the death screen and the stats): callers can name it, otherwise it's worked out
@@ -1268,9 +1289,10 @@ namespace DigDeep
             if (mode == Mode.Parry) { Counter(from); return; }   // PARRY: whatever touches you gets countered
             if (mode == Mode.Dead || Invulnerable) return;
             if (TestMode.On && TestMode.God) { G.Popup(pos + Vector2.up, "GOD: " + dmg, new Color(0.6f, 1f, 0.6f)); return; }
-            EndCamo();
+            if (Camouflaged && dmg < 999999) return;   // CAMOUFLAGE: nothing touches you while you're hidden
             if (UseMantle()) return;   // WARDSTONE
             if (dmg > 0) Unlocks.Hurt();
+            if (dmg < 999999) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * 0.8f));   // everything hurts a fifth less than it used to (you were dying too easily)
             if (s.armor > 0f && dmg < 999999) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * (1f - s.armor)));   // IRON HIDE
             if (Cursed(Curse.Glass) && dmg < 999999) dmg = Mathf.RoundToInt(dmg * 1.5f);   // CURSE OF GLASS
             if (s.glassBody && dmg < 999999) dmg *= 3;   // GLASS CANNON
@@ -1311,7 +1333,7 @@ namespace DigDeep
             }
         }
 
-        public const int RegenHeal = 40;   // what moss, fangs and the gold tooth give back each time
+        public const int RegenHeal = 28;   // what moss, fangs and the gold tooth give back each time
 
         public void HealHp(int hp)
         {

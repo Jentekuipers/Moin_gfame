@@ -230,7 +230,7 @@ namespace DigDeep
             if (p.mode != Player.Mode.Dead && (p.pos - Top).magnitude < 3.6f && Wd.LineClear(Top, p.pos))
             {
                 G.Spawn(new LightningArc(Top, p.pos));
-                p.Shock(Mathf.RoundToInt(18f + depthNow * 0.08f));
+                p.Shock(Player.Haz(9));
                 any = true;
             }
             foreach (var e in G.ents)
